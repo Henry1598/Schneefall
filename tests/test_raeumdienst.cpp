@@ -2,6 +2,7 @@
 // Geprüft wird nur über die öffentliche Schnittstelle von Raeumdienst und Simulation.
 #include <QtTest>
 #include <cmath>
+#include <limits>
 #include <set>
 #include "raeumdienst.h"
 #include "sprueche.h"
@@ -974,6 +975,49 @@ private slots:
         // Profil fällt nach vorn ab und endet am Wulstende
         QVERIFY(wulstProfil(1000, 1, 0) > wulstProfil(1000, 1, 20));
         QCOMPARE(wulstProfil(1000, 1, wulstLaenge(1000, 1) + 1), 0.0);
+    }
+    // Sicherheitsprüfung N1: Werfen kommt auch über Steuerkanal/D-Bus – unsinnige Zahlen dürfen keine
+    // unsterblichen Bälle oder NaN in der Simulation erzeugen
+    void unsinnigeWuerfeErzeugenKeineUnsterblichenBaelle() {
+        Welt w;
+        const double nan = std::numeric_limits<double>::quiet_NaN(), inf = std::numeric_limits<double>::infinity();
+        w.rd.werfen(nan, 500, 0, 0, 100);
+        w.rd.werfen(500, inf, 0, 0, 100);
+        w.rd.werfen(500, 500, nan, 0, 100);
+        w.rd.werfen(500, 500, inf, -inf, 100);
+        w.rd.werfen(500, 500, 0, 0, nan);
+        w.rd.werfen(-1e300, 500, 0, 0, 100);
+        w.rd.werfen(500, -1e300, 0, 0, 100);   // weit oben: fiele ewig
+        w.rd.werfen(500, 500, 1e300, -1e300, 100);
+        for (const Schneeball &b : w.rd.baelle()) {
+            QVERIFY(std::isfinite(b.x) && std::isfinite(b.y) && std::isfinite(b.vx) && std::isfinite(b.vy) && std::isfinite(b.menge));
+            QVERIFY(b.x >= -5000 && b.x <= 2000 + 5000 && b.y >= -5000 && b.y <= 1200 + 5000);
+            QVERIFY(std::hypot(b.vx, b.vy) <= 2600 + 1e-6);
+        }
+        for (int i = 0; i < 25 * 30; ++i) {
+            w.laufen(1.0 / 30);
+            for (const Schneeball &b : w.rd.baelle()) QVERIFY(std::isfinite(b.x) && std::isfinite(b.y));
+        }
+        QVERIFY(w.rd.baelle().empty());
+        QVERIFY(std::isfinite(w.alles()));
+    }
+    void hoechstens64BaelleGleichzeitig() {
+        Welt w;
+        for (int i = 0; i < 200; ++i) w.rd.werfen(100 + i, 100, 0, -2000, 50);
+        QVERIFY(w.rd.baelle().size() <= 64);
+        QCOMPARE(w.rd.baelle().back().x, 299.0); // die jüngsten bleiben
+    }
+    void nichtEndlicherZeitschrittWirdIgnoriert() {
+        Welt w;
+        w.rd.werfen(500, 300, 100, -100, 100);
+        const double t = w.sim.zeit();
+        w.sim.schritt(std::numeric_limits<double>::quiet_NaN(), false);
+        w.rd.schritt(std::numeric_limits<double>::quiet_NaN());
+        w.sim.schritt(std::numeric_limits<double>::infinity(), false);
+        w.rd.schritt(std::numeric_limits<double>::infinity());
+        QCOMPARE(w.sim.zeit(), t);
+        QCOMPARE(w.rd.baelle().size(), size_t(1));
+        QVERIFY(std::isfinite(w.rd.baelle()[0].x) && std::isfinite(w.rd.baelle()[0].y));
     }
 };
 

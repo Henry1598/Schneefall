@@ -108,12 +108,12 @@ bool App::dienstAnmelden() {
 
 plattform::Antwort App::befehl(const QString &name, const QStringList &argumente) {
     using plattform::Antwort;
-    // Zahlen-Argumente: alle müssen gültig sein, sonst ist der Befehl unbekannt
+    // Zahlen-Argumente: alle müssen gültige, endliche Zahlen sein (nan/inf nicht), sonst ist der Befehl unbekannt
     std::vector<double> z;
     for (const QString &a : argumente) {
         bool ok = false;
         z.push_back(a.toDouble(&ok));
-        if (!ok) return Antwort::unbekannt();
+        if (!ok || !std::isfinite(z.back())) return Antwort::unbekannt();
     }
     const size_t n = z.size();
     if (name == QLatin1String("Status") && n == 0) return Antwort::ok(Status());
@@ -417,7 +417,10 @@ QString App::Fensterliste() { return m_quelle->diagnose(); }
 
 QString App::Raeumen() { return QString::fromStdString(m_raeum.jetztRaeumen()); }
 
-void App::Zeitlupe(double faktor) { m_zeitlupe = std::clamp(faktor, 0.02, 1.0); }
+void App::Zeitlupe(double faktor) {
+    if (!std::isfinite(faktor)) return; // std::clamp ließe NaN durch
+    m_zeitlupe = std::clamp(faktor, 0.02, 1.0);
+}
 
 void App::Werfen(double x, double y, double vx, double vy, double menge) { m_raeum.werfen(x, y, vx, vy, menge); }
 

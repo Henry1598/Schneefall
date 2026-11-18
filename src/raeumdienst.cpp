@@ -8,6 +8,10 @@ namespace {
 constexpr double SCHWERKRAFT = 900;    // px/s² für Seil und Bälle
 constexpr double SEIL_FLUG = 46;       // Seillänge im Flug (Einheiten)
 constexpr double BALL_MAX = 220;       // größte Ballmenge
+constexpr double BALL_RAND = 5000;     // so weit außerhalb der Bildschirme darf ein Ball starten (px)
+constexpr double BALL_TEMPO = 2600;    // px/s je Richtung und insgesamt
+constexpr size_t BALL_ANZAHL = 64;     // gleichzeitig fliegende Bälle
+constexpr double BALL_LEBENSDAUER = 20; // s
 constexpr double ANFASS_HOEHE = 6;     // ab dieser Deckenhöhe ist Schnee anfassbar
 double vorzeichen(double v) { return v < 0 ? -1.0 : 1.0; }
 
@@ -929,6 +933,7 @@ void Raeumdienst::einsatzSchritt(Einsatz &e, double dt) {
 }
 
 void Raeumdienst::schritt(double dt) {
+    if (!std::isfinite(dt) || dt < 0) return; // z. B. Zeitlupe mit NaN: nichts rechnen
     m_dauerNeu.clear();
     // von selbst buchen: einmal je Sekunde reicht
     m_pruefRest -= dt;
@@ -1045,20 +1050,36 @@ void Raeumdienst::mausLos(double x, double y, double t) {
             break;
         }
     }
-    werfen(b.x, b.y, b.vx, b.vy, b.menge);
-    m_baelle.back().winkel = b.winkel;
+    if (werfen(b.x, b.y, b.vx, b.vy, b.menge)) m_baelle.back().winkel = b.winkel;
 }
 
-void Raeumdienst::werfen(double x, double y, double vx, double vy, double menge) {
+bool Raeumdienst::werfen(double x, double y, double vx, double vy, double menge) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(vx) || !std::isfinite(vy) || !std::isfinite(menge)) return false;
+    // Lage nahe der Bildschirme (ohne Bildschirme: um den Ursprung)
+    double links = 0, oben = 0, rechts = 0, unten = 0;
+    bool erster = true;
+    for (const Rechteck &r : m_sim.bildschirme()) {
+        links = erster ? r.x : std::min(links, r.x);
+        oben = erster ? r.y : std::min(oben, r.y);
+        rechts = erster ? r.rechts() : std::max(rechts, r.rechts());
+        unten = erster ? r.unten() : std::max(unten, r.unten());
+        erster = false;
+    }
+    x = std::clamp(x, links - BALL_RAND, rechts + BALL_RAND);
+    y = std::clamp(y, oben - BALL_RAND, unten + BALL_RAND);
+    vx = std::clamp(vx, -BALL_TEMPO, BALL_TEMPO);
+    vy = std::clamp(vy, -BALL_TEMPO, BALL_TEMPO);
     Schneeball b;
     b.x = x; b.y = y; b.menge = std::clamp(menge, 0.0, BALL_MAX);
     const double tempo = std::hypot(vx, vy);
-    if (tempo > 2600) { vx *= 2600 / tempo; vy *= 2600 / tempo; }
+    if (tempo > BALL_TEMPO) { vx *= BALL_TEMPO / tempo; vy *= BALL_TEMPO / tempo; }
     b.vx = vx; b.vy = vy;
     b.drall = vx / std::max(4.0, b.radius()) * 0.5 + (zufall() - 0.5) * 4;
+    if (m_baelle.size() >= BALL_ANZAHL) m_baelle.erase(m_baelle.begin(), m_baelle.begin() + long(m_baelle.size() - BALL_ANZAHL + 1));
     m_baelle.push_back(b);
     zaehlen(Statistikereignis::BallGeworfen);
     if (tempo > 120) klang(Geraeusch::Wurf, x, y, std::clamp(tempo / 1200, 0.3, 2.0));
+    return true;
 }
 
 void Raeumdienst::platzen(const Schneeball &b, const std::string &deckenId, double anteilLiegen) {
@@ -1148,6 +1169,9 @@ void Raeumdienst::ballSchritt(double dt) {
     const double G = g();
     std::vector<Schneeball> bleiben;
     for (Schneeball b : m_baelle) {
+        // Sicherheitsnetz: nicht endliche Lage oder zu alt (fiele sonst womöglich ewig) → weg
+        b.alter += dt;
+        if (b.alter > BALL_LEBENSDAUER || !std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.vx) || !std::isfinite(b.vy)) continue;
         const double r = b.radius();
         const int n = std::max(1, int(std::ceil(std::hypot(b.vx, b.vy) * dt / 5)));
         const double h = dt / n;

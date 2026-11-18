@@ -2,6 +2,7 @@
 // Plattform-Backend (kein KWin, kein D-Bus nötig). Offscreen, mit eigenem XDG_CONFIG_HOME.
 #include <QtTest>
 #include <QTemporaryDir>
+#include <limits>
 #include "app.h"
 #include "fakefensterquelle.h"
 
@@ -75,6 +76,24 @@ private slots:
         QCOMPARE(app.befehl(QStringLiteral("Zeitlupe"), {"schnell"}).ergebnis, Antwort::Ergebnis::Unbekannt);    // keine Zahl
         QCOMPARE(app.befehl(QStringLiteral("Status"), {"1"}).ergebnis, Antwort::Ergebnis::Unbekannt);            // zu viele
         QCOMPARE(app.befehl(QStringLiteral("Fenster"), {"[]"}).ergebnis, Antwort::Ergebnis::Unbekannt);          // nur über die Fensterquelle
+    }
+    // Sicherheitsprüfung N1: nicht endliche Zahlen (nan, inf – auch so über D-Bus als Text) sind kein gültiges Argument
+    void nichtEndlicheZahlenWerdenAbgelehnt() {
+        App app(std::make_unique<FakeFensterquelle>());
+        app.starten();
+        for (const char *z : {"nan", "NaN", "inf", "-inf", "1e400"}) {
+            QCOMPARE(app.befehl(QStringLiteral("Zeitlupe"), {z}).ergebnis, Antwort::Ergebnis::Unbekannt);
+            QCOMPARE(app.befehl(QStringLiteral("Werfen"), {z, "300", "0", "0", "100"}).ergebnis, Antwort::Ergebnis::Unbekannt);
+            QCOMPARE(app.befehl(QStringLiteral("Werfen"), {"500", "300", "0", z, "100"}).ergebnis, Antwort::Ergebnis::Unbekannt);
+            QCOMPARE(app.befehl(QStringLiteral("Werfen"), {"500", "300", "0", "0", z}).ergebnis, Antwort::Ergebnis::Unbekannt);
+        }
+        QCOMPARE(wert(app.Status(), QStringLiteral("baelle")), QStringLiteral("0"));
+        // direkte Aufrufe (Slots) ebenso: Zeitlupe bleibt endlich, kein Ball mit NaN
+        app.Zeitlupe(std::numeric_limits<double>::quiet_NaN());
+        app.Werfen(std::numeric_limits<double>::quiet_NaN(), 0, 0, 0, 100);
+        QCOMPARE(wert(app.Status(), QStringLiteral("baelle")), QStringLiteral("0"));
+        // weit draußen, aber endlich: angenommen und an den Bildschirmbereich geklemmt
+        QCOMPARE(app.befehl(QStringLiteral("Werfen"), {"-1e300", "300", "0", "0", "100"}).ergebnis, Antwort::Ergebnis::Ok);
     }
 
 private:

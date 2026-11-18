@@ -163,6 +163,7 @@ struct Einsatz {
 struct Schneeball {
     double x = 0, y = 0, vx = 0, vy = 0;
     double menge = 0, winkel = 0, drall = 0;
+    double alter = 0; // s seit dem Wurf; nach BALL_LEBENSDAUER verschwindet er
     double radius() const;
 };
 
@@ -212,7 +213,9 @@ public:
     bool mausDruck(double x, double y, double t);
     void mausBewegt(double x, double y, double t);
     void mausLos(double x, double y, double t);
-    void werfen(double x, double y, double vx, double vy, double menge);
+    // wirft einen Ball (auch von außen über Steuerkanal/D-Bus): nicht endliche Werte → false, kein Ball;
+    // Lage auf ±5000 px um die Bildschirme, Tempo auf 2600 px/s begrenzt; höchstens 64 Bälle (älteste fallen weg)
+    bool werfen(double x, double y, double vx, double vy, double menge);
     // Flächen, in denen das Overlay Mausklicks annimmt (Schnee über 6 px, Fahrzeuge); leer = alles klickt durch
     std::vector<Rechteck> eingabeRechtecke() const;
 

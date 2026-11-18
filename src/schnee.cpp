@@ -595,6 +595,7 @@ void flockeBewegen(Flocke &f, double dt) {
 }
 
 void Simulation::schritt(double dt, bool erzeugenAn) {
+    if (!std::isfinite(dt) || dt < 0) return; // nicht endlicher Zeitschritt (z. B. Zeitlupe NaN): nichts rechnen
     m_zeit += dt;
     if (erzeugenAn) erzeugen(dt);
     const bool fest = m_e.modus == Fenstermodus::Fest;
