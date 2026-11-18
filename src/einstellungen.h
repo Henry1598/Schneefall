@@ -1,6 +1,7 @@
 // Liest ~/.config/schneefall.conf (einfaches key=value, # Kommentare)
 #pragma once
 #include <string>
+#include "raeumdienst.h"
 #include "schnee.h"
 
 namespace schnee {
@@ -12,6 +13,7 @@ struct Programmeinstellungen {
     bool realistisch = true;        // Flockendetail: true = Schneekristalle mit Tiefenwirkung, false = einfache weiche Punkte
     bool ton = false;               // Geräusche (Standard aus)
     int lautstaerke = 50;           // 0 … 100
+    RaeumEinstellungen raeum;       // Räumdienst und Schneebälle
 };
 // Wertet den Dateiinhalt aus; unbekannte Schlüssel/kaputte Werte werden ignoriert.
 Programmeinstellungen einstellungenAusText(const std::string &text);

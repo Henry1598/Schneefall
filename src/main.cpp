@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
     if (args.contains(QStringLiteral("--status"))) return aufruf("Status");
     if (args.contains(QStringLiteral("--umschalten"))) return aufruf("Umschalten");
     if (args.contains(QStringLiteral("--fensterliste"))) return aufruf("Fensterliste");
+    if (args.contains(QStringLiteral("--raeumen"))) return aufruf("Raeumen");
 
     App app;
     if (!app.dienstAnmelden()) {

@@ -158,6 +158,10 @@ public:
     void brockenFallenLassen(double x, double y, double breite, double menge, double vx = 0, double vy = 0, uint32_t herkunft = 0);
     // Schnee, der gerade fällt und noch landen wird (Flocken ohne Wolkenstaub + Brocken)
     double fallenderSchnee() const;
+    // Menge, die eine Flocke dieser Größe beim Landen ablegt (für aufgewirbelten Schnee)
+    double ablageJeFlocke(double groesse) const { return ablageFuer(groesse); }
+    const std::vector<Rechteck> &bildschirme() const { return m_bildschirme; }
+    double maxHoeheVon(const Decke &d) const { return maxFuer(d); }
 
 private:
     // Spalten [von,bis) (davon „anteil“) in Flocken; seitwaerts: rutschen erst über die nähere Kante

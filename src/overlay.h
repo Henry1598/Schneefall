@@ -7,29 +7,45 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLWindow>
+#include <QRegion>
+#include <functional>
 #include <vector>
 #include "deckenform.h"
 #include "kristall.h"
+#include "fahrzeugbild.h"
+#include "raeumszene.h"
 #include "schnee.h"
 
 class Overlay : public QOpenGLWindow, protected QOpenGLFunctions {
 public:
     // realistisch zeigt auf die Einstellung „Flockendetail“ (wird in jedem Bild gelesen)
-    Overlay(QScreen *bildschirm, const schnee::Simulation *sim, const bool *realistisch);
+    // szene: Räumdienst-Bild (wird von der App je Takt gefüllt); fahrzeugGroesse zeigt auf die Einstellung
+    Overlay(QScreen *bildschirm, const schnee::Simulation *sim, const bool *realistisch, const schnee::Szene *szene = nullptr,
+            const double *fahrzeugGroesse = nullptr);
     ~Overlay() override;
     QScreen *bildschirm() const { return m_bildschirm; }
     void anBildschirmAnpassen();
     // Lastmessung seit dem letzten Aufruf (für --status): Zeit fürs Zusammenstellen und fürs Zeichnen, Ecken je Bild
     struct Last { double sammelnMs = 0, zeichnenMs = 0; int ecken = 0; };
     Last lastAbholen();
+    // Flächen (global logisch), in denen die Ebene Mausklicks annimmt; leer = alles klickt durch
+    void eingabeSetzen(const std::vector<schnee::Rechteck> &flaechen);
+    // Maus über Schnee oder Fahrzeug: art 0 = gedrückt, 1 = bewegt, 2 = losgelassen; globale logische Koordinaten
+    std::function<void(int art, double x, double y)> mausziel;
 
 protected:
     void initializeGL() override;
     void paintGL() override;
+    void mousePressEvent(QMouseEvent *e) override;
+    void mouseMoveEvent(QMouseEvent *e) override;
+    void mouseReleaseEvent(QMouseEvent *e) override;
 
 private:
     void viereck(const float e[4][5]);
     void atlasLaden(double dpr);
+    void fahrzeugAtlasLaden(double dpr);
+    void fahrzeugeSammeln(float bx, float by, float bw, float bh);
+    void haufenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
     void flockenSammeln(float bx, float by, float bw, float bh);
     void deckenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
     void brockenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
@@ -45,6 +61,14 @@ private:
     GLuint m_atlasTextur = 0;
     double m_atlasDpr = 0;
     schnee::AtlasPlan m_plan;
+    const schnee::Szene *m_szene;
+    const double *m_fahrzeugGroesse;
+    GLuint m_fahrzeugTextur = 0;
+    double m_fahrzeugDpr = 0, m_fahrzeugMass = 0;
+    std::vector<FahrzeugFeld> m_felder;
+    int m_fahrzeugBreite = 1, m_fahrzeugHoehe = 1;
+    QRegion m_eingabe;          // zuletzt gesetzte Eingaberegion (lokal)
+    bool m_gedrueckt = false;
     QElapsedTimer m_uhr;
     std::vector<float> m_daten;
     std::vector<schnee::ProfilPunkt> m_punkte;

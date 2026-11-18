@@ -53,7 +53,9 @@ const char *modusText(Fenstermodus m) {
 } // namespace
 
 bool einstellungenBrauchtErgaenzung(const std::string &text) {
-    for (const char *k : {"fenstermodus", "schuetteln_schwelle", "rutsch_ab_minuten", "rutsch_tempo", "wolke_dauer", "wolke_liegen", "boden_max"})
+    for (const char *k : {"fenstermodus", "schuetteln_schwelle", "rutsch_ab_minuten", "rutsch_tempo", "wolke_dauer", "wolke_liegen", "boden_max",
+                          "ton", "lautstaerke", "raeumdienst", "raeumen_ab", "fahrzeug_groesse", "einsaetze_gleichzeitig", "taskleiste_raeumen",
+                          "treffer_bis_streik", "schnee_anfassbar"})
         if (text.find(std::string("\n") + k + "=") == std::string::npos && text.rfind(std::string(k) + "=", 0) != 0) return true;
     return text.find("vor_fenstern") != std::string::npos;
 }
@@ -92,6 +94,13 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "vollbild_pausieren") wahrheit(w, p.vollbildPausieren);
         else if (k == "ton") wahrheit(w, p.ton);
         else if (k == "lautstaerke") { double v = p.lautstaerke; setzen(v, w, 0.0, 100.0); p.lautstaerke = int(std::lround(v)); }
+        else if (k == "raeumdienst") wahrheit(w, p.raeum.an);
+        else if (k == "raeumen_ab") { double v = p.raeum.raeumenAb * 100; setzen(v, w, 30.0, 100.0); p.raeum.raeumenAb = v / 100; }
+        else if (k == "fahrzeug_groesse") setzen(p.raeum.fahrzeugGroesse, w, 0.5, 3.0);
+        else if (k == "einsaetze_gleichzeitig") { double v = p.raeum.gleichzeitig; setzen(v, w, 1.0, 3.0); p.raeum.gleichzeitig = int(std::lround(v)); }
+        else if (k == "taskleiste_raeumen") wahrheit(w, p.raeum.taskleiste);
+        else if (k == "treffer_bis_streik") { double v = p.raeum.trefferBisStreik; setzen(v, w, 1.0, 10.0); p.raeum.trefferBisStreik = int(std::lround(v)); }
+        else if (k == "schnee_anfassbar") wahrheit(w, p.raeum.anfassbar);
         else if (k == "flockendetail") {
             std::transform(w.begin(), w.end(), w.begin(), [](unsigned char c) { return char(std::tolower(c)); });
             if (w == "realistisch") p.realistisch = true;
@@ -141,7 +150,21 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "# Geräusche (Hubschrauber, Motor, …) an (true) oder aus (false)\n"
       << "ton=" << (p.ton ? "true" : "false") << "\n"
       << "# Lautstärke der Geräusche (0 … 100)\n"
-      << "lautstaerke=" << p.lautstaerke << "\n";
+      << "lautstaerke=" << p.lautstaerke << "\n"
+      << "# Räumdienst: bei viel Schnee fliegt ein Hubschrauber ein Räumfahrzeug ein (true/false)\n"
+      << "raeumdienst=" << (p.raeum.an ? "true" : "false") << "\n"
+      << "# geräumt wird, sobald eine Decke so viel Prozent der Höchstmenge erreicht (30 … 100)\n"
+      << "raeumen_ab=" << fmt(std::round(p.raeum.raeumenAb * 1000) / 10) << "\n"
+      << "# Größe von Hubschrauber und Fahrzeugen (0.5 … 3, 1 = normal)\n"
+      << "fahrzeug_groesse=" << fmt(p.raeum.fahrzeugGroesse) << "\n"
+      << "# so viele Räumeinsätze gleichzeitig, weitere warten (1 … 3)\n"
+      << "einsaetze_gleichzeitig=" << p.raeum.gleichzeitig << "\n"
+      << "# kleiner Pflug räumt auch Taskleiste und Boden (true/false)\n"
+      << "taskleiste_raeumen=" << (p.raeum.taskleiste ? "true" : "false") << "\n"
+      << "# nach so vielen Schneeball-Treffern streikt der Fahrer (1 … 10)\n"
+      << "treffer_bis_streik=" << p.raeum.trefferBisStreik << "\n"
+      << "# Schnee mit der Maus zu Schneebällen formen; aus = das Overlay nimmt nie Mausklicks an (true/false)\n"
+      << "schnee_anfassbar=" << (p.raeum.anfassbar ? "true" : "false") << "\n";
     return o.str();
 }
 

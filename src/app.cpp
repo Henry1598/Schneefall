@@ -48,6 +48,7 @@ QIcon flockenSymbol() {
 } // namespace
 
 App::App() {
+    m_mausUhr.start();
     m_takt.setTimerType(Qt::PreciseTimer);
     connect(&m_takt, &QTimer::timeout, this, &App::takt);
     m_speicherTimer.setSingleShot(true);
@@ -97,6 +98,8 @@ void App::laden() {
     }
     if (!m_beobachter.files().contains(konfigPfad()) && QFile::exists(konfigPfad())) m_beobachter.addPath(konfigPfad());
     m_sim.setEinstellungen(m_einst.sim);
+    m_raeum.setEinstellungen(m_einst.raeum);
+    m_eingabeTakt = 0;
     m_takt.setInterval(std::max(1, 1000 / m_einst.fps));
     m_klang.setzeLautstaerke(m_einst.lautstaerke / 100.0);
     m_klang.setzeAn(m_einst.ton);
@@ -125,6 +128,10 @@ void App::speichern() {
 void App::einstellungenAendern(const Programmeinstellungen &p) {
     m_einst = p;
     m_sim.setEinstellungen(m_einst.sim);
+    m_raeum.setEinstellungen(m_einst.raeum);
+    m_eingabeTakt = 0;
+    m_klang.setzeLautstaerke(m_einst.lautstaerke / 100.0);
+    m_klang.setzeAn(m_einst.ton);
     m_takt.setInterval(std::max(1, 1000 / m_einst.fps));
     if (m_anAktion) m_anAktion->setChecked(m_einst.an);
     sichtbarkeitPruefen();
@@ -157,6 +164,7 @@ void App::trayAufbauen() {
     });
     m_menu->addAction(QStringLiteral("Steuerfenster …"), this, &App::Steuerfenster);
     m_menu->addAction(QStringLiteral("Schnee abschütteln"), this, &App::Abschuetteln);
+    m_menu->addAction(QStringLiteral("Jetzt räumen"), this, [this] { Raeumen(); });
     m_menu->addSeparator();
     m_menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), QStringLiteral("Beenden"), this, &App::Beenden);
     m_tray->setContextMenu(m_menu);
@@ -171,7 +179,8 @@ void App::trayAufbauen() {
 
 void App::bildschirmHinzu(QScreen *s) {
     if (m_ebenen.contains(s)) return;
-    auto *o = new Overlay(s, &m_sim, &m_einst.realistisch);
+    auto *o = new Overlay(s, &m_sim, &m_einst.realistisch, &m_szene, &m_einst.raeum.fahrzeugGroesse);
+    o->mausziel = [this](int art, double x, double y) { maus(art, x, y); };
     m_ebenen.insert(s, o);
     connect(s, &QScreen::geometryChanged, this, [this, o] {
         o->anBildschirmAnpassen();
@@ -213,6 +222,9 @@ void App::sichtbarkeitPruefen() {
     } else {
         m_takt.stop();
         for (Overlay *o : std::as_const(m_ebenen)) o->hide();
+        // Pause oder Vollbild: der Einsatz bleibt stehen, die Geräusche verstummen
+        m_raeum.klaengeAnhalten();
+        klaengeWeitergeben();
     }
 }
 
@@ -221,6 +233,15 @@ void App::takt() {
     QElapsedTimer t;
     t.start();
     m_sim.schritt(dt, true);
+    m_raeum.schritt(dt);
+    if (m_raeum.etwasLos()) szeneBauen(m_raeum, m_sim, m_mausUhr.elapsed() / 1000.0, m_szene);
+    else m_szene.leeren();
+    klaengeWeitergeben();
+    // Eingaberegion: alle halbe Sekunde, mit Fahrzeug unterwegs öfter
+    if (--m_eingabeTakt <= 0) {
+        m_eingabeTakt = m_raeum.einsaetze().empty() ? std::max(1, m_einst.fps / 2) : std::max(1, m_einst.fps / 8);
+        eingabeAktualisieren();
+    }
     m_rechenNs += t.nsecsElapsed();
     ++m_rechenBilder;
     for (Overlay *o : std::as_const(m_ebenen)) o->update();
@@ -291,9 +312,49 @@ QString App::Status() {
         ++decken;
         for (float h : d.hoehe) schnee += h;
     }
-    return QStringLiteral("laeuft=%1 an=%2 vollbild=%3 flocken=%4 fenster=%5 decken=%6 schnee=%7 rechenzeit_ms=%8 brocken=%9\n%10")
+    // Räumdienst: je Einsatz Fenster, Phase, Fahrzeugphase und Lage
+    static const char *const phasen[] = {"Anflug", "Schweben", "Absenken", "Ausklinken", "Raeumen", "Rueckkehr", "Einhaken", "Anheben", "Abflug", "Fertig"};
+    static const char *const fahrphasen[] = {"AmSeil", "Aufgesetzt", "Wenden", "Senken", "Schieben", "Kippen", "Zurueck", "Bereit", "Streik", "Beleidigt"};
+    QStringList einsaetze;
+    for (const Einsatz &e : m_raeum.einsaetze())
+        einsaetze << QStringLiteral("einsatz=%1 fenster=%2 phase=%3 fahrzeug=%4 heli=%5,%6 fz=%7,%8 wulst=%9 treffer=%10 spruch=%11")
+                         .arg(e.nr).arg(QString::fromStdString(e.id), QLatin1String(phasen[int(e.phase)]), QLatin1String(fahrphasen[int(e.fz.phase)]))
+                         .arg(e.heli.x, 0, 'f', 0).arg(e.heli.y, 0, 'f', 0).arg(e.fz.x, 0, 'f', 0).arg(e.fz.y, 0, 'f', 0)
+                         .arg(e.fz.wulst, 0, 'f', 0).arg(e.fz.treffer).arg(e.fz.spruch);
+    return QStringLiteral("laeuft=%1 an=%2 vollbild=%3 flocken=%4 fenster=%5 decken=%6 schnee=%7 rechenzeit_ms=%8 brocken=%9 einsaetze=%11 wartend=%12 baelle=%13 eingabeflaechen=%14\n%10%15")
         .arg(m_laeuft).arg(m_einst.an).arg(m_vollbild).arg(m_sim.flocken().size()).arg(m_fenster.size())
-        .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(b.join(QLatin1Char('\n')));
+        .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(b.join(QLatin1Char('\n')))
+        .arg(m_raeum.einsaetze().size()).arg(m_raeum.warteschlange().size()).arg(m_raeum.baelle().size() + (m_raeum.ballInHand() ? 1 : 0))
+        .arg(m_raeum.eingabeRechtecke().size()).arg(einsaetze.isEmpty() ? QString() : QLatin1Char('\n') + einsaetze.join(QLatin1Char('\n')));
 }
 
 QString App::Fensterliste() { return m_letzteListe; }
+
+QString App::Raeumen() { return QString::fromStdString(m_raeum.jetztRaeumen()); }
+
+void App::Werfen(double x, double y, double vx, double vy, double menge) { m_raeum.werfen(x, y, vx, vy, menge); }
+
+void App::klaengeWeitergeben() {
+    static_assert(int(Geraeusch::Rotor) == int(KlangArt::Rotor) && int(Geraeusch::Murren) == int(KlangArt::Murren)
+                  && int(Geraeusch::Rutsch) == int(KlangArt::Rutsch) && int(Geraeusch::Treffer) == int(KlangArt::Treffer));
+    for (const Klangereignis &k : m_raeum.klaengeAbholen()) {
+        const KlangArt art = KlangArt(int(k.art));
+        switch (k.typ) {
+        case Klangereignis::Einmal: m_klang.ereignis(art, k.x, k.y, k.staerke); break;
+        case Klangereignis::Dauer: m_klang.dauerklang(k.id, art, k.x, k.y, k.staerke); break;
+        case Klangereignis::Stopp: m_klang.dauerklangStopp(k.id); break;
+        }
+    }
+}
+
+void App::eingabeAktualisieren() {
+    const std::vector<Rechteck> r = m_raeum.eingabeRechtecke();
+    for (Overlay *o : std::as_const(m_ebenen)) o->eingabeSetzen(r);
+}
+
+void App::maus(int art, double x, double y) {
+    const double t = m_mausUhr.elapsed() / 1000.0;
+    if (art == 0) m_raeum.mausDruck(x, y, t);
+    else if (art == 1) m_raeum.mausBewegt(x, y, t);
+    else m_raeum.mausLos(x, y, t);
+}

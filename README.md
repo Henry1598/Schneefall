@@ -9,6 +9,12 @@ Schließen rutscht alter Schnee als Schneebrett ab (auch auf das nächste Fenste
 junger rieselt als Wolke herunter. Am unteren Bildschirmrand und auf der Taskleiste
 sammelt sich Schnee und schmilzt langsam.
 
+Wird es auf einem Fenster zu viel, kommt der **Räumdienst**: Ein Hubschrauber fliegt eine
+Pistenraupe am Seil ein, setzt sie auf dem Fenster ab, sie schiebt den Schnee über die Kante
+nach unten und wird wieder abgeholt. Taskleiste und Boden räumt ein kleiner Pflug. Aus dem
+Schnee lassen sich mit der Maus **Schneebälle** formen und werfen – trifft man das Fahrzeug
+zu oft, streikt der Fahrer.
+
 Gebaut für Plasma/KWin 6.8, Qt 6.12, mehrere Monitore mit gemischter Skalierung.
 
 ## Starten und Beenden
@@ -17,7 +23,7 @@ Gebaut für Plasma/KWin 6.8, Qt 6.12, mehrere Monitore mit gemischter Skalierung
 |---|---|
 | an/aus umschalten | `schneefall-umschalten` oder Starter „Schneefall“ im Anwendungsmenü |
 | Steuerfenster öffnen | Linksklick auf die Schneeflocke im Systemabschnitt der Taskleiste, oder `~/Schneefall/build/schneefall` ein zweites Mal starten |
-| Menü | Rechtsklick auf die Schneeflocke: Schnee an, Steuerfenster, Schnee abschütteln, Beenden |
+| Menü | Rechtsklick auf die Schneeflocke: Schnee an, Steuerfenster, Schnee abschütteln, Jetzt räumen, Beenden |
 | Beenden | Menü „Beenden“, Knopf „Beenden“ im Steuerfenster, oder `schneefall-umschalten` |
 
 Es gibt keinen Autostart, solange im Steuerfenster nicht „Mit dem System starten“
@@ -30,7 +36,9 @@ Befehle für die Konsole:
 ~/Schneefall/build/schneefall               # starten (läuft es schon: Steuerfenster öffnen)
 ~/Schneefall/build/schneefall --status      # Zustand, Flockenzahl, Monitore
 ~/Schneefall/build/schneefall --umschalten  # Schnee an/aus (Programm läuft weiter)
+~/Schneefall/build/schneefall --raeumen     # „Jetzt räumen“: Einsatz am Fenster mit dem meisten Schnee
 ~/Schneefall/build/schneefall --beenden
+qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # Schneeball: x y vx vy Menge
 ```
 
 ## Steuerfenster
@@ -48,6 +56,16 @@ Befehle für die Konsole:
   - **Rutsch ab:** War ein Fenster so viele Minuten offen (oder ist seine Decke zu 60 % voll),
     rutscht der Schnee beim Minimieren/Schließen als Brett ab. Sonst rieselt er als Wolke herunter.
   - **Rutschtempo, Wolkendauer, Wolke bleibt liegen (%), Max. Boden/Taskleiste.**
+- **Gruppe „Räumdienst“:**
+  - **Bei viel Schnee von selbst räumen:** Erreicht eine Decke „Räumen ab“ Prozent der Höchstmenge
+    (max. Deckenhöhe bzw. Max. Boden/Taskleiste), wird ein Einsatz gebucht. Es läuft immer nur die
+    eingestellte Zahl von Einsätzen zugleich, weitere Fenster warten der Reihe nach.
+  - **Fahrzeuggröße, Einsätze zugleich, Treffer bis Streik.**
+  - **Taskleiste und Boden räumen:** dort kommt der kleine Pflug (auch er wird eingeflogen).
+  - **Schnee anfassbar:** siehe „Schneebälle“. Aus = Schneefall nimmt nie einen Mausklick an.
+  - **Jetzt räumen:** sofort ein Einsatz am Fenster mit dem meisten Schnee (auch im Menü der
+    Schneeflocke und per `--raeumen`).
+- **Geräusche, Lautstärke:** siehe unten (Standard aus).
 - **Bei Vollbild pausieren:** Ist das aktive Fenster im Vollbild (Spiel, Video), wird der
   Schnee ausgeblendet und angehalten. Das kostet dann keine Leistung.
 - **Mit dem System starten:** siehe oben.
@@ -76,6 +94,14 @@ liest das laufende Programm sofort neu ein.
 | `wolke_liegen` | Prozent der Wolke, die unten liegen bleiben | 0 … 100 | 40 |
 | `boden_max` | höchste Schneedecke auf Boden und Taskleiste in px | 2 … 80 | 18 |
 | `vollbild_pausieren` | bei Vollbild pausieren | true/false | true |
+| `ton`, `lautstaerke` | Geräusche an, Lautstärke | true/false, 0 … 100 | false, 50 |
+| `raeumdienst` | von selbst räumen | true/false | true |
+| `raeumen_ab` | Prozent der Höchstmenge, ab denen geräumt wird | 30 … 100 | 80 |
+| `fahrzeug_groesse` | Größe von Hubschrauber und Fahrzeugen | 0,5 … 3 | 1 |
+| `einsaetze_gleichzeitig` | Einsätze zugleich, der Rest wartet | 1 … 3 | 1 |
+| `taskleiste_raeumen` | kleiner Pflug für Taskleiste und Boden | true/false | true |
+| `treffer_bis_streik` | Schneeball-Treffer, bis der Fahrer streikt | 1 … 10 | 3 |
+| `schnee_anfassbar` | Schneebälle mit der Maus formen | true/false | true |
 | `flockendetail` | Aussehen der Flocken | realistisch/einfach | realistisch |
 
 Der frühere Schlüssel `vor_fenstern` wird nicht mehr gelesen: Beim ersten Start einer neuen
@@ -91,7 +117,58 @@ Zeit fürs Zusammenstellen und Zeichnen eines Bildes und die Zahl der Ecken.
 
 `fps=60` sieht etwas flüssiger aus, kostet aber etwa doppelt so viel CPU (schneefall + KWin).
 
+## Räumdienst
+
+Ablauf eines Einsatzes (Zustandsautomat in `src/raeumdienst.cpp`, vom Zeichnen getrennt):
+
+1. **Anflug:** Der Hubschrauber kommt vom näheren Rand der Arbeitsfläche, das Fahrzeug hängt am
+   Seil und pendelt (gedämpftes Pendel). Er neigt sich mit der Beschleunigung.
+2. **Schweben und Absenken:** Über der Fenstermitte lässt die Winde das Fahrzeug herunter. Der
+   Abwind bläst Schnee unter dem Hubschrauber zur Seite und wirbelt Staub auf.
+3. **Aufsetzen und Ausklinken:** Das Fahrzeug federt ein, der Schnee darunter wird zur Seite
+   gedrückt. Der Hubschrauber zieht den Haken ein und wartet seitlich.
+4. **Räumen:** Schild senken, bis zur Kante schieben, zurücksetzen (mit Rückfahrwarner), wenden,
+   andere Seite. Vor dem Schild türmt sich der Wulst; was über die Fensterkante ragt, fällt als
+   Brocken hinunter und landet auf dem Fenster darunter oder dem Boden. Ist der Wulst voll,
+   rutscht der Überschuss am Schild vorbei und fällt vorn über die Kante. Liegt danach noch
+   merklich Schnee, gibt es bis zu zwei weitere Durchgänge.
+5. **Abholen:** Der Hubschrauber kommt zurück, lässt den Haken herunter, hängt das Fahrzeug an
+   und fliegt hinaus. Danach wird dasselbe Fenster frühestens nach 45 s wieder gebucht.
+
+- Wird das Fenster verschoben, fährt das Fahrzeug mit. Wird es **minimiert oder geschlossen**,
+  ist das Seil sofort dran und der Hubschrauber zieht das Fahrzeug weg; der Wulst fällt herunter.
+- **Pause und Vollbild:** Der Einsatz bleibt stehen (und verstummt) und läuft danach weiter.
+- Fenster, auf deren freie Oberkante das Fahrzeug nicht passt, werden nicht geräumt.
+- Die Schneemenge bleibt erhalten: Was geräumt wird, fällt nach unten. Nur am Bildschirmboden
+  ist der Schnee weg („vom Bildschirmrand geschoben“).
+
+### Schneebälle
+
+Auf Schnee drücken (Decke ab 6 px Höhe) und über den Schnee ziehen formt einen Ball, der dabei
+wächst – der Schnee fehlt danach in der Decke. Loslassen wirft ihn mit dem Schwung der Maus; er
+fliegt im Bogen, dreht sich und zerplatzt auf der nächsten Decke wieder zu Schnee. Ein Treffer
+am Fahrzeug lässt es wackeln, Schnee bleibt kleben. Nach `treffer_bis_streik` Treffern bleibt
+es stehen: Der Fahrer lehnt sich heraus, droht mit der Faust und schimpft (Sprechblase, mit Ton
+ein Murren). Nach sechs Sekunden räumt er weiter. Zwei weitere Treffer während des Streiks oder
+eine zweite Runde – dann fliegt er beleidigt ab und kommt zehn Minuten lang nicht wieder.
+Ein Klick auf das Fahrzeug stupst es nur an.
+
+**Eingaberegion:** Die Ebenen nehmen die Maus nur auf Schnee über 6 px Höhe und auf Fahrzeugen
+an (Wayland-Eingaberegion, alle halbe Sekunde angepasst), überall sonst gehen Klicks durch wie
+bisher. Folge: Ein Klick genau auf einen Schneestreifen (z. B. die untersten Pixel über der
+Taskleiste, wenn dort Schnee liegt) landet bei Schneefall und nicht im Fenster darunter. Stört
+das, „Schnee anfassbar“ abschalten.
+
 ## Aussehen
+
+- **Räumdienst:** Hubschrauber (Glaskanzel mit Reflex und Pilot, verwischte Rotorscheibe,
+  Heckrotor, Kufen, Positionslichter und Blitzer, Schatten auf dem Schnee), Pistenraupe
+  (umlaufende Kettenglieder und drehende Rollen passend zum Tempo, Schild am Schubarm, Kabine mit
+  Fahrer, Rundumleuchte, Auspuffrauch je nach Last, Schnee auf Dach und Haube, Federung) und der
+  kleine Pflug sind mehrteilige Vektormodelle. `src/fahrzeugbild.cpp` malt die Einzelteile einmal
+  je Monitor-Skalierung und Fahrzeuggröße in einen Atlas (scharf bei 1,5×), `src/raeumszene.cpp`
+  setzt sie in jedem Bild zusammen. Zum Begutachten ohne Bildschirm: `make szenenprobe`, dann
+  `build/szenenprobe <ordner> [dpr] [größe]`.
 
 - **Fallende Flocken:** Dendriten, Sternplättchen und Plättchen, prozedural erzeugt (16 Formen,
   jede Flocke dazu mit eigener Drehung, Größe und eigenem Taumeln). Weißer Kern, bläulich
@@ -119,8 +196,15 @@ Zeit fürs Zusammenstellen und Zeichnen eines Bildes und die Zahl der Ecken.
 - `src/kristall.{h,cpp}`: Formgenerator für die Schneekristalle, Rasterung und Atlas-Aufteilung (ohne Qt).
 - `src/flockenbild.{h,cpp}`: welches Bild, welche Größe, Deckkraft und Drehung eine Flocke bekommt.
 - `src/deckenform.{h,cpp}`: Form der Schneedecke fürs Zeichnen (Glättung, runde Enden, Überhang).
+- `src/raeumdienst.{h,cpp}`: Räumdienst und Schneebälle ohne GUI (Einsatz-Zustandsautomat,
+  Warteschlange, Seilpendel, Hubschrauber, Fahrzeug, Wulst, Bälle, Treffer und Streik,
+  Eingabeflächen, Klangereignisse).
+- `src/raeumszene.{h,cpp}`: setzt aus dem Zustand das Bild zusammen (Liste von Einzelteilen mit
+  Lage, Drehung, Maßstab; Wulst als Decke). Ohne Qt.
+- `src/fahrzeugbild.{h,cpp}`: malt den Fahrzeug-Atlas mit QPainter.
 - `src/overlay.{h,cpp}`: eine durchsichtige Layer-Shell-Ebene (Overlay) je Monitor.
-  Sie hat keine Tastatur und eine leere Eingaberegion, Klicks gehen also durch.
+  Sie hat keine Tastatur; die Eingaberegion ist leer oder umfasst nur anfassbaren Schnee und
+  Fahrzeuge, alle anderen Klicks gehen durch.
   Gezeichnet wird mit OpenGL in voller Gerätepixel-Auflösung (scharf bei 1,5×).
 - `src/app.{h,cpp}`: D-Bus-Dienst `org.schneefall` (Sitzungsbus), Monitore, Takt, Systemabschnitt.
 - `src/steuerfenster.{h,cpp}`: Steuerfenster.
@@ -152,7 +236,8 @@ cmake wird nicht gebraucht, es reicht ein Makefile mit pkg-config.
 ```
 cd ~/Schneefall
 ~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen
-~/.local/bin/testlauf 4G 300 make test         # QtTest: Kern, Aussehen, Steuerfenster + Test des KWin-Skripts (node)
+~/.local/bin/testlauf 4G 300 make test         # QtTest: Klang, Räumdienst, Kern, Aussehen, Steuerfenster + Test des KWin-Skripts (node)
+~/.local/bin/testlauf 4G 300 make test-raeumdienst   # nur Räumdienst und Schneebälle
 tests/rauchtest.sh                             # Live-Test der D-Bus-Schnittstelle (Sitzung nötig)
 make install                                   # schneefall-umschalten + Starter
 make kwin-skript                               # KWin-Skript installieren/aktualisieren und einschalten
@@ -183,6 +268,13 @@ rm -r ~/Schneefall                                                     # Quellen
 - Das Alter einer Decke zählt ab dem Start von Schneefall bzw. ab dem Öffnen/Wiederherstellen
   des Fensters; während einer Pause zählt es nicht weiter.
 
+- Räumdienst: Der Hubschrauber fliegt in globalen Koordinaten; über Lücken zwischen
+  unterschiedlich hohen Monitoren ist er kurz nicht zu sehen. Liegt ein Fenster dicht unter dem
+  oberen Bildschirmrand, schwebt er teilweise außerhalb des Bildes.
+- Viel Schnee, der auf einen Fleck fällt (Abwurf an der Kante), überschreitet dort die
+  Höchstmenge des unteren Fensters; der Überschuss fällt wie üblich an dessen Rand weiter.
+- Mausklicks auf anfassbaren Schnee erreichen das Fenster darunter nicht (siehe „Eingaberegion“).
+
 ## Geräusche (Teil C)
 
 Alle Geräusche (Hubschrauber, Dieselmotor, Rückfahrwarner, Schnee-Rutsch, Plumps, Schneeball-Wurf/-Treffer, Murren) werden
@@ -190,5 +282,8 @@ zur Laufzeit synthetisiert, es gibt keine Audiodateien. Standard: aus (`ton=aus`
 Schalter „Geräusche“ und Regler „Lautstärke“ im Steuerfenster. Ist der Ton aus oder lange still, wird das Audiogerät geschlossen.
 
 - `src/klang.{h,cpp}`: Klasse `Klang` mit `ereignis()`, `dauerklang()`, `dauerklangStopp()`.
+- Der Räumdienst meldet Rotor, Motor (Last = Schnee vor dem Schild) und Rückfahrwarner als
+  Dauerklänge, dazu Plumps (Aufsetzen, Ball auf Schnee), Rutsch (Abwurf an der Kante), Wurf,
+  Treffer und Murren (Streik). Bei Pause oder Vollbild werden alle Dauerklänge gestoppt.
 - `make klangprobe`, dann `build/klangprobe` (spielt alles kurz ab), `--wav datei.wav`, `--wav-ordner ordner` (offline rendern), `--cpu` (Last messen).
 - Tests: `make test-klang`.

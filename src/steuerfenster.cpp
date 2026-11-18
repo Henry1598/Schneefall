@@ -106,8 +106,44 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     m_wolkeLiegen = regler(QStringLiteral("Wolke bleibt liegen"), 0, 100, 1.0, QStringLiteral(" %"), fg, 5,
                            QStringLiteral("So viel der Schneewolke landet unten, der Rest löst sich auf."));
     m_bodenMax = regler(QStringLiteral("Max. Boden/Taskleiste"), 2, 80, 1.0, QStringLiteral(" px"), fg, 6);
-    haupt->addWidget(fensterGruppe);
-    m_alle = {&m_menge, &m_wind, &m_groesse, &m_hoehe, &m_fall, &m_schwelle, &m_rutschAb, &m_rutschTempo, &m_wolkeDauer, &m_wolkeLiegen, &m_bodenMax};
+
+    // Gruppe „Räumdienst“: Hubschrauber bringt ein Räumfahrzeug, Schneebälle
+    auto *raeumGruppe = new QGroupBox(QStringLiteral("Räumdienst"), this);
+    auto *rg = new QGridLayout(raeumGruppe);
+    m_raeumAn = new QCheckBox(QStringLiteral("Bei viel Schnee von selbst räumen"), this);
+    m_raeumAn->setObjectName(QStringLiteral("raeumdienst"));
+    m_raeumAn->setToolTip(QStringLiteral("Liegt auf einem Fenster genug Schnee, fliegt ein Hubschrauber ein Räumfahrzeug ein. "
+                                         "Es schiebt den Schnee über die Fensterkante und wird wieder abgeholt."));
+    rg->addWidget(m_raeumAn, 0, 0, 1, 3);
+    m_raeumenAb = regler(QStringLiteral("Räumen ab"), 30, 100, 1.0, QStringLiteral(" %"), rg, 1,
+                         QStringLiteral("Anteil der Höchstmenge (max. Deckenhöhe), ab dem ein Einsatz gebucht wird."));
+    m_fzGroesse = regler(QStringLiteral("Fahrzeuggröße"), 5, 30, 0.1, QStringLiteral("×"), rg, 2);
+    m_gleichzeitig = regler(QStringLiteral("Einsätze zugleich"), 1, 3, 1.0, QString(), rg, 3,
+                            QStringLiteral("Weitere Fenster warten der Reihe nach."));
+    m_trefferStreik = regler(QStringLiteral("Treffer bis Streik"), 1, 10, 1.0, QString(), rg, 4,
+                             QStringLiteral("Nach so vielen Schneebällen bleibt das Fahrzeug stehen und der Fahrer beschwert sich."));
+    m_taskleiste = new QCheckBox(QStringLiteral("Taskleiste und Boden räumen (kleiner Pflug)"), this);
+    m_taskleiste->setObjectName(QStringLiteral("taskleiste_raeumen"));
+    rg->addWidget(m_taskleiste, 5, 0, 1, 3);
+    m_anfassbar = new QCheckBox(QStringLiteral("Schnee anfassbar (Schneebälle formen)"), this);
+    m_anfassbar->setObjectName(QStringLiteral("schnee_anfassbar"));
+    m_anfassbar->setToolTip(QStringLiteral("Auf Schnee drücken und ziehen formt einen Schneeball, loslassen wirft ihn. Dazu nimmt Schneefall "
+                                           "Mausklicks auf Schnee (ab 6 px Höhe) und auf Fahrzeugen an. Aus: alle Klicks gehen durch wie früher."));
+    rg->addWidget(m_anfassbar, 6, 0, 1, 3);
+    auto *jetzt = new QPushButton(QIcon::fromTheme(QStringLiteral("go-jump")), QStringLiteral("Jetzt räumen"), this);
+    jetzt->setObjectName(QStringLiteral("jetzt_raeumen"));
+    jetzt->setToolTip(QStringLiteral("Startet sofort einen Einsatz am Fenster mit dem meisten Schnee."));
+    rg->addWidget(jetzt, 7, 0, 1, 3);
+    rg->setRowStretch(8, 1);
+    connect(jetzt, &QPushButton::clicked, m_app, [this] { m_app->Raeumen(); });
+    for (QCheckBox *c : {m_raeumAn, m_taskleiste, m_anfassbar}) connect(c, &QCheckBox::toggled, this, [this] { uebernehmen(); });
+
+    auto *gruppen = new QHBoxLayout;
+    gruppen->addWidget(fensterGruppe);
+    gruppen->addWidget(raeumGruppe);
+    haupt->addLayout(gruppen);
+    m_alle = {&m_menge, &m_wind, &m_groesse, &m_hoehe, &m_fall, &m_schwelle, &m_rutschAb, &m_rutschTempo, &m_wolkeDauer, &m_wolkeLiegen, &m_bodenMax,
+              &m_raeumenAb, &m_fzGroesse, &m_gleichzeitig, &m_trefferStreik};
 
     auto *abschuetteln = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-clear-all")), QStringLiteral("Schnee abschütteln"), this);
     haupt->addWidget(abschuetteln);
@@ -175,6 +211,13 @@ void Steuerfenster::ausEinstellungen() {
     setze(m_wolkeDauer, p.sim.wolkeDauer);
     setze(m_wolkeLiegen, p.sim.wolkeLiegen * 100);
     setze(m_bodenMax, p.sim.bodenMax);
+    m_raeumAn->setChecked(p.raeum.an);
+    m_taskleiste->setChecked(p.raeum.taskleiste);
+    m_anfassbar->setChecked(p.raeum.anfassbar);
+    setze(m_raeumenAb, p.raeum.raeumenAb * 100);
+    setze(m_fzGroesse, p.raeum.fahrzeugGroesse);
+    setze(m_gleichzeitig, p.raeum.gleichzeitig);
+    setze(m_trefferStreik, p.raeum.trefferBisStreik);
     m_setzt = false;
     uebernehmen(); // nur Beschriftungen, da Werte gleich
 }
@@ -183,7 +226,7 @@ void Steuerfenster::uebernehmen() {
     for (Regler *r : m_alle) {
         if (!r->slider) continue; // noch im Aufbau
         double w = r->slider->value() * r->faktor;
-        QString t = QString::number(w, 'g', 4) + r->einheit;
+        QString t = QString::number(w, 'g', 6) + r->einheit;
         if (r == &m_wind) t = (w < 0 ? QStringLiteral("← ") : w > 0 ? QStringLiteral("→ ") : QString()) + QString::number(std::abs(w)) + r->einheit;
         r->wert->setText(t);
     }
@@ -212,6 +255,13 @@ void Steuerfenster::uebernehmen() {
     lies(m_wolkeDauer, p.sim.wolkeDauer);
     lies(m_wolkeLiegen, p.sim.wolkeLiegen, 100.0);
     lies(m_bodenMax, p.sim.bodenMax);
+    p.raeum.an = m_raeumAn->isChecked();
+    p.raeum.taskleiste = m_taskleiste->isChecked();
+    p.raeum.anfassbar = m_anfassbar->isChecked();
+    lies(m_raeumenAb, p.raeum.raeumenAb, 100.0);
+    lies(m_fzGroesse, p.raeum.fahrzeugGroesse);
+    p.raeum.gleichzeitig = m_gleichzeitig.slider->value();
+    p.raeum.trefferBisStreik = m_trefferStreik.slider->value();
     if (einstellungenAlsText(p) == einstellungenAlsText(alt)) return;
     m_app->einstellungenAendern(p);
 }

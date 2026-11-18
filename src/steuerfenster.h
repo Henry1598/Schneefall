@@ -33,6 +33,9 @@ private:
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
     // Gruppe „Fenster“
     Regler m_schwelle, m_rutschAb, m_rutschTempo, m_wolkeDauer, m_wolkeLiegen, m_bodenMax;
+    // Gruppe „Räumdienst“
+    QCheckBox *m_raeumAn, *m_taskleiste, *m_anfassbar;
+    Regler m_raeumenAb, m_fzGroesse, m_gleichzeitig, m_trefferStreik;
     std::vector<Regler *> m_alle;
     bool m_setzt = false;
 };

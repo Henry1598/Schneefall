@@ -22,8 +22,9 @@ private slots:
         app.Steuerfenster();
         auto *f = findChild();
         QVERIFY(f);
+        if (qEnvironmentVariableIsSet("STEUERFENSTER_BILD")) f->grab().save(qEnvironmentVariable("STEUERFENSTER_BILD")); // zum Ansehen des Aufbaus
         const auto slider = f->findChildren<QSlider *>();
-        QCOMPARE(slider.size(), 12);   // 5 oben + Lautstärke, 6 in der Gruppe „Fenster“
+        QCOMPARE(slider.size(), 16);   // 5 oben + Lautstärke, 6 in der Gruppe „Fenster“, 4 im „Räumdienst“
         QCOMPARE(slider[3]->maximum(), 80);   // max. Deckenhöhe bis 80 px
         // jeden Regler einmal ganz durchziehen
         for (QSlider *s : slider)
@@ -68,6 +69,27 @@ private slots:
         QCOMPARE(app.einstellungen().sim.wolkeDauer, 12.0);
         QCOMPARE(app.einstellungen().sim.wolkeLiegen, 0.25);
         QCOMPARE(app.einstellungen().sim.bodenMax, 40.0);
+        // Gruppe „Räumdienst“
+        slider[12]->setValue(60);  // Räumen ab 60 %
+        slider[13]->setValue(15);  // Fahrzeuggröße 1,5
+        slider[14]->setValue(2);   // zwei Einsätze zugleich
+        slider[15]->setValue(5);   // Treffer bis Streik
+        QCOMPARE(app.einstellungen().raeum.raeumenAb, 0.6);
+        QCOMPARE(app.einstellungen().raeum.fahrzeugGroesse, 1.5);
+        QCOMPARE(app.einstellungen().raeum.gleichzeitig, 2);
+        QCOMPARE(app.einstellungen().raeum.trefferBisStreik, 5);
+        for (const char *name : {"raeumdienst", "taskleiste_raeumen", "schnee_anfassbar"}) {
+            auto *c = f->findChild<QCheckBox *>(name);
+            QVERIFY2(c && c->isChecked(), name);   // Standard: an
+            c->click();
+        }
+        QCOMPARE(app.einstellungen().raeum.an, false);
+        QCOMPARE(app.einstellungen().raeum.taskleiste, false);
+        QCOMPARE(app.einstellungen().raeum.anfassbar, false);
+        // „Jetzt räumen“ ohne Schnee: nichts zu tun, aber auch kein Absturz
+        QVERIFY(f->findChild<QPushButton *>("jetzt_raeumen"));
+        f->findChild<QPushButton *>("jetzt_raeumen")->click();
+        QCOMPARE(app.Raeumen(), QString());
         // Flockendetail: Standard realistisch, umstellbar auf einfach
         auto *detail = f->findChild<QComboBox *>("flockendetail");
         QVERIFY(detail);
@@ -97,7 +119,9 @@ private slots:
             QByteArray t = d.readAll();
             return t.contains("menge=2\n") && t.contains("wind=-30\n") && t.contains("fenstermodus=fest\n") && !t.contains("vor_fenstern")
                 && t.contains("rutsch_ab_minuten=3\n") && t.contains("wolke_liegen=25\n") && t.contains("boden_max=40\n")
-                && t.contains("flockendetail=einfach\n");
+                && t.contains("flockendetail=einfach\n") && t.contains("raeumen_ab=60\n") && t.contains("fahrzeug_groesse=1.5\n")
+                && t.contains("einsaetze_gleichzeitig=2\n") && t.contains("treffer_bis_streik=5\n") && t.contains("raeumdienst=false\n")
+                && t.contains("taskleiste_raeumen=false\n") && t.contains("schnee_anfassbar=false\n") && t.contains("lautstaerke=70\n");
         }(), 3000);
     }
     void dateiAenderungKommtImFensterAn() {
@@ -128,7 +152,9 @@ private slots:
         const QByteArray t = d.readAll();
         for (const char *z : {"menge=2\n", "wind=0\n", "flockengroesse=4\n", "max_deckenhoehe=18\n", "fallgeschwindigkeit=23\n", "fps=30\n",
                               "an=true\n", "vollbild_pausieren=true\n", "flockendetail=realistisch\n", "fenstermodus=fest\n",
-                              "schuetteln_schwelle=15000\n", "rutsch_ab_minuten=10\n", "boden_max=18\n"})
+                              "schuetteln_schwelle=15000\n", "rutsch_ab_minuten=10\n", "boden_max=18\n", "ton=false\n", "raeumdienst=true\n",
+                              "raeumen_ab=80\n", "fahrzeug_groesse=1\n", "einsaetze_gleichzeitig=1\n", "taskleiste_raeumen=true\n",
+                              "treffer_bis_streik=3\n", "schnee_anfassbar=true\n"})
             QVERIFY2(t.contains(z), z);
         QVERIFY(!t.contains("vor_fenstern"));
         QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Fest);

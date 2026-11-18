@@ -1,5 +1,6 @@
 #include "overlay.h"
 #include <LayerShellQt/Window>
+#include <QMouseEvent>
 #include <QScreen>
 #include <algorithm>
 #include <cmath>
@@ -75,8 +76,9 @@ const Atlas &atlasFuer(double dpr) {
 }
 } // namespace
 
-Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realistisch)
-    : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate), m_bildschirm(bildschirm), m_sim(sim), m_realistisch(realistisch) {
+Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realistisch, const Szene *szene, const double *fahrzeugGroesse)
+    : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate), m_bildschirm(bildschirm), m_sim(sim), m_realistisch(realistisch), m_szene(szene),
+      m_fahrzeugGroesse(fahrzeugGroesse) {
     QSurfaceFormat f = format();
     f.setAlphaBufferSize(8);
     f.setSwapInterval(0); // Takt kommt vom eigenen Timer, nicht im Swap blockieren
@@ -105,6 +107,7 @@ Overlay::~Overlay() {
     makeCurrent();
     m_vbo.destroy();
     if (m_atlasTextur) glDeleteTextures(1, &m_atlasTextur);
+    if (m_fahrzeugTextur) glDeleteTextures(1, &m_fahrzeugTextur);
     delete m_flockenProg;
     delete m_deckenProg;
     doneCurrent();
@@ -130,6 +133,8 @@ void Overlay::initializeGL() {
     m_vbo.setUsagePattern(QOpenGLBuffer::StreamDraw);
     m_atlasTextur = 0; // neuer Kontext: Textur neu anlegen
     m_atlasDpr = 0;
+    m_fahrzeugTextur = 0;
+    m_fahrzeugDpr = 0;
 }
 
 // Lädt den Atlas für diese Skalierung als Textur (einmal, und erneut, wenn sich die Skalierung ändert)
@@ -146,6 +151,90 @@ void Overlay::atlasLaden(double dpr) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, a.bild.breite, a.bild.hoehe, 0, GL_RGBA, GL_UNSIGNED_BYTE, a.bild.rgba.data());
+}
+
+// Fahrzeug-Atlas für Skalierung und Fahrzeuggröße (erst beim ersten Einsatz, neu bei geänderter Größe)
+void Overlay::fahrzeugAtlasLaden(double dpr) {
+    const double mass = m_fahrzeugGroesse ? *m_fahrzeugGroesse : 1.0;
+    if (m_fahrzeugTextur && dpr == m_fahrzeugDpr && mass == m_fahrzeugMass) return;
+    const FahrzeugAtlas &a = fahrzeugAtlasFuer(dpr, mass);
+    m_felder = a.felder;
+    m_fahrzeugBreite = a.bild.width();
+    m_fahrzeugHoehe = a.bild.height();
+    m_fahrzeugDpr = dpr;
+    m_fahrzeugMass = mass;
+    if (!m_fahrzeugTextur) glGenTextures(1, &m_fahrzeugTextur);
+    glBindTexture(GL_TEXTURE_2D, m_fahrzeugTextur);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    // Zeilen von QImage sind auf 4 Byte ausgerichtet; RGBA hat ohnehin 4 Byte je Pixel
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, a.bild.width(), a.bild.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, a.bild.constBits());
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+}
+
+// Räumdienst: jedes Teil ist ein gedrehtes, evtl. gespiegeltes Viereck aus dem Fahrzeug-Atlas
+void Overlay::fahrzeugeSammeln(float bx, float by, float bw, float bh) {
+    const float aw = float(m_fahrzeugBreite), ah = float(m_fahrzeugHoehe);
+    for (const Zeichenteil &z : m_szene->teile) {
+        if (z.teil >= m_felder.size() || z.alpha <= 0.004f) continue;
+        const FahrzeugFeld &f = m_felder[z.teil];
+        const float reich = (f.bw + f.bh) * std::max(std::abs(z.sx), std::abs(z.sy));
+        if (z.x + reich < bx || z.x - reich > bx + bw || z.y + reich < by || z.y - reich > by + bh) continue;
+        const float c = std::cos(z.winkel), s = std::sin(z.winkel);
+        const float x0 = -f.px * z.sx, x1 = (f.bw - f.px) * z.sx, y0 = -f.py * z.sy, y1 = (f.bh - f.py) * z.sy;
+        const float u0 = (f.x + 0.5f) / aw, u1 = (f.x + f.w - 0.5f) / aw, v0 = (f.y + 0.5f) / ah, v1 = (f.y + f.h - 0.5f) / ah;
+        const float e[4][5] = {{z.x + c * x0 - s * y0, z.y + s * x0 + c * y0, u0, v0, z.alpha}, {z.x + c * x1 - s * y0, z.y + s * x1 + c * y0, u1, v0, z.alpha},
+                               {z.x + c * x0 - s * y1, z.y + s * x0 + c * y1, u0, v1, z.alpha}, {z.x + c * x1 - s * y1, z.y + s * x1 + c * y1, u1, v1, z.alpha}};
+        viereck(e);
+    }
+}
+
+// Schneewulst vor dem Schild: gezeichnet wie eine Decke
+void Overlay::haufenSammeln(float bx, float by, float bw, float bh, double dpr, float weich) {
+    if (!m_szene) return;
+    for (const Decke &h : m_szene->haufen) deckeSammeln(h, bx, by, bw, bh, dpr, weich);
+}
+
+// Eingaberegion: nur dort nimmt die Ebene die Maus an. Leer = durchsichtig für Eingaben (wie bisher).
+// Reihenfolge wichtig: erst die Maske setzen, dann die Durchlässigkeit aufheben – nie ist die ganze Fläche „dicht“.
+void Overlay::eingabeSetzen(const std::vector<Rechteck> &flaechen) {
+    const QRect g = m_bildschirm->geometry();
+    QRegion region;
+    for (const Rechteck &r : flaechen) {
+        const QRect q = QRectF(r.x, r.y, r.w, r.h).toAlignedRect().intersected(g);
+        if (!q.isEmpty()) region += q.translated(-g.topLeft());
+    }
+    if (region == m_eingabe) return;
+    m_eingabe = region;
+    if (region.isEmpty()) {
+        setFlag(Qt::WindowTransparentForInput, true);
+    } else {
+        setMask(region);
+        setFlag(Qt::WindowTransparentForInput, false);
+    }
+}
+
+void Overlay::mousePressEvent(QMouseEvent *e) {
+    if (e->button() != Qt::LeftButton || !mausziel) return;
+    m_gedrueckt = true;
+    const QPointF p = e->position() + m_bildschirm->geometry().topLeft();
+    mausziel(0, p.x(), p.y());
+}
+
+void Overlay::mouseMoveEvent(QMouseEvent *e) {
+    if (!m_gedrueckt || !mausziel) return;
+    const QPointF p = e->position() + m_bildschirm->geometry().topLeft();
+    mausziel(1, p.x(), p.y());
+}
+
+void Overlay::mouseReleaseEvent(QMouseEvent *e) {
+    if (e->button() != Qt::LeftButton || !m_gedrueckt || !mausziel) return;
+    m_gedrueckt = false;
+    const QPointF p = e->position() + m_bildschirm->geometry().topLeft();
+    mausziel(2, p.x(), p.y());
 }
 
 // Hängt ein Viereck als zwei Dreiecke an: Ecken in der Reihenfolge links oben, rechts oben,
@@ -284,7 +373,14 @@ void Overlay::paintGL() {
     }
     m_daten.resize(m_deckenEnde);
     brockenSammeln(bx, by, bw, bh, dpr, weich);
+    haufenSammeln(bx, by, bw, bh, dpr, weich);
     const size_t deckenEnde = m_daten.size();
+    // Räumdienst (Hubschrauber, Fahrzeuge, Bälle, Staub): hinter den fallenden Flocken, vor den Decken
+    if (m_szene && !m_szene->teile.empty()) {
+        fahrzeugAtlasLaden(dpr);
+        fahrzeugeSammeln(bx, by, bw, bh);
+    }
+    const size_t fahrzeugEnde = m_daten.size();
     flockenSammeln(bx, by, bw, bh);
     const qint64 gesammelt = stoppuhr.nsecsElapsed();
     m_sammelNs += gesammelt;
@@ -296,7 +392,7 @@ void Overlay::paintGL() {
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // vormultipliziertes Alpha
     m_vbo.bind();
     m_vbo.allocate(m_daten.data(), int(m_daten.size() * sizeof(float)));
-    const GLint deckenEcken = GLint(deckenEnde / 5), alleEcken = GLint(m_daten.size() / 5);
+    const GLint deckenEcken = GLint(deckenEnde / 5), fahrzeugEcken = GLint(fahrzeugEnde / 5), alleEcken = GLint(m_daten.size() / 5);
     auto zeichnen = [&](QOpenGLShaderProgram *p, GLenum art, GLint von, GLint anzahl) {
         p->setUniformValue("bild", bx, by, bw, bh);
         p->enableAttributeArray(0);
@@ -316,12 +412,19 @@ void Overlay::paintGL() {
         m_deckenProg->setUniformValue("zeit", float((m_uhr.elapsed() % 3600000) / 1000.0));
         zeichnen(m_deckenProg, GL_TRIANGLE_STRIP, 0, deckenEcken);
     }
-    if (alleEcken > deckenEcken) {
+    if (fahrzeugEcken > deckenEcken) {
+        m_flockenProg->bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_fahrzeugTextur);
+        m_flockenProg->setUniformValue("atlas", 0);
+        zeichnen(m_flockenProg, GL_TRIANGLES, deckenEcken, fahrzeugEcken - deckenEcken);
+    }
+    if (alleEcken > fahrzeugEcken) {
         m_flockenProg->bind();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
         m_flockenProg->setUniformValue("atlas", 0);
-        zeichnen(m_flockenProg, GL_TRIANGLES, deckenEcken, alleEcken - deckenEcken);
+        zeichnen(m_flockenProg, GL_TRIANGLES, fahrzeugEcken, alleEcken - fahrzeugEcken);
     }
     m_vbo.release();
     m_zeichenNs += stoppuhr.nsecsElapsed() - gesammelt;

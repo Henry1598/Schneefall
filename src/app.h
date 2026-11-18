@@ -9,6 +9,8 @@
 #include <QTimer>
 #include "einstellungen.h"
 #include "klang.h"
+#include "raeumdienst.h"
+#include "raeumszene.h"
 #include "schnee.h"
 
 class Overlay;
@@ -41,6 +43,9 @@ public Q_SLOTS:
     Q_SCRIPTABLE void Abschuetteln();
     Q_SCRIPTABLE QString Status();
     Q_SCRIPTABLE QString Fensterliste(); // Diagnose: zuletzt vom KWin-Skript empfangene Liste
+    Q_SCRIPTABLE QString Raeumen();      // „Jetzt räumen“: Einsatz am Fenster mit dem meisten Schnee, gibt dessen ID zurück
+    // wirft einen Schneeball (globale Koordinaten, px/s, Menge bis 220) – zum Spielen und Testen ohne Maus
+    Q_SCRIPTABLE void Werfen(double x, double y, double vx, double vy, double menge);
 
 private:
     void bildschirmHinzu(QScreen *s);
@@ -51,10 +56,17 @@ private:
     void laden();
     void speichern();
     void trayAufbauen();
+    void klaengeWeitergeben();
+    void eingabeAktualisieren();
+    void maus(int art, double x, double y); // 0 = gedrückt, 1 = bewegt, 2 = losgelassen
 
     schnee::Simulation m_sim;
     schnee::Programmeinstellungen m_einst;
     Klang m_klang;
+    schnee::Raeumdienst m_raeum{m_sim};
+    schnee::Szene m_szene;        // was vom Räumdienst zu zeichnen ist (einmal je Takt für alle Ebenen)
+    QElapsedTimer m_mausUhr;
+    int m_eingabeTakt = 0;
     std::vector<schnee::Fenster> m_fenster;
     QString m_letzteListe;
     QHash<QScreen *, Overlay *> m_ebenen;
