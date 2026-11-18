@@ -10,6 +10,7 @@
 #include <QRegion>
 #include <functional>
 #include <vector>
+#include "bildtakt.h"
 #include "deckenform.h"
 #include "kristall.h"
 #include "fahrzeugbild.h"
@@ -28,6 +29,10 @@ public:
     // Lastmessung seit dem letzten Aufruf (für --status): Zeit fürs Zusammenstellen und fürs Zeichnen, Ecken je Bild
     struct Last { double sammelnMs = 0, zeichnenMs = 0; int ecken = 0; };
     Last lastAbholen();
+    // Abstände der gezeichneten Bilder seit dem letzten Abholen (für --status)
+    schnee::Bildzeiten::Bericht bildzeitenAbholen() { return m_bildzeiten.abholen(); }
+    double sollAbstand() const { return m_bildzeiten.soll(); }
+    void setzeSollAbstand(double s) { m_bildzeiten.setzeSoll(s); }
     // Flächen (global logisch), in denen die Ebene Mausklicks annimmt; leer = alles klickt durch
     void eingabeSetzen(const std::vector<schnee::Rechteck> &flaechen);
     // Maus über Schnee oder Fahrzeug: art 0 = gedrückt, 1 = bewegt, 2 = losgelassen; globale logische Koordinaten
@@ -81,4 +86,5 @@ private:
     float m_deckenFuer[5] = {0, 0, 0, 0, 0}; // Monitorfläche und Skalierung der gespeicherten Ecken
     qint64 m_sammelNs = 0, m_zeichenNs = 0, m_eckenSumme = 0;
     int m_bilder = 0;
+    schnee::Bildzeiten m_bildzeiten;
 };

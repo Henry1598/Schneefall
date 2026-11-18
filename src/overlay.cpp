@@ -350,6 +350,7 @@ Overlay::Last Overlay::lastAbholen() {
 void Overlay::paintGL() {
     QElapsedTimer stoppuhr;
     stoppuhr.start();
+    m_bildzeiten.bild(uhrSekunden());
     const qreal dpr = devicePixelRatio();
     glViewport(0, 0, int(std::lround(width() * dpr)), int(std::lround(height() * dpr)));
     glClearColor(0, 0, 0, 0);

@@ -32,6 +32,9 @@ $(B)/kristall.o: src/kristall.cpp src/kristall.h | $(B)
 $(B)/deckenform.o: src/deckenform.cpp src/deckenform.h src/schnee.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(B)/bildtakt.o: src/bildtakt.cpp src/bildtakt.h | $(B)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(B)/flockenbild.o: src/flockenbild.cpp src/flockenbild.h src/schnee.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -44,13 +47,13 @@ $(B)/klang.o: src/klang.cpp src/klang.h | $(B)
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h | $(B)
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -Isrc -c $< -o $@
 
-$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o $(RAEUM_O)
+$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(RAEUM_O)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(QT_LIBS) $(MM_LIBS) $(LSQ_LIBS)
 
 $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
@@ -65,11 +68,20 @@ $(B)/test_bild.moc: tests/test_bild.cpp | $(B)
 $(B)/test_bild: tests/test_bild.cpp $(B)/test_bild.moc src/kristall.h src/deckenform.h src/flockenbild.h $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_bild.cpp $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
+$(B)/test_bildtakt.moc: tests/test_bildtakt.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_bildtakt: tests/test_bildtakt.cpp $(B)/test_bildtakt.moc src/bildtakt.h src/flockenbild.h $(B)/bildtakt.o $(B)/flockenbild.o $(B)/einstellungen.o $(B)/schnee.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_bildtakt.cpp $(B)/bildtakt.o $(B)/flockenbild.o $(B)/einstellungen.o $(B)/schnee.o -o $@ $(TEST_LIBS)
+
+test-bildtakt: $(B)/test_bildtakt
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_bildtakt
+
 $(B)/test_steuerfenster.moc: tests/test_steuerfenster.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o $(RAEUM_O)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o $(RAEUM_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(RAEUM_O)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(RAEUM_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
 
 # ---- Räumdienst (Teil B) ----
 $(B)/ansicht3d.o: src/ansicht3d.cpp src/ansicht3d.h | $(B)
@@ -120,12 +132,13 @@ klangprobe: $(B)/klangprobe
 test-klang: $(B)/test_klang
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 
-test: $(B)/test_klang $(B)/test_ansicht $(B)/test_raeumdienst $(B)/test_schnee $(B)/test_bild $(B)/test_steuerfenster
+test: $(B)/test_klang $(B)/test_ansicht $(B)/test_raeumdienst $(B)/test_schnee $(B)/test_bild $(B)/test_bildtakt $(B)/test_steuerfenster
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_ansicht
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_raeumdienst
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_schnee
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_bild
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_bildtakt
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerfenster
 	node tests/test_kwin.js
 
@@ -138,7 +151,7 @@ kwin-skript:
 clean:
 	rm -rf $(B)
 
-.PHONY: szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
+.PHONY: test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
 
 # Befehl schneefall-umschalten und Desktop-Starter für den aktuellen Benutzer
 install: all

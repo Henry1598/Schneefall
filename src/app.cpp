@@ -45,6 +45,16 @@ QIcon flockenSymbol() {
     Q_UNUSED(thema);
     return icon;
 }
+// eine Zeile Bildzeiten für --status: Monitorrate, Soll, gemessene Bilder/s, Abstände, Jitter, verpasste Bilder, Verteilung
+QString bildzeitenText(double hz, double soll, const Bildzeiten::Bericht &z) {
+    QStringList stufen;
+    for (int n : z.stufen) stufen << QString::number(n);
+    return QStringLiteral("hz=%1 soll_ms=%2 bilder=%3 fps=%4 abstand_ms=%5 jitter_ms=%6 p50=%7 p95=%8 p99=%9 max=%10 verpasst=%11 "
+                          "verteilung[<0.5|0.5-0.9|0.9-1.1|1.1-1.5|1.5-2.5|>2.5]=%12")
+        .arg(hz, 0, 'f', 2).arg(soll * 1000, 0, 'f', 2).arg(z.bilder).arg(z.fps, 0, 'f', 1).arg(z.mittelMs, 0, 'f', 2)
+        .arg(z.jitterMs, 0, 'f', 2).arg(z.p50Ms, 0, 'f', 2).arg(z.p95Ms, 0, 'f', 2).arg(z.p99Ms, 0, 'f', 2).arg(z.maxMs, 0, 'f', 2)
+        .arg(z.verpasst).arg(stufen.join(QLatin1Char('|')));
+}
 } // namespace
 
 App::App() {
@@ -300,12 +310,15 @@ QString App::Status() {
     QStringList b;
     for (auto it = m_ebenen.cbegin(); it != m_ebenen.cend(); ++it) {
         const Overlay::Last l = it.value()->lastAbholen();
+        it.value()->setzeSollAbstand(1.0 / m_einst.fps);
+        const Bildzeiten::Bericht z = it.value()->bildzeitenAbholen();
         b << QStringLiteral("%1 %2x%3+%4+%5 dpr=%6 sichtbar=%7 sammeln_ms=%8 zeichnen_ms=%9 ecken=%10")
                  .arg(it.key()->name())
                  .arg(it.key()->geometry().width()).arg(it.key()->geometry().height())
                  .arg(it.key()->geometry().x()).arg(it.key()->geometry().y())
                  .arg(it.value()->devicePixelRatio()).arg(it.value()->isVisible())
-                 .arg(l.sammelnMs, 0, 'f', 3).arg(l.zeichnenMs, 0, 'f', 3).arg(l.ecken);
+                 .arg(l.sammelnMs, 0, 'f', 3).arg(l.zeichnenMs, 0, 'f', 3).arg(l.ecken)
+          + QLatin1Char(' ') + bildzeitenText(it.key()->refreshRate(), it.value()->sollAbstand(), z);
     }
     int decken = 0;
     double schnee = 0;
