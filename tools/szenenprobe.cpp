@@ -7,9 +7,11 @@
 #include <QPainterPath>
 #include <cmath>
 #include <cstdio>
+#include "blasen.h"
 #include "fahrzeugbild.h"
 #include "raeumdienst.h"
 #include "raeumszene.h"
+#include "sprueche.h"
 
 using namespace schnee;
 
@@ -71,6 +73,19 @@ static void bild(const QString &datei, const Simulation &sim, const Raeumdienst 
         p.translate(-f.px, -f.py);
         p.setOpacity(z.alpha);
         p.drawImage(QRectF(0, 0, f.bw, f.bh), a.bild, QRectF(f.x, f.y, f.w, f.h));
+        p.restore();
+    }
+    static Blasenpool blasen;
+    blasen.bildBeginn();
+    for (const Blasenbild &b : sz.blasen) {
+        const bool gespiegelt = b.x + Blasenpool::PLATZ_BREITE * b.skala > ausschnitt.right();
+        const Blasenfeld f = blasen.feld(b.text, gespiegelt, dpr * b.skala);
+        p.save();
+        p.translate(b.x, b.y);
+        p.scale(b.skala * b.mass, b.skala * b.mass);
+        p.translate(-f.px, -f.py);
+        p.setOpacity(b.alpha);
+        p.drawImage(QRectF(0, 0, f.bw, f.bh), blasen.bild(), QRectF(f.x, f.y, f.w, f.h));
         p.restore();
     }
     p.setBrush(Qt::white);
@@ -136,6 +151,10 @@ int main(int argc, char **argv) {
     re.an = false;
     re.fahrzeugGroesse = groesse;
     rd.setEinstellungen(re);
+    // die echten Sprüche (Ausdrucksweise wie in der Voreinstellung)
+    rd.setSpruchquelle([](Redner wer, Redeanlass anlass, int zahl) {
+        return Sprueche::instanz().waehleBeiTreffer(Sprecher(int(wer)), Anlass(int(anlass)), zahl).toStdString();
+    });
     sim.setBildschirme({{0, 0, 1400, 800}});
     Fenster f;
     f.id = "a"; f.r = {300, 420, 800, 300}; f.stapel = 1;
@@ -181,6 +200,10 @@ int main(int argc, char **argv) {
     bild(ordner + "/08_streik.png", sim, rd, zeit, dpr, nah());
     laufen(0.15);
     bild(ordner + "/08_streik2.png", sim, rd, zeit, dpr, nah());
+    // der Pilot bekommt auch einen ab
+    rd.werfen(E.heli.x, E.heli.y - 22, 0, 0, 90);
+    laufen(0.4);
+    bild(ordner + "/08_pilot_treffer.png", sim, rd, zeit, dpr, QRectF(E.heli.x - 210, E.heli.y - 130, 420, 230));
     bis([&] { return E.fz.phase == FahrPhase::Zurueck; });
     laufen(0.8);
     bild(ordner + "/09_zurueck.png", sim, rd, zeit, dpr, nah());

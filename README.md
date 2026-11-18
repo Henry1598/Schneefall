@@ -178,13 +178,45 @@ Der Atlas entsteht im Hintergrund auf mehreren Kernen. Zum Begutachten: `build/s
 schreibt `ansichten_*.png` (zwölf Gierwinkel je Fahrzeug), `wende_*.png`, `pflug_wende_*.png` und
 `heli_giert_*.png`; live hilft `qdbus6 org.schneefall / org.schneefall.Zeitlupe 0.12` (1 = wieder normal).
 
+### Schieben
+
+Der Schnee vor dem Schild staucht sich zu einem wälzenden Wulst mit Buckeln und aufliegenden Brocken, die
+langsam nach vorn rollen; das Schild wirft seinen Schatten darauf. Pulver stiebt am Schild und an den
+Ketten auf, kleine Bröckchen kullern den Wulst hinunter. Hinter dem Fahrzeug bleibt eine dünne,
+festgefahrene Restschicht mit Kettenabdruck liegen (knapp 1 px, sie verblasst beim Abholen bzw. schneit
+wieder zu). An der Fensterkante hängt der Schnee erst über und bricht dann in zwei bis vier ungleichen
+Schollen ab – mal früher, mal später. Die Schollen drehen sich im Fallen, ziehen eine Pulverfahne, verlieren
+Bröckchen und schlagen mit einer Staubwolke auf; dort bildet sich ein Haufen. Die Schneemenge bleibt dabei
+erhalten.
+
+### Was geräumt wird
+
+Geräumt wird nur, was man sieht – das gilt für die automatische Buchung und für „Jetzt räumen“:
+nicht bei minimierten oder Vollbildfenstern, nicht bei Fenstern, deren Oberkante am oberen Rand ihres
+Monitors liegt (maximiert, höchstens 4 px darunter), nicht bei Kanten, die zu mehr als 40 % verdeckt sind,
+und nicht, wenn der längste freie Abschnitt für Fahrzeug und Wende zu kurz ist. Wird ein Fenster während
+eines Einsatzes maximiert, ins Vollbild geschaltet oder verdeckt, bricht der Einsatz ab und der Hubschrauber
+holt das Fahrzeug ab.
+
+### Sprüche
+
+Fahrer und Pilot haben zusammen gut 1000 Sätze (`daten/sprueche.tsv`, ins Programm eingebettet). Jeder
+Treffer wird kommentiert, mit jedem weiteren deutlicher – gezählt über den ganzen Einsatz; wie deutlich
+höchstens, bestimmt „Ausdrucksweise“ (`sprueche_max_stufe`, 1 freundlich … 5 richtig vulgär). Der Fahrer
+grüßt beim Dienstantritt und beim Anstupsen, schimpft beim Streik und beim beleidigten Abflug. Der Pilot
+meldet sich, wenn der Hubschrauber getroffen wird, wenn er den beleidigten Fahrer abholt und beim Abflug.
+Bei Ballserien gibt es höchstens alle 1,2 s (Pilot 1,5 s) einen neuen Satz. Die Sprechblasen werden je
+Satz einmal gemalt (`src/blasen.{h,cpp}`: Vorrat von sechs Plätzen je Monitor, Zeilenumbruch, scharf je
+Skalierung), ploppen auf, stehen je nach Textlänge 2 bis 6,5 s und blenden aus; am rechten Bildrand klappen
+sie nach links. Zu jeder Blase gehört ein Murren (nur mit Ton hörbar).
+
 ### Schneebälle
 
 Auf Schnee drücken (Decke ab 6 px Höhe) und über den Schnee ziehen formt einen Ball, der dabei
 wächst – der Schnee fehlt danach in der Decke. Loslassen wirft ihn mit dem Schwung der Maus; er
 fliegt im Bogen, dreht sich und zerplatzt auf der nächsten Decke wieder zu Schnee. Ein Treffer
 am Fahrzeug lässt es wackeln, Schnee bleibt kleben. Nach `treffer_bis_streik` Treffern bleibt
-es stehen: Der Fahrer lehnt sich heraus, droht mit der Faust und schimpft (Sprechblase, mit Ton
+es stehen: Der Fahrer steigt aus, steht auf der Kette (beim Pflug auf der Trittstufe), droht mit der Faust und schimpft (Sprechblase, mit Ton
 ein Murren). Nach sechs Sekunden räumt er weiter. Zwei weitere Treffer während des Streiks oder
 eine zweite Runde – dann fliegt er beleidigt ab und kommt zehn Minuten lang nicht wieder.
 Ein Klick auf das Fahrzeug stupst es nur an.
@@ -322,5 +354,5 @@ Schalter „Geräusche“ und Regler „Lautstärke“ im Steuerfenster. Ist der
 
 `daten/sprueche.tsv` enthält über 1000 Sätze (`sprecher<TAB>anlass<TAB>stufe<TAB>text`), von freundlich (Stufe 1) bis richtig vulgär (Stufe 5).
 Das Modul `src/sprueche.{h,cpp}` wählt zufällig ohne Wiederholung der letzten 50 Sätze; die Stufe steigt mit der Trefferzahl und ist durch
-`sprueche_max_stufe` (Steuerfenster: „Ausdrucksweise“, Standard 3 = frech) begrenzt. Stand der Anbindung: siehe `MERGE-SPRUECHE.md`.
+`sprueche_max_stufe` (Steuerfenster: „Ausdrucksweise“, Standard 3 = frech) begrenzt. Angebunden im Räumdienst, siehe „Sprüche“ weiter oben.
 Tests: `make test-sprueche`.

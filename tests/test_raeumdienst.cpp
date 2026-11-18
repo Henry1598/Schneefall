@@ -4,6 +4,7 @@
 #include <cmath>
 #include <set>
 #include "raeumdienst.h"
+#include "sprueche.h"
 #include "schnee.h"
 
 using namespace schnee;
@@ -161,7 +162,8 @@ private slots:
         const double aWeg = aVorher - w.sim.gesamtSchnee("a");
         QVERIFY(aWeg > aVorher * 0.9);
         // der Schnee liegt jetzt auf dem Fenster darunter
-        QVERIFY2(std::abs((w.sim.gesamtSchnee("b") - bVorher) - aWeg) < aVorher * 0.05,
+        // (ein kleiner Teil der Schollen fliegt weiter und landet daneben auf dem Boden)
+        QVERIFY2(std::abs((w.sim.gesamtSchnee("b") - bVorher) - aWeg) < aVorher * 0.1,
                  qPrintable(QString("b +%1, a -%2").arg(w.sim.gesamtSchnee("b") - bVorher).arg(aWeg)));
     }
     void warteschlangeDerReiheNach() {
@@ -339,9 +341,9 @@ private slots:
         QVERIFY(!w.einsatz()->fz.kleckse.empty());              // und Schnee klebt dran
         w.triff();
         QCOMPARE(w.einsatz()->fz.phase, FahrPhase::Streik);
-        const int spruch1 = w.einsatz()->fz.spruch;
-        QVERIFY(spruch1 >= 0 && spruch1 < 8);
-        QVERIFY(QString::fromUtf8(spruchText(spruch1)).size() > 4);
+        QVERIFY(w.einsatz()->fz.blase.sichtbar());
+        QCOMPARE(w.einsatz()->fz.blase.anlass, Redeanlass::Streik);
+        QVERIFY(QString::fromStdString(w.einsatz()->fz.blase.text).size() > 4);
         bool murren = false;
         for (const Klangereignis &k : w.rd.klaengeAbholen()) murren |= k.typ == Klangereignis::Einmal && k.art == Geraeusch::Murren;
         QVERIFY(murren);
@@ -354,7 +356,7 @@ private slots:
         // nach der Pause räumt er weiter
         QVERIFY(w.bis([&] { return w.einsatz()->fz.phase == FahrPhase::Schieben; }, 8));
         QVERIFY(w.einsatz()->fz.raus < 0.1);
-        QCOMPARE(w.einsatz()->fz.spruch, -1);
+        QVERIFY(!w.einsatz()->fz.blase.sichtbar());
         w.laufen(1);
         QVERIFY(std::abs(w.einsatz()->fz.x - x) > 10);
         // wieder drei Treffer: jetzt reicht es ihm
@@ -363,7 +365,8 @@ private slots:
         w.triff();
         QCOMPARE(w.einsatz()->fz.phase, FahrPhase::Beleidigt);
         QVERIFY(w.einsatz()->beleidigt);
-        QVERIFY(w.einsatz()->fz.spruch >= 8 && w.einsatz()->fz.spruch <= 10);
+        QVERIFY(w.einsatz()->fz.blase.sichtbar());
+        QCOMPARE(w.einsatz()->fz.blase.anlass, Redeanlass::BeleidigtAbflug);
         QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->phase == Phase::Abflug; }, 60));
         QVERIFY(w.sim.gesamtSchnee("a") > 500);                 // Arbeit bleibt liegen
         QVERIFY(w.bis([&] { return w.rd.einsaetze().empty(); }, 60));
@@ -385,10 +388,11 @@ private slots:
         QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
         w.triff();
         QCOMPARE(w.einsatz()->fz.phase, FahrPhase::Streik);
-        const int s1 = w.einsatz()->fz.spruch;
+        const std::string s1 = w.einsatz()->fz.blase.text;
         w.triff();
         QCOMPARE(w.einsatz()->fz.phase, FahrPhase::Streik);
-        QVERIFY(w.einsatz()->fz.spruch != s1);                  // neuer Spruch
+        QVERIFY(w.einsatz()->fz.blase.text != s1);              // neuer Spruch
+        QCOMPARE(w.einsatz()->fz.blase.anlass, Redeanlass::Treffer);
         w.triff();
         QCOMPARE(w.einsatz()->fz.phase, FahrPhase::Beleidigt);
     }
@@ -515,8 +519,8 @@ private slots:
         w.fuellen("a", 16);
         w.buche("a");
         QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
-        // ein Fenster schiebt sich über die linke Hälfte: befahrbar bleibt nur 985 … 1300, die Mitte liegt jetzt am Rand
-        w.fenster_.push_back(fenster("c", 600, 300, 385, 300, 5));
+        // ein Fenster schiebt sich über das linke Viertel: der befahrbare Abschnitt beginnt jetzt bei 850
+        w.fenster_.push_back(fenster("c", 600, 300, 250, 300, 5));
         w.sim.setFenster(w.fenster_);
         const Fahrzeug &f = w.einsatz()->fz;
         QVERIFY(w.bis([&] { return w.einsatz() && f.phase == FahrPhase::Wenden; }, 120));
@@ -538,7 +542,7 @@ private slots:
             zeit += 1.0 / 30;
         }
         QVERIFY(gedreht);
-        QVERIFY(f.x >= 985 + radius - 4 - 1.01);             // ist dafür ein Stück von der Kante weggefahren
+        QVERIFY(f.x >= w.einsatz()->segA + radius - 4 - 1.01);   // steht weit genug von der Kante weg
     }
     void trefferWaehrendDerDrehungWartenUndHubschrauberGiertGleitend() {
         Welt w;
@@ -561,7 +565,7 @@ private slots:
         QVERIFY(w.bis([&] { return f.phase != FahrPhase::Wenden; }, 5));
         QCOMPARE(f.phase, FahrPhase::Streik);
         QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
-        QVERIFY(f.spruch >= 0);
+        QVERIFY(f.blase.sichtbar());
         // Hubschrauber: giert gleitend statt umzuklappen
         const Hubschrauber &h = w.einsatz()->heli;
         double letzter = h.gier, sprung = 0;
@@ -674,6 +678,289 @@ private slots:
         QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
         // kürzere Bögen: er holt weniger weit aus als bei der Wende in drei Zügen (dort knapp 28 px)
         QVERIFY2(weiteste < 22, qPrintable(QString::number(weiteste)));
+    }
+    void jederTrefferWirdKommentiertUndEskaliertUeberAlleTreffer() {
+        Welt w;
+        struct Ruf { Redner wer; Redeanlass anlass; int zahl; };
+        std::vector<Ruf> rufe;
+        w.rd.setSpruchquelle([&](Redner wer, Redeanlass anlass, int zahl) {
+            rufe.push_back({wer, anlass, zahl});
+            return "Satz " + std::to_string(rufe.size());
+        });
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
+        const Fahrzeug &f = w.einsatz()->fz;
+        rufe.clear();                                  // der Gruß beim Dienstantritt zählt hier nicht
+        w.rd.klaengeAbholen();
+        w.triff();
+        QCOMPARE(rufe.size(), size_t(1));
+        QCOMPARE(rufe[0].wer, Redner::Fahrer);
+        QCOMPARE(rufe[0].anlass, Redeanlass::Treffer);
+        QCOMPARE(rufe[0].zahl, 1);
+        QCOMPARE(f.blase.text, std::string("Satz 1"));
+        QVERIFY(f.blase.sichtbar());
+        bool murren = false;
+        for (const Klangereignis &k : w.rd.klaengeAbholen()) murren |= k.typ == Klangereignis::Einmal && k.art == Geraeusch::Murren;
+        QVERIFY(murren);                               // jede Blase murrt (hörbar nur mit Ton)
+        // sofort der nächste Treffer: zählt, aber die Blase bleibt stehen (entprellt, sonst unlesbar)
+        w.triff();
+        QCOMPARE(f.trefferGesamt, 2);
+        QCOMPARE(rufe.size(), size_t(1));
+        QCOMPARE(f.blase.text, std::string("Satz 1"));
+        // dritter Treffer: Streik – der Satz richtet sich nach allen Treffern bisher
+        w.triff();
+        QCOMPARE(f.phase, FahrPhase::Streik);
+        QCOMPARE(rufe.back().anlass, Redeanlass::Streik);
+        QCOMPARE(rufe.back().zahl, 3);
+        QCOMPARE(f.treffer, 0);                        // der Streikzähler beginnt neu …
+        QVERIFY(w.bis([&] { return f.phase == FahrPhase::Schieben; }, 8));
+        w.laufen(1.5);
+        w.triff();
+        QCOMPARE(f.treffer, 1);
+        QCOMPARE(rufe.back().anlass, Redeanlass::Treffer);
+        QCOMPARE(rufe.back().zahl, 4);                 // … die Eskalation läuft über den ganzen Einsatz weiter
+        QCOMPARE(f.trefferGesamt, 4);
+        // die Blase verschwindet nach ihrer Lesezeit von selbst
+        QVERIFY(f.blase.sichtbar());
+        w.laufen(blasenDauer(f.blase.text) + 0.2);
+        QVERIFY(!f.blase.sichtbar());
+        // längere Sätze stehen länger, in Grenzen
+        QVERIFY(blasenDauer("Moin!") >= 2.0);
+        QVERIFY(blasenDauer("Wenn du noch einmal auf meine frisch gewaschene Raupe wirfst, fahre ich heim!") > blasenDauer("Lass das, bitte."));
+        QVERIFY(blasenDauer(std::string(400, 'x')) <= 6.5);
+        QCOMPARE(blasenDauer("äöüß"), blasenDauer("aous"));   // Umlaute zählen als ein Zeichen
+    }
+    void pilotBeschwertSichBeiTreffernAufDenHubschrauber() {
+        Welt w;
+        std::vector<std::pair<Redeanlass, int>> pilot;
+        w.rd.setSpruchquelle([&](Redner wer, Redeanlass anlass, int zahl) {
+            if (wer == Redner::Pilot) pilot.push_back({anlass, zahl});
+            return std::string(wer == Redner::Pilot ? "Pilot " : "Fahrer ") + std::to_string(zahl);
+        });
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
+        const Einsatz *e = w.einsatz();
+        auto triffHeli = [&] { w.rd.werfen(e->heli.x, e->heli.y - 22, 0, 0, 60); w.laufen(0.05); };
+        QVERIFY(!e->heli.blase.sichtbar());
+        triffHeli();
+        QCOMPARE(e->heliTreffer, 1);
+        QCOMPARE(pilot.size(), size_t(1));
+        QCOMPARE(pilot[0].first, Redeanlass::HeliTreffer);
+        QCOMPARE(pilot[0].second, 1);
+        QCOMPARE(e->heli.blase.text, std::string("Pilot 1"));
+        QVERIFY(std::abs(e->heli.stoss) > 0.05);       // und der Hubschrauber wackelt
+        // Ballserie: gezählt wird jeder Treffer, gesprochen höchstens alle anderthalb Sekunden
+        triffHeli();
+        triffHeli();
+        QCOMPARE(e->heliTreffer, 3);
+        QCOMPARE(pilot.size(), size_t(1));
+        w.laufen(1.6);
+        triffHeli();
+        QCOMPARE(pilot.size(), size_t(2));
+        QCOMPARE(pilot[1].second, 4);                  // deutlicher, weil es schon der vierte ist
+        // den Fahrer lässt das kalt
+        QCOMPARE(e->fz.trefferGesamt, 0);
+        QCOMPARE(e->fz.phase, FahrPhase::Schieben);
+    }
+    void pilotSprichtBeimAbholenUndBeimAbflug() {
+        Welt w;
+        RaeumEinstellungen ein;
+        ein.an = false;
+        ein.trefferBisStreik = 1;
+        w.rd.setEinstellungen(ein);
+        std::vector<std::pair<Redeanlass, int>> pilot;
+        w.rd.setSpruchquelle([&](Redner wer, Redeanlass anlass, int zahl) {
+            if (wer == Redner::Pilot) pilot.push_back({anlass, zahl});
+            return std::string("x");
+        });
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
+        w.triff(); w.triff(); w.triff();               // Streik, dann beleidigt
+        QCOMPARE(w.einsatz()->fz.phase, FahrPhase::Beleidigt);
+        QVERIFY(pilot.empty());
+        QVERIFY(w.bis([&] { return w.einsatz()->phase == Phase::Rueckkehr; }, 10));
+        QCOMPARE(pilot.size(), size_t(1));
+        QCOMPARE(pilot[0].first, Redeanlass::HeliAbholen);
+        QCOMPARE(pilot[0].second, 3);                  // so viele Treffer hat der Fahrer abbekommen
+        QVERIFY(w.einsatz()->heli.blase.sichtbar());
+        QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->phase == Phase::Abflug; }, 60));
+        QCOMPARE(pilot.size(), size_t(2));
+        QCOMPARE(pilot[1].first, Redeanlass::HeliAbflug);
+        QVERIFY(w.bis([&] { return w.rd.einsaetze().empty(); }, 60));
+        // friedlicher Einsatz: beim Abflug ein freundlicher Satz (Stufe 1), kein „Abholen“
+        pilot.clear();
+        Welt friedlich;
+        friedlich.rd.setSpruchquelle([&](Redner wer, Redeanlass anlass, int zahl) {
+            if (wer == Redner::Pilot) pilot.push_back({anlass, zahl});
+            return std::string("x");
+        });
+        friedlich.fuellen("a", 16);
+        friedlich.buche("a");
+        QVERIFY(friedlich.bis([&] { return friedlich.rd.einsaetze().empty(); }, 240));
+        QCOMPARE(pilot.size(), size_t(1));
+        QCOMPARE(pilot[0].first, Redeanlass::HeliAbflug);
+        QCOMPARE(pilot[0].second, 1);
+    }
+    void ausdrucksweiseWirdDurchDieEinstellungBegrenzt() {
+        // echte Sprüche-Sammlung mit je einem Satz je Stufe: die Stufe steht im Text
+        const QByteArray tsv = "fahrer\ttreffer\t1\tStufe 1\nfahrer\ttreffer\t2\tStufe 2\nfahrer\ttreffer\t3\tStufe 3\n"
+                               "fahrer\ttreffer\t4\tStufe 4\nfahrer\ttreffer\t5\tStufe 5\nfahrer\tstreik\t1\tStreik 1\nfahrer\tstreik\t5\tStreik 5\n"
+                               "fahrer\tgruss\t1\tMoin\npilot\theli_treffer\t1\tPilot 1\npilot\theli_treffer\t4\tPilot 4\n";
+        for (int maxStufe : {2, 5}) {
+            Sprueche sp;
+            QVERIFY(sp.ladeText(tsv) >= 10);
+            sp.setzeMaxStufe(maxStufe);
+            Welt w;
+            RaeumEinstellungen ein;
+            ein.an = false;
+            ein.trefferBisStreik = 99;                 // hier geht es nur um die Treffer-Sprüche
+            w.rd.setEinstellungen(ein);
+            w.fenster_[0].r = {300, 400, 1400, 300};   // breit: der Einsatz dauert länger als die Wurfserie
+            w.sim.setFenster(w.fenster_);
+            w.rd.setSpruchquelle([&](Redner wer, Redeanlass anlass, int zahl) {
+                return sp.waehleBeiTreffer(Sprecher(int(wer)), Anlass(int(anlass)), zahl).toStdString();
+            });
+            w.fuellen("a", 16);
+            w.buche("a");
+            QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
+            const Einsatz *e = w.einsatz();
+            QCOMPARE(e->fz.blase.text, std::string("Moin"));   // Gruß beim Dienstantritt
+            std::string hoechste, pilot;
+            for (int i = 0; i < 6; ++i) {
+                w.laufen(1.3);
+                w.triff();
+                hoechste = std::max(hoechste, e->fz.blase.text);
+                w.rd.werfen(e->heli.x, e->heli.y - 22, 0, 0, 60);
+                w.laufen(1.6);
+                pilot = std::max(pilot, e->heli.blase.text);
+            }
+            // sechs Treffer: mit Grenze 2 bleibt es bei Stufe 2, ohne Grenze wird er richtig deutlich
+            QCOMPARE(hoechste, std::string(maxStufe == 2 ? "Stufe 2" : "Stufe 5"));
+            QCOMPARE(pilot, std::string(maxStufe == 2 ? "Pilot 1" : "Pilot 4"));
+        }
+    }
+    void unsichtbareKantenWerdenNichtGeraeumt() {
+        Welt w;
+        RaeumEinstellungen ein;                        // von selbst räumen ab 80 %
+        w.rd.setEinstellungen(ein);
+        // maximiert (Oberkante am oberen Monitorrand), Vollbild, minimiert, zu 70 % verdeckt – alle voll Schnee
+        w.fenster_.clear();
+        w.fenster_.push_back(fenster("maximiert", 0, 0, 2000, 1100, 1));
+        Fenster voll = fenster("vollbild", 300, 300, 800, 500, 2);
+        voll.vollbild = true;
+        w.fenster_.push_back(voll);
+        w.fenster_.push_back(fenster("verdeckt", 1200, 500, 600, 300, 3));
+        w.fenster_.push_back(fenster("davor", 1150, 400, 470, 300, 4));   // liegt über 70 % der Kante von „verdeckt“
+        w.sim.setFenster(w.fenster_);
+        for (const char *id : {"maximiert", "vollbild", "verdeckt"})
+            if (const Decke *d = w.sim.decke(id))
+                for (size_t i = 0; i < d->hoehe.size(); ++i) w.sim.schneeHinzufuegen(id, d->x + (i + 0.5) * d->spaltenBreite, 18);
+        for (const char *id : {"maximiert", "vollbild", "verdeckt"})
+            if (const Decke *d = w.sim.decke(id)) QVERIFY2(!w.rd.raeumbar(*d), id);
+        w.laufen(3);
+        QVERIFY(w.rd.einsaetze().empty());             // nichts wird von selbst gebucht
+        QVERIFY(w.rd.warteschlange().empty());
+        // „Jetzt räumen“ nimmt nur, was man sieht: das freie Fenster davor, obwohl dort weniger liegt
+        w.fuellen("davor", 6);
+        QVERIFY(w.rd.raeumbar(*w.sim.decke("davor")));
+        QCOMPARE(w.rd.jetztRaeumen(), std::string("davor"));
+        // und ein von Hand gebuchter Einsatz für eine unsichtbare Kante startet nicht
+        if (w.sim.decke("vollbild")) {
+            w.rd.buchen("vollbild");
+            w.bis([&] { return w.rd.einsaetze().empty(); }, 240);
+            w.laufen(2);
+            for (const Einsatz &e : w.rd.einsaetze()) QVERIFY(e.id != "vollbild");
+        }
+    }
+    void einsatzBrichtAbWennDasFensterUnsichtbarWird_data() {
+        QTest::addColumn<int>("fall");
+        QTest::newRow("Vollbild") << 0;
+        QTest::newRow("maximiert an den oberen Rand") << 1;
+        QTest::newRow("größtenteils verdeckt") << 2;
+    }
+    void einsatzBrichtAbWennDasFensterUnsichtbarWird() {
+        QFETCH(int, fall);
+        Welt w(true);
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt() && w.einsatz()->fz.wulst > 40; }, 120));
+        const double vorher = w.alles();
+        if (fall == 0) w.fenster_[0].vollbild = true;
+        else if (fall == 1) w.fenster_[0].r = {0, 0, 2000, 880};
+        else w.fenster_.push_back(fenster("c", 650, 300, 420, 300, 5));   // verdeckt 62 % der Kante, aber nicht das Fahrzeug
+        w.sim.setFenster(w.fenster_);
+        w.laufen(0.4);
+        if (!w.einsatz()) return;                      // Decke ganz weg: der Notabflug ist an anderer Stelle geprüft
+        const Einsatz *e = w.einsatz();
+        QVERIFY(e->abbruch);
+        if (w.sim.decke("a")) {
+            // die Decke gibt es noch: kein Notabflug, der Hubschrauber holt das Fahrzeug ordentlich ab
+            QVERIFY(e->phase >= Phase::Rueckkehr);
+            QCOMPARE(e->fz.wulst, 0.0);                // was vor dem Schild lag, bleibt liegen bzw. fällt
+        }
+        QVERIFY(w.bis([&] { return w.rd.einsaetze().empty(); }, 90));
+        w.laufen(3);
+        // (beim Sprung an den oberen Rand schüttelt der Kern selbst Schnee über den Bildrand hinaus ab: dort nicht prüfen)
+        if (fall != 1) QVERIFY2(std::abs(w.alles() - vorher) < vorher * 0.01, qPrintable(QString("%1 → %2").arg(vorher).arg(w.alles())));
+        // und es wird nicht gleich wieder gebucht
+        RaeumEinstellungen ein;
+        w.rd.setEinstellungen(ein);
+        if (w.sim.decke("a")) { w.fuellen("a", 19); w.laufen(3); QVERIFY(w.rd.einsaetze().empty()); }
+    }
+    void schiebenLaesstSpurStaubUndBroeckchen() {
+        Welt w(true);
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt() && w.einsatz()->fz.x > 1130; }, 120));
+        const Einsatz *e = w.einsatz();
+        // Pulver stiebt auf, Bröckchen kullern
+        int pulver = 0, broeckchen = 0;
+        for (double t = 0; t < 1.0; t += 1.0 / 30) {
+            w.laufen(1.0 / 30);
+            for (const Staub &s : w.rd.staub()) { pulver += s.art == 0; broeckchen += s.art == 2; }
+        }
+        QVERIFY2(pulver > 30 && broeckchen > 10, qPrintable(QString("%1 Pulver, %2 Bröckchen").arg(pulver).arg(broeckchen)));
+        // hinter dem Schild bleibt eine dünne Restschicht (die Spur), kein blankes Fenster und kein voller Schnee
+        QVERIFY(e->spur);
+        QVERIFY(e->spurB - e->spurA > 100);
+        const double hinten = e->fz.x - 10;
+        double rest = 0;
+        int n = 0;
+        for (double x = 1010; x < hinten - 40; x += 4) { rest += w.sim.hoeheBei("a", x); ++n; }
+        QVERIFY(n > 5);
+        QVERIFY2(rest / n > 0.3 && rest / n < 1.6, qPrintable(QString::number(rest / n)));
+    }
+    void anDerKanteHaengtDerSchneeUeberUndBrichtInSchollen() {
+        Welt w(true);
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
+        const Einsatz *e = w.einsatz();
+        double groessterUeberhang = 0, vorher = 0;
+        int brueche = 0, mehrereStuecke = 0, aufprallStaub = 0;
+        size_t brockenVorher = w.sim.brocken().size();
+        std::set<int> bruchmengen;
+        while (w.einsatz() && e->fz.seite == 0 && e->fz.phase != FahrPhase::Zurueck) {
+            w.laufen(1.0 / 30);
+            if (!w.einsatz()) break;
+            groessterUeberhang = std::max(groessterUeberhang, e->fz.ueberhang);
+            if (e->fz.ueberhang < vorher - 5) {        // Überhang ist abgebrochen
+                ++brueche;
+                bruchmengen.insert(int(vorher / 4));
+                if (w.sim.brocken().size() >= brockenVorher + 2) ++mehrereStuecke;
+            }
+            vorher = e->fz.ueberhang;
+            brockenVorher = w.sim.brocken().size();
+            for (const Staub &s : w.rd.staub()) aufprallStaub += s.y > 700;   // unten beim tieferen Fenster
+        }
+        QVERIFY2(groessterUeberhang > 20, qPrintable(QString::number(groessterUeberhang)));   // hängt erst über
+        QVERIFY2(brueche >= 3, qPrintable(QString::number(brueche)));
+        QVERIFY2(mehrereStuecke >= 2, qPrintable(QString::number(mehrereStuecke)));          // bricht in mehreren Schollen
+        QVERIFY(bruchmengen.size() >= 2);              // unregelmäßig: nicht immer bei derselben Menge
+        QVERIFY(aufprallStaub > 0);                    // Staubwolke beim Aufprall
     }
     void wulstformWaechstUndBleibtBegrenzt() {
         QCOMPARE(wulstHoehe(0, 1), 0.0);

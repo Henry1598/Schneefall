@@ -11,25 +11,24 @@ constexpr double BALL_MAX = 220;       // größte Ballmenge
 constexpr double ANFASS_HOEHE = 6;     // ab dieser Deckenhöhe ist Schnee anfassbar
 double vorzeichen(double v) { return v < 0 ? -1.0 : 1.0; }
 
-const char *const SPRUECHE[] = {
-    "Hey! Ich arbeite hier!",
-    "Noch einer und ich fahr heim!",
-    "Wer war das?!",
-    "So nicht, Freundchen!",
-    "Ich räum hier DEINEN Schnee weg!",
-    "Lass das! Das Ding ist frisch gewaschen!",
-    "Streik! Ich mach erst mal Pause.",
-    "Das melde ich der Gewerkschaft!",
-    "Mir reicht's! Ich fahr heim!",
-    "Räum deinen Schnee doch selber!",
-    "Feierabend. Tschüss!",
-    "Moin!",
-    "Nicht anfassen, bitte.",
+// eingebaute Sätze, falls keine Spruchquelle angehängt ist (Tests, Probe)
+const char *const ERSATZ[7][3] = {
+    {"Hey! Ich arbeite hier!", "Wer war das?!", "Lass das!"},
+    {"Streik! Ich mach erst mal Pause.", "So nicht, Freundchen!", "Das melde ich der Gewerkschaft!"},
+    {"Mir reicht's! Ich fahr heim!", "Räum deinen Schnee doch selber!", "Feierabend. Tschüss!"},
+    {"Moin!", "Nicht anfassen, bitte.", "Na, dann wollen wir mal."},
+    {"He! Nicht auf den Hubschrauber!", "Finger weg von meinem Rotor!", "Das ist ein Luftfahrzeug!"},
+    {"Ich hol ihn ja schon.", "Steig ein, wir fliegen.", "Na komm, Kollege."},
+    {"Wir sind dann mal weg.", "Guten Flug uns allen.", "Abflug!"},
 };
 } // namespace
 
-int spruchAnzahl() { return int(sizeof SPRUECHE / sizeof *SPRUECHE); }
-const char *spruchText(int i) { return i >= 0 && i < spruchAnzahl() ? SPRUECHE[i] : ""; }
+double blasenDauer(const std::string &text) {
+    // UTF-8: nur Zeichenanfänge zählen
+    int zeichen = 0;
+    for (unsigned char c : text) zeichen += (c & 0xc0) != 0x80;
+    return std::clamp(1.6 + 0.06 * zeichen, 2.0, 6.5);
+}
 
 double wulstMass(Fahrzeugart a, double g) { return a == Fahrzeugart::Pflug ? 0.55 * g : g; }
 
@@ -136,6 +135,31 @@ double Raeumdienst::fuellstand(const Decke &d) const {
     return h[k] / m_sim.maxHoeheVon(d);
 }
 
+bool Raeumdienst::raeumbar(const Decke &d) const {
+    const double G = g(), sb = d.spaltenBreite;
+    const Fahrzeugart art = d.boden || d.dock ? Fahrzeugart::Pflug : Fahrzeugart::Raupe;
+    // freier Abschnitt: Platz für das Fahrzeug und seine Wende
+    const double mindest = (2 * wendeRadius(art, G) + 8 * G) / sb;
+    size_t sichtbar = 0, lauf = 0, laengster = 0;
+    for (size_t i = 0; i < d.hoehe.size(); ++i) {
+        if (d.sichtbar[i]) { ++sichtbar; laengster = std::max(laengster, ++lauf); } else lauf = 0;
+    }
+    if (double(laengster) < mindest) return false;
+    if (d.boden || d.dock) return true;
+    // größtenteils verdeckte Kante: da gibt es nichts zu sehen
+    if (sichtbar < d.hoehe.size() * 0.6) return false;
+    for (const Fenster &f : m_sim.fenster()) {
+        if (f.id != d.id) continue;
+        if (f.minimiert || f.vollbild) return false;
+    }
+    // Oberkante am oberen Rand ihres Monitors (maximiert): Fahrzeug und Schnee lägen außerhalb des Bildes
+    const double mitte = d.x + d.breite() / 2;
+    for (const Rechteck &b : m_sim.bildschirme())
+        if (mitte >= b.x && mitte < b.rechts() && d.y >= b.y - 1 && d.y < b.unten())
+            return d.y - b.y > 4;
+    return false;   // Kante auf keinem Monitor
+}
+
 // zusammenhängender sichtbarer Lauf der Decke um x (Welt-x-Grenzen)
 bool Raeumdienst::abschnittUm(const Decke &d, double x, double &a, double &b) const {
     const double rel = (x - d.x) / d.spaltenBreite;
@@ -162,6 +186,7 @@ std::string Raeumdienst::jetztRaeumen() {
     double hoechste = 1.5; // darunter lohnt kein Einsatz
     for (const Decke &d : m_sim.decken()) {
         if ((d.boden || d.dock) && !m_e.taskleiste) continue;
+        if (!raeumbar(d)) continue;
         bool laeuft = false;
         for (const Einsatz &e : m_einsaetze) laeuft |= e.id == d.id;
         if (laeuft) continue;
@@ -181,7 +206,7 @@ std::string Raeumdienst::jetztRaeumen() {
 
 bool Raeumdienst::starten(const std::string &id) {
     const Decke *d = m_sim.decke(id);
-    if (!d || m_sim.bildschirme().empty()) return false;
+    if (!d || m_sim.bildschirme().empty() || !raeumbar(*d)) return false;
     const double G = g(), sb = d->spaltenBreite;
     Einsatz e;
     e.fz.art = d->boden || d->dock ? Fahrzeugart::Pflug : Fahrzeugart::Raupe;
@@ -256,15 +281,23 @@ double Raeumdienst::getrageneMenge() const {
     double m = m_inHand ? m_hand.menge : 0;
     for (const Schneeball &b : m_baelle) m += b.menge;
     for (const Einsatz &e : m_einsaetze) {
-        m += e.fz.wulst + e.fz.kippRest;
+        m += e.fz.wulst + e.fz.kippRest + e.fz.ueberhang;
         for (const Klecks &k : e.fz.kleckse) m += k.menge;
     }
     return m;
 }
 
-void Raeumdienst::sagen(Fahrzeug &f, int von, int anzahl, double dauer) {
-    f.spruch = von + (m_spruchNr++ % anzahl);
-    f.blaseRest = dauer;
+bool Raeumdienst::sagen(Sprechblase &b, Redner wer, Redeanlass anlass, int trefferzahl, double x, double y, double entprellt) {
+    // bei Ballserien nicht jede Sekunde ein neuer Satz: die alte Blase soll lesbar bleiben
+    if (entprellt > 0 && b.sichtbar() && b.anlass == anlass && b.dauer - b.rest < entprellt) return false;
+    const int zahl = std::max(1, trefferzahl);
+    std::string text = m_sprueche ? m_sprueche(wer, anlass, zahl) : std::string();
+    if (text.empty()) text = ERSATZ[int(anlass)][m_spruchNr++ % 3];
+    b.text = std::move(text);
+    b.anlass = anlass;
+    b.dauer = b.rest = blasenDauer(b.text);
+    klang(Geraeusch::Murren, x, y, std::clamp(0.5 + 0.25 * zahl, 0.6, 1.9));
+    return true;
 }
 
 void Raeumdienst::staubWolke(double x, double y, int anzahl, double tempo, double groesse, uint8_t art) {
@@ -302,30 +335,89 @@ void Raeumdienst::pulver(double x, double y, double menge, double tempo, double 
     if (uebrig > 1e-9) m_sim.brockenFallenLassen(x, y, m_sim.einstellungen().spaltenBreite * 2, uebrig, vx0 * 0.3, 20);
 }
 
-// Schnee über die Kante werfen: sammelt kleine Mengen und lässt sie als Brocken fallen
-// seitlich = der Wulst ist voll: der Überschuss rutscht am Schild vorbei und fällt vorn über die Fensterkante
+// Schnee über die Kante schieben. An der Fensterkante hängt er erst über und bricht dann in mehreren
+// unregelmäßigen Schollen ab; seitlich = der Wulst ist voll: der Überschuss rutscht am Schild vorbei und
+// fällt in kleinen Brocken vorn über die Fensterkante.
 void Raeumdienst::abwerfen(Einsatz &e, double menge, bool alles, bool seitlich) {
     Fahrzeug &f = e.fz;
-    f.kippRest += menge;
     const double sb = m_sim.einstellungen().spaltenBreite;
-    if (f.kippRest <= 0 || (!alles && f.kippRest < 26)) return;
+    const int r = f.richtung;
+    if (!seitlich) {
+        f.ueberhang += menge;
+        if (f.ueberhang > 0 && (alles || f.ueberhang >= f.bruchAb)) ueberhangBrechen(e);
+        return;
+    }
+    f.kippRest += menge;
+    if (f.kippRest <= 0 || (!alles && f.kippRest < 18)) return;
     const double m = f.kippRest;
     f.kippRest = 0;
+    const double stelle = f.x + r * (massVon(f.art).schildVorn + 3) * g();
+    if (e.boden) {
+        staubWolke(stelle, e.kanteY - 6, 3, 60, 8);
+    } else {
+        const double breite = std::clamp(m / 5 * sb, 2 * sb, 5 * sb);
+        m_sim.brockenFallenLassen(stelle + (zufall() - 0.5) * 6, e.kanteY - 2, breite, m, r * std::abs(f.v) * (0.3 + 0.6 * zufall()), 15 + 30 * zufall(), e.schluessel);
+        staubWolke(stelle, e.kanteY - 4, 2, 50, 6);
+    }
+}
+
+void Raeumdienst::ueberhangBrechen(Einsatz &e) {
+    Fahrzeug &f = e.fz;
+    const double sb = m_sim.einstellungen().spaltenBreite;
     const int r = f.richtung;
-    const double kante = seitlich ? f.x + r * (massVon(f.art).schildVorn + 3) * g() : (r > 0 ? e.segB : e.segA);
+    const double kante = r > 0 ? e.segB : e.segA;
+    const double m = f.ueberhang;
+    f.ueberhang = 0;
+    f.bruchAb = 26 + 44 * zufall();   // die nächste Scholle bricht früher oder später
+    if (m <= 0) return;
     if (e.boden) {
         // am Bildschirmrand: der Schnee ist weg, nur etwas Staub bleibt in der Luft
-        staubWolke(kante, e.kanteY - 6, 4, 60, 8);
+        staubWolke(kante, e.kanteY - 6, 5, 70, 9);
     } else {
-        const double breite = std::clamp(m / 5 * sb, 2 * sb, 12 * sb);
-        if (seitlich) m_sim.brockenFallenLassen(kante, e.kanteY - 2, std::min(breite, 5 * sb), m, r * std::abs(f.v) * 0.6, 25, e.schluessel);
-        else m_sim.brockenFallenLassen(kante + r * (breite / 2 + 1), e.kanteY, breite, m, r * (25 + std::abs(f.v) * 0.5), 10, e.schluessel);
-        staubWolke(kante + r * 4, e.kanteY - 4, 4, 70, 7);
+        // zwei bis vier ungleiche Stücke, die verschieden weit und schnell wegkippen
+        const int stuecke = m < 12 ? 1 : 2 + int(zufall() * 3);
+        double rest = m;
+        for (int i = 0; i < stuecke; ++i) {
+            const double teil = i + 1 == stuecke ? rest : rest * (0.25 + 0.4 * zufall());
+            rest -= teil;
+            const double breite = std::clamp(teil / 6 * sb, 2 * sb, 9 * sb);
+            m_sim.brockenFallenLassen(kante + r * (breite / 2 + 1 + i * 3.0 * zufall()), e.kanteY - 3 * zufall(), breite, teil,
+                                      r * (12 + std::abs(f.v) * 0.5 + 45 * zufall()), -20 * zufall() + 25 * zufall(), e.schluessel);
+        }
+        staubWolke(kante + r * 5, e.kanteY - 5, 5 + int(m / 14), 85, 8);
     }
     if (e.rutschKlang <= 0) {
         klang(Geraeusch::Rutsch, kante, e.kanteY, std::clamp(m / 60, 0.3, 1.5));
-        e.rutschKlang = 0.5;
+        e.rutschKlang = 0.45;
     }
+}
+
+// Abgeworfene Schollen ziehen eine Pulverfahne, zerbröseln im Fall und schlagen mit einer Staubwolke auf
+void Raeumdienst::schollenSchritt(Einsatz &e, double dt) {
+    std::vector<Einsatz::Fallstueck> jetzt;
+    for (const Brocken &b : m_sim.brocken()) {
+        if (b.herkunft != e.schluessel) continue;
+        const double mx = b.x + b.breite() / 2, menge = b.menge();
+        jetzt.push_back({mx, b.y, menge});
+        if (zufall() < dt * 14 && m_staub.size() < 500)
+            m_staub.push_back({float(mx + (zufall() - 0.5) * b.breite()), float(b.y - 3), float(b.vx * 0.3 + (zufall() - 0.5) * 30), float(b.vy * 0.25),
+                               0, float(0.5 + 0.5 * zufall()), float(4 + 5 * zufall()), 0});
+        if (zufall() < dt * 5 && menge > 6 && m_staub.size() < 500)
+            m_staub.push_back({float(mx + (zufall() - 0.5) * b.breite()), float(b.y - 2), float(b.vx + (zufall() - 0.5) * 70), float(b.vy * 0.7 - 30 * zufall()),
+                               0, float(0.6 + 0.5 * zufall()), float(2.5 + 2.5 * zufall()), 2});
+    }
+    // was im letzten Schritt noch fiel und jetzt fehlt, ist aufgeschlagen
+    for (const Einsatz::Fallstueck &alt : e.fallend) {
+        bool da = false;
+        for (const Einsatz::Fallstueck &neu : jetzt) da |= std::abs(neu.x - alt.x) < 14 && neu.y >= alt.y - 1 && neu.y - alt.y < 90;
+        if (da) continue;
+        staubWolke(alt.x, alt.y - 2, 3 + int(std::min(10.0, alt.menge / 10)), 60 + std::min(60.0, alt.menge), 7 + std::min(8.0, alt.menge / 12));
+        for (int i = 0; i < 3 && m_staub.size() < 500; ++i)
+            m_staub.push_back({float(alt.x + (zufall() - 0.5) * 10), float(alt.y - 3), float((zufall() - 0.5) * 140), float(-40 - 70 * zufall()), 0,
+                               float(0.5 + 0.4 * zufall()), float(2 + 2.5 * zufall()), 2});
+        if (e.rutschKlang <= 0.2) { klang(Geraeusch::Plumps, alt.x, alt.y, std::clamp(alt.menge / 80, 0.2, 1.0)); e.rutschKlang = 0.35; }
+    }
+    e.fallend.swap(jetzt);
 }
 
 // Rotorabwind: bläst Schnee unter dem Hubschrauber zur Seite und wirbelt Staub auf
@@ -360,12 +452,12 @@ void Raeumdienst::abbrechen(Einsatz &e, bool deckeWeg) {
     Fahrzeug &f = e.fz;
     const double G = g();
     const Fahrzeugmass m = massVon(f.art);
-    const double last = f.wulst + f.kippRest;
+    const double last = f.wulst + f.kippRest + f.ueberhang;
     if (last > 0) {
         // was vor dem Schild lag, fällt herunter (bzw. bleibt liegen, wenn die Decke noch da ist)
         const double sb = m_sim.einstellungen().spaltenBreite;
         m_sim.brockenFallenLassen(f.x + f.blick * (m.schildVorn + 8) * G, f.y - 1, 8 * sb, last, 0, 0, deckeWeg ? e.schluessel : 0);
-        f.wulst = f.kippRest = 0;
+        f.wulst = f.kippRest = f.ueberhang = 0;
     }
     if (e.phase >= Phase::Abflug) return;
     if (e.angehaengt && f.phase == FahrPhase::AmSeil) {
@@ -376,7 +468,7 @@ void Raeumdienst::abbrechen(Einsatz &e, bool deckeWeg) {
         e.angehaengt = true;
         f.phase = FahrPhase::AmSeil;
         f.v = 0;
-        f.spruch = -1;
+        f.blase.rest = 0;
         f.raus = 0;
         e.seil.x = f.x;
         e.seil.y = f.y - m.hoehe * G;
@@ -536,7 +628,11 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     }
     case FahrPhase::Kippen:
         zielSchild = 0;
-        if (f.t > 0.15 && f.wulst + f.kippRest > 0) { abwerfen(e, f.wulst, true); f.wulst = 0; }
+        if (f.t > 0.15 && f.wulst + f.ueberhang + f.kippRest > 0) {
+            abwerfen(e, f.wulst, true);
+            abwerfen(e, 0, true, true);
+            f.wulst = 0;
+        }
         if (f.t > 0.5) {
             // liegt in dieser Bahn noch merklich Schnee? Dann noch ein Durchgang (höchstens drei)
             double summe = 0;
@@ -566,12 +662,18 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
         zielRaus = f.t < 5.3 ? 1 : 0;
         zielSchild = f.schild;
         f.faust += dt * 11;
-        if (f.t >= 6) { f.phase = f.vorStreik; f.t = 0; f.spruch = -1; }
+        if (f.t >= 6) { f.phase = f.vorStreik; f.t = 0; f.blase.rest = 0; }
         break;
     case FahrPhase::Beleidigt:
         zielRaus = f.t < 2.2 ? 1 : 0;
         f.faust += dt * 14;
-        if (f.t >= 3) { f.phase = FahrPhase::Bereit; f.t = 0; abbrechen(e, false); }
+        if (f.t >= 3) {
+            f.phase = FahrPhase::Bereit;
+            f.t = 0;
+            abbrechen(e, false);
+            // der Pilot kommt ihn holen und hat auch eine Meinung dazu
+            sagen(e.heli.blase, Redner::Pilot, Redeanlass::HeliAbholen, f.trefferGesamt, e.heli.x, e.heli.y);
+        }
         break;
     }
 
@@ -597,12 +699,49 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     f.last += (zielLast - f.last) * std::min(1.0, 3 * dt);
     f.leuchte += dt;
     f.schneeDach = std::min(1.0, f.schneeDach + dt * 0.004 * m_sim.einstellungen().menge);
-    if (f.blaseRest > 0 && (f.blaseRest -= dt) <= 0) f.spruch = -1;
+    if (f.blase.rest > 0) f.blase.rest -= dt;
 
     if (f.phase == FahrPhase::Schieben) {
         // alles zwischen alter und neuer Schildkante wandert in den Wulst (solange Platz ist)
         const double vorn1 = f.x + r * m.schildVorn * G;
-        if (vorn1 != vorn0) f.wulst += m_sim.schneeEntnehmen(e.id, std::min(vorn0, vorn1), std::max(vorn0, vorn1), 1e9);
+        if (vorn1 != vorn0) {
+            // das Schild schürft nicht bis aufs Glas: eine dünne, festgefahrene Restschicht bleibt als Spur liegen
+            const double lo = std::min(vorn0, vorn1), hi = std::max(vorn0, vorn1);
+            double liegt = 0;
+            int spalten = 0;
+            for (double x = lo + sb / 2; x < hi + sb / 2; x += sb) { liegt += std::max(0.0, m_sim.hoeheBei(e.id, x)); ++spalten; }
+            const double nehmen = liegt - 0.9 * spalten * std::min(1.0, (hi - lo) / sb);
+            if (nehmen > 0) f.wulst += m_sim.schneeEntnehmen(e.id, lo, hi, nehmen);
+        }
+        // geräumter Streifen (für die Kettenspur)
+        const double hinten = f.x - r * m.halb * G - d.x, vornRel = vorn1 - d.x;
+        if (!e.spur) { e.spur = true; e.spurA = std::min(hinten, vornRel); e.spurB = std::max(hinten, vornRel); }
+        e.spurA = std::min({e.spurA, hinten, vornRel});
+        e.spurB = std::max({e.spurB, hinten, vornRel});
+        // Pulver stiebt am Schild und an den Ketten auf, Bröckchen kullern vorn den Wulst hinunter
+        const double tempo = std::abs(f.v) / (80 * std::sqrt(G));
+        if (f.wulst > 2) {
+            const double WGs = wulstMass(f.art, G), flaeche = f.wulst * sb, laenge = wulstLaenge(flaeche, WGs), hoch = wulstHoehe(flaeche, WGs);
+            f.pulverRest += dt * tempo * (8 + 16 * f.last);
+            while (f.pulverRest >= 1) {
+                f.pulverRest -= 1;
+                const bool amSchild = zufall() < 0.6;
+                const double px = amSchild ? vorn1 + r * zufall() * 6 * G : f.x - r * (m.halb - 4) * G * zufall();
+                const double py = f.y - (amSchild ? hoch * (0.3 + 0.8 * zufall()) : 2.0);
+                if (m_staub.size() < 500)
+                    m_staub.push_back({float(px), float(py), float(r * (amSchild ? 30 + 70 * zufall() : -20 - 40 * zufall()) + f.v * 0.5), float(-25 - 55 * zufall()), 0,
+                                       float(0.45 + 0.5 * zufall()), float((amSchild ? 5 : 3.5) + 4 * zufall()), 0});
+            }
+            f.broeselRest += dt * tempo * (5 + 12 * f.last);
+            while (f.broeselRest >= 1) {
+                f.broeselRest -= 1;
+                const double s0 = zufall() * laenge * 0.7;
+                const double px = vorn1 + r * s0, py = f.y - std::max(0.0, m_sim.hoeheBei(e.id, px)) - wulstProfil(flaeche, WGs, s0) - 1;
+                if (m_staub.size() < 500)
+                    m_staub.push_back({float(px), float(py), float(f.v + r * (25 + 70 * zufall())), float(-12 - 38 * zufall()), 0, float(0.45 + 0.5 * zufall()),
+                                       float(2 + 3 * zufall()), 2});
+            }
+        }
         // mehr, als sich vor dem Schild türmen kann, rutscht seitlich weg und fällt vorn über die Kante
         if (f.wulst > kap) { abwerfen(e, f.wulst - kap, false, true); f.wulst = kap; }
         // was über die Kante ragt, kippt hinunter
@@ -640,6 +779,11 @@ void Raeumdienst::einsatzSchritt(Einsatz &e, double dt) {
     e.t += dt;
     e.rutschKlang -= dt;
     if (!d && !e.abbruch) abbrechen(e, true);
+    // Kante nicht mehr zu sehen (Fenster maximiert, im Vollbild, verdeckt): der Hubschrauber holt das Fahrzeug ab
+    if (d && !e.abbruch && e.phase < Phase::Rueckkehr && (e.sichtRest -= dt) <= 0) {
+        e.sichtRest = 0.25;
+        if (!raeumbar(*d)) abbrechen(e, false);
+    }
     if (d) {
         // Fenster verschoben: Fahrzeug fährt mit
         if (f.phase != FahrPhase::AmSeil) f.x += d->x - e.deckX;
@@ -673,7 +817,11 @@ void Raeumdienst::einsatzSchritt(Einsatz &e, double dt) {
         e.heli.zielX = landX; e.heli.zielY = schwebeY;
         if (e.t > 0.5 && e.angehaengt) { e.angehaengt = false; }
         if (!e.angehaengt) e.seil.laenge = std::max(flug, e.seil.laenge - 60 * G * dt);
-        if (e.t > 1.3) { e.phase = Phase::Raeumen; e.t = 0; }
+        if (e.t > 1.3) {
+            e.phase = Phase::Raeumen;
+            e.t = 0;
+            sagen(f.blase, Redner::Fahrer, Redeanlass::Gruss, 1, f.x, f.y);   // meldet sich zum Dienst
+        }
         break;
     case Phase::Raeumen:
         e.seil.laenge = std::max(flug, e.seil.laenge - 60 * G * dt);
@@ -705,7 +853,11 @@ void Raeumdienst::einsatzSchritt(Einsatz &e, double dt) {
         tief = true;
         e.heli.zielY = f.y - fzH - flug - 25 * G - 30 * G;
         e.seil.laenge = std::max(flug, e.seil.laenge - 40 * G * dt);
-        if (e.seil.laenge <= flug + 0.5) { e.phase = Phase::Abflug; e.t = 0; }
+        if (e.seil.laenge <= flug + 0.5) {
+            e.phase = Phase::Abflug;
+            e.t = 0;
+            sagen(e.heli.blase, Redner::Pilot, Redeanlass::HeliAbflug, e.beleidigt ? f.trefferGesamt : e.heliTreffer, e.heli.x, e.heli.y);
+        }
         break;
     case Phase::Abflug:
         if (e.eilig) maxV *= 1.6;
@@ -717,6 +869,8 @@ void Raeumdienst::einsatzSchritt(Einsatz &e, double dt) {
     case Phase::Fertig: return;
     }
 
+    if (e.heli.blase.rest > 0) e.heli.blase.rest -= dt;
+    if (f.phase == FahrPhase::AmSeil && f.blase.rest > 0) f.blase.rest -= dt;
     e.heli.schritt(dt, maxV, maxA);
     e.seil.schritt(dt, e.heli.x, e.heli.y);
     if (tief) abwind(e, dt);
@@ -782,7 +936,7 @@ void Raeumdienst::schritt(double dt) {
                     if (sperre->second > m_sim.zeit()) continue;
                     m_sperre.erase(sperre);
                 }
-                if (fuellstand(d) >= m_e.raeumenAb) buchen(d.id);
+                if (fuellstand(d) >= m_e.raeumenAb && raeumbar(d)) buchen(d.id);
             }
         }
     }
@@ -791,7 +945,10 @@ void Raeumdienst::schritt(double dt) {
         m_schlange.pop_front();
         if (!starten(id)) m_sperre[id] = m_sim.zeit() + 30; // passt gerade nicht: später wieder prüfen
     }
-    for (Einsatz &e : m_einsaetze) einsatzSchritt(e, dt);
+    for (Einsatz &e : m_einsaetze) {
+        einsatzSchritt(e, dt);
+        schollenSchritt(e, dt);
+    }
     for (size_t i = 0; i < m_einsaetze.size();) {
         if (m_einsaetze[i].phase == Phase::Fertig) {
             const Einsatz &e = m_einsaetze[i];
@@ -806,9 +963,9 @@ void Raeumdienst::schritt(double dt) {
         Staub &s = m_staub[i];
         s.alter += float(dt);
         if (s.alter >= s.dauer) { s = m_staub.back(); m_staub.pop_back(); continue; }
-        const float brems = float(std::exp(-2.5 * dt));
+        const float brems = float(std::exp(-(s.art == 2 ? 0.5 : 2.5) * dt));
         s.vx = s.vx * brems + float(wind * 0.4 * dt);
-        s.vy = s.vy * brems + float((s.art == 0 ? 70 : -22) * dt);
+        s.vy = s.vy * brems + float((s.art == 0 ? 70 : s.art == 2 ? 420 : -22) * dt);
         s.x += s.vx * float(dt);
         s.y += s.vy * float(dt);
         ++i;
@@ -841,7 +998,7 @@ bool Raeumdienst::mausDruck(double x, double y, double t) {
         if (std::abs(x - e.fz.x) <= m.trefferB * g() && y <= e.fz.y && y >= e.fz.y - 2 * m.trefferH * g()) {
             // angestupst: wackelt und grüßt
             e.fz.wackelV += 1.2;
-            if (e.fz.spruch < 0 && e.fz.phase != FahrPhase::AmSeil) sagen(e.fz, 11, 2, 2.0);
+            if (!e.fz.blase.sichtbar() && e.fz.phase != FahrPhase::AmSeil) sagen(e.fz.blase, Redner::Fahrer, Redeanlass::Gruss, 1, e.fz.x, e.fz.y);
             return true;
         }
     }
@@ -932,6 +1089,8 @@ void Raeumdienst::treffer(Einsatz &e, const Schneeball &b) {
     f.schneeDach *= 0.6;
     if (f.phase == FahrPhase::AmSeil) { e.seil.vx += std::clamp(b.vx * 0.08, -120.0, 120.0); return; }
     if (e.abbruch || f.phase == FahrPhase::Beleidigt || e.phase < Phase::Ausklinken || e.phase > Phase::Raeumen) return;
+    ++f.trefferGesamt;
+    const bool streikVorher = f.phase == FahrPhase::Streik;
     if (f.phase == FahrPhase::Streik) {
         // weitere Treffer während er sich beschwert
         if (++f.trefferImStreik >= 2) {
@@ -939,11 +1098,14 @@ void Raeumdienst::treffer(Einsatz &e, const Schneeball &b) {
             f.streiks = 2;
             f.phase = FahrPhase::Bereit; // damit streikPruefen den beleidigten Abflug auslöst
             f.streikFaellig = true;
-        } else { sagen(f, 0, 8, 3.5); f.t = std::min(f.t, 2.5); klang(Geraeusch::Murren, f.x, f.y, 1.3); }
+        } else { sagen(f.blase, Redner::Fahrer, Redeanlass::Treffer, f.trefferGesamt, f.x, f.y); f.t = std::min(f.t, 2.5); }
     } else if (++f.treffer >= std::max(1, m_e.trefferBisStreik)) {
         f.treffer = 0;
         ++f.streiks;
         f.streikFaellig = true;
+    } else if (!streikVorher) {
+        // jeder Treffer wird kommentiert – mit jedem weiteren deutlicher (entprellt, damit man es lesen kann)
+        sagen(f.blase, Redner::Fahrer, Redeanlass::Treffer, f.trefferGesamt, f.x, f.y, 1.2);
     }
     streikPruefen(e);
 }
@@ -957,15 +1119,14 @@ void Raeumdienst::streikPruefen(Einsatz &e) {
         f.phase = FahrPhase::Beleidigt;
         f.t = 0;
         e.beleidigt = true;
-        sagen(f, 8, 3, 3.0);
-        klang(Geraeusch::Murren, f.x, f.y, 1.8);
+        sagen(f.blase, Redner::Fahrer, Redeanlass::BeleidigtAbflug, f.trefferGesamt, f.x, f.y);
     } else {
         f.vorStreik = f.phase;
         f.phase = FahrPhase::Streik;
         f.t = 0;
         f.trefferImStreik = 0;
-        sagen(f, 0, 8, 5.0);
-        klang(Geraeusch::Murren, f.x, f.y, 1.0);
+        sagen(f.blase, Redner::Fahrer, Redeanlass::Streik, f.trefferGesamt, f.x, f.y);
+        f.blase.rest = f.blase.dauer = std::max(f.blase.dauer, 4.5);   // steht fast den ganzen Streik über
     }
 }
 
@@ -999,6 +1160,8 @@ void Raeumdienst::ballSchritt(double dt) {
                 if (std::abs(b.x - e.heli.x) <= 50 * G + r * 0.5 && std::abs(b.y - (e.heli.y - 22 * G)) <= 20 * G + r * 0.5) {
                     platzen(b, {}, 0);
                     klang(Geraeusch::Treffer, b.x, b.y, 0.6);
+                    ++e.heliTreffer;
+                    sagen(e.heli.blase, Redner::Pilot, Redeanlass::HeliTreffer, e.heliTreffer, e.heli.x, e.heli.y, 1.5);
                     e.heli.stoss += vorzeichen(b.vx) * 0.25;
                     e.heli.vx += std::clamp(b.vx * 0.05, -60.0, 60.0);
                     weg = true;

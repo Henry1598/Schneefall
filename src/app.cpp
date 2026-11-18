@@ -1,6 +1,7 @@
 #include "app.h"
 #include "overlay.h"
 #include "steuerfenster.h"
+#include "sprueche.h"
 
 #include <QAction>
 #include <QApplication>
@@ -99,6 +100,7 @@ void App::laden() {
     if (!m_beobachter.files().contains(konfigPfad()) && QFile::exists(konfigPfad())) m_beobachter.addPath(konfigPfad());
     m_sim.setEinstellungen(m_einst.sim);
     m_raeum.setEinstellungen(m_einst.raeum);
+    Sprueche::instanz().setzeMaxStufe(m_einst.spruecheMaxStufe);   // auch nach Änderung der Datei von Hand
     m_eingabeTakt = 0;
     m_takt.setInterval(std::max(1, 1000 / m_einst.fps));
     m_klang.setzeLautstaerke(m_einst.lautstaerke / 100.0);
@@ -127,6 +129,7 @@ void App::speichern() {
 
 void App::einstellungenAendern(const Programmeinstellungen &p) {
     m_einst = p;
+    Sprueche::instanz().setzeMaxStufe(m_einst.spruecheMaxStufe);
     m_sim.setEinstellungen(m_einst.sim);
     m_raeum.setEinstellungen(m_einst.raeum);
     m_eingabeTakt = 0;
@@ -140,6 +143,12 @@ void App::einstellungenAendern(const Programmeinstellungen &p) {
 
 void App::starten() {
     laden();
+    // die 1000 Sprüche für Fahrer und Pilot; die Ausdrucksweise folgt der Einstellung
+    static_assert(int(Redner::Pilot) == int(Sprecher::Pilot) && int(Redeanlass::HeliAbflug) == int(Anlass::HeliAbflug) && int(Redeanlass::Gruss) == int(Anlass::Gruss));
+    Sprueche::instanz().setzeMaxStufe(m_einst.spruecheMaxStufe);
+    m_raeum.setSpruchquelle([](Redner wer, Redeanlass anlass, int trefferzahl) {
+        return Sprueche::instanz().waehleBeiTreffer(Sprecher(int(wer)), Anlass(int(anlass)), trefferzahl).toStdString();
+    });
     for (QScreen *s : QGuiApplication::screens()) bildschirmHinzu(s);
     connect(qApp, &QGuiApplication::screenAdded, this, &App::bildschirmHinzu);
     connect(qApp, &QGuiApplication::screenRemoved, this, &App::bildschirmWeg);
@@ -318,10 +327,12 @@ QString App::Status() {
     static const char *const fahrphasen[] = {"AmSeil", "Aufgesetzt", "Wenden", "Senken", "Schieben", "Kippen", "Zurueck", "Bereit", "Streik", "Beleidigt"};
     QStringList einsaetze;
     for (const Einsatz &e : m_raeum.einsaetze())
-        einsaetze << QStringLiteral("einsatz=%1 fenster=%2 phase=%3 fahrzeug=%4 heli=%5,%6 fz=%7,%8 wulst=%9 treffer=%10 spruch=%11")
+        einsaetze << QStringLiteral("einsatz=%1 fenster=%2 phase=%3 fahrzeug=%4 heli=%5,%6 fz=%7,%8 wulst=%9 treffer=%10 spruch=%11 pilot=%12")
                          .arg(e.nr).arg(QString::fromStdString(e.id), QLatin1String(phasen[int(e.phase)]), QLatin1String(fahrphasen[int(e.fz.phase)]))
                          .arg(e.heli.x, 0, 'f', 0).arg(e.heli.y, 0, 'f', 0).arg(e.fz.x, 0, 'f', 0).arg(e.fz.y, 0, 'f', 0)
-                         .arg(e.fz.wulst, 0, 'f', 0).arg(e.fz.treffer).arg(e.fz.spruch);
+                         .arg(e.fz.wulst, 0, 'f', 0).arg(e.fz.trefferGesamt)
+                         .arg(e.fz.blase.sichtbar() ? QString::fromStdString(e.fz.blase.text).replace(QLatin1Char(' '), QLatin1Char('_')) : QStringLiteral("-"),
+                              e.heli.blase.sichtbar() ? QString::fromStdString(e.heli.blase.text).replace(QLatin1Char(' '), QLatin1Char('_')) : QStringLiteral("-"));
     return QStringLiteral("laeuft=%1 an=%2 vollbild=%3 flocken=%4 fenster=%5 decken=%6 schnee=%7 rechenzeit_ms=%8 brocken=%9 einsaetze=%11 wartend=%12 baelle=%13 eingabeflaechen=%14\n%10%15")
         .arg(m_laeuft).arg(m_einst.an).arg(m_vollbild).arg(m_sim.flocken().size()).arg(m_fenster.size())
         .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(b.join(QLatin1Char('\n')))

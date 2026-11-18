@@ -28,13 +28,15 @@ struct Lage {
 };
 
 
-void sprechblase(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
-    if (f.spruch < 0 || f.blaseRest <= 0) return;
-    const double B = blasenSkala(G);
-    const double alpha = std::clamp(f.blaseRest / 0.3, 0.0, 1.0);
-    const double hoehe = massVon(f.art).hoehe;
-    // ploppt auf: kurz etwas größer
-    z.push_back({uint16_t(int(Teil::Blase0) + f.spruch), float(f.x + 8 * G), float(f.y - (hoehe + 6) * G), 0, float(B), float(B), float(alpha)});
+// Sprechblase: ploppt auf (kurz etwas größer), steht je nach Textlänge und blendet aus
+void sprechblase(const Sprechblase &b, double x, double y, double G, std::vector<Blasenbild> &aus) {
+    if (!b.sichtbar()) return;
+    const double seit = b.dauer - b.rest;
+    const double t = std::clamp(seit / 0.2, 0.0, 1.0);
+    // federnd aufploppen: schießt kurz über die volle Größe hinaus
+    const double u = t - 1, feder = 1 + 2.70158 * u * u * u + 1.70158 * u * u;
+    const double mass = 0.55 + 0.45 * feder;
+    aus.push_back({b.text, float(x), float(y), float(blasenSkala(G)), float(std::min(1.12, mass)), float(std::clamp(seit / 0.1, 0.0, 1.0) * std::clamp(b.rest / 0.3, 0.0, 1.0))});
 }
 
 // Schicht eines Fahrzeugs mit ihrer Tiefe (größer = näher): gezeichnet wird von hinten nach vorn
@@ -52,14 +54,12 @@ void zubehoer(const Fahrzeug &f, const Lage &boden, double gier, P3 fenster, P3 
     const bool raupe = f.art == Fahrzeugart::Raupe;
     auto bei = [&](P3 p) { return projizieren(p, gier); };
     if (f.raus > 0.05 && !dreht(f)) {
-        // Seitenansicht: er hängt bis zur Hüfte aus dem Fenster (schaut in Fahrtrichtung)
-        const P2 q = projizieren(fenster, 0);
-        const Lage gespiegelt{boden.x, boden.y, boden.winkel, boden.sy * f.blick, boden.sy, boden.ziel};
-        Lage mensch = gespiegelt.kind(q.x - 1.5 * f.raus, q.y - 1.5 * f.raus, -0.3 * f.raus);
-        mensch.sx *= mass;
-        mensch.sy *= mass;
-        mensch.teil(Teil::Fahrer, 0, 0);
-        mensch.teil(Teil::Arm, -1.5, -10.5, (2.55 + 0.45 * std::sin(f.faust)) * f.raus, 1, 1, std::min(1.0, f.raus * 2));
+        // Streik: der Fahrer ist ausgestiegen, steht auf der Kette bzw. der Trittstufe und droht mit der Faust
+        const double seite = f.blick > 0 ? 1 : -1;
+        const P2 q = bei({fenster.x, fenster.y, seite * fenster.z});
+        const int haltung = std::sin(f.faust) > 0 ? 0 : 1;
+        const double an = std::min(1.0, f.raus * 1.6);
+        boden.teil(Teil(int(Teil::FahrerRaus) + (f.blick > 0 ? 0 : 2) + haltung), q.x, q.y + 3.0 * (1 - f.raus), 0.05 * std::sin(f.faust * 0.5), mass, mass, an);
     }
     if (f.schneeDach > 0.05 && raupe) {
         const P2 d = bei(RAUPE_DACH);
@@ -102,7 +102,7 @@ void raupe(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
             boden.teil(Teil(sch.teil), 0, 0);
         }
     }
-    zubehoer(f, boden, gier, RAUPE_FENSTER, RAUPE_LEUCHTE, 1.0, 10.5);
+    zubehoer(f, boden, gier, RAUPE_STEHPLATZ, RAUPE_LEUCHTE, 1.0, 10.5);
 }
 
 void pflug(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
@@ -131,7 +131,7 @@ void pflug(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
         else if (sch.art == 2) boden.teil(Teil(sch.teil), 0, -PFLUG_SCHILDHUB * f.schild);
         else boden.teil(Teil(sch.teil), sch.x, sch.y);
     }
-    zubehoer(f, boden, gier, PFLUG_FENSTER, PFLUG_LEUCHTE, 0.74, 8.4);
+    zubehoer(f, boden, gier, PFLUG_STEHPLATZ, PFLUG_LEUCHTE, 0.78, 8.4);
 }
 
 void seilMalen(const Einsatz &e, double G, std::vector<Zeichenteil> &z) {
@@ -233,22 +233,76 @@ void szeneBauen(const Raeumdienst &rd, const Simulation &sim, double zeit, Szene
             for (long i = i0; i < i1; ++i) {
                 const double x = d->x + (i + 0.5) * sb, ab = (x - vorn) * f.blick;
                 if (ab < 0 || x < e.segA || x > e.segB || !h.sichtbar[size_t(i)]) continue;
-                // aufgeworfener Schnee ist klumpig: kleine Buckel, die mit dem Schild mitwandern
-                const double buckel = 1 + 0.05 * std::sin(ab * 0.21 + f.kette * 0.04) + 0.06 * std::sin(ab * 0.083 + 1.3);
+                // aufgeworfener Schnee ist klumpig und wälzt sich: Buckel verschiedener Größe, die langsam nach vorn rollen
+                const double roll = f.kette * 0.06;
+                const double buckel = 1 + 0.09 * std::sin(ab * 0.37 - roll) + 0.07 * std::sin(ab * 0.83 + 1.3 - roll * 1.7) + 0.05 * std::sin(ab * 1.9 + 0.4)
+                                      + 0.06 * std::sin(ab * 0.11 + 2.1);
                 h.hoehe[size_t(i)] += float(wulstProfil(flaeche, WG, ab) * buckel);
                 etwas = true;
             }
             if (etwas) aus.haufen.push_back(std::move(h));
+            // Brocken liegen auf dem Wulst und wandern mit dem Wälzen nach vorn; am Schild fällt dessen Schatten darauf
+            const double hoch = wulstHoehe(flaeche, WG);
+            const double sichtbar = std::min(laenge, std::abs((f.blick > 0 ? e.segB : e.segA) - vorn));
+            const int brocken = std::clamp(int(sichtbar / (11 * WG)), 0, 12);
+            for (int i = 0; i < brocken; ++i) {
+                const double lauf = (i + 0.37) / brocken + f.kette * 0.0045 / std::max(0.3, WG);
+                const double sx = (lauf - std::floor(lauf)) * sichtbar * 0.92;
+                const double x = vorn + f.blick * sx;
+                const double y = e.kanteY - std::max(0.0, sim.hoeheBei(e.id, x)) - wulstProfil(flaeche, WG, sx) * (0.55 + 0.4 * ((i * 37) % 10) / 10.0);
+                const double gr = (2.2 + 2.6 * ((i * 53) % 10) / 10.0) * WG / 8;
+                z.push_back({uint16_t(int(Teil::Scholle0) + i % 3), float(x), float(y), float(i * 1.7 + sx * 0.12 * f.blick), float(gr), float(gr), 0.96f});
+            }
+            z.push_back({uint16_t(Teil::Schatten), float(vorn + f.blick * 3 * WG), float(e.kanteY - hoch * 0.5), 1.5708f, float(hoch * 1.15 / 64), float(1.1 * WG),
+                         0.42f});
+        }
+        // Kettenspur im geräumten Streifen: verblasst, wenn der Hubschrauber das Fahrzeug abholt
+        if (d && e.spur && !e.boden) {
+            const double blass = e.phase >= Phase::Anheben ? 0.0 : e.phase == Phase::Einhaken ? std::max(0.0, 1 - e.t) : 1.0;
+            const double schritt = 16 * G;
+            for (double x = std::ceil(e.spurA / schritt) * schritt; x + schritt <= e.spurB && blass > 0; x += schritt) {
+                const double wx = d->x + x + schritt / 2;
+                if (std::abs(wx - f.x) < massVon(f.art).halb * G || sim.hoeheBei(e.id, wx) > 2.2) continue;   // unterm Fahrzeug oder wieder zugeschneit
+                z.push_back({uint16_t(Teil::Spur), float(wx), float(e.kanteY - 0.2), 0, float(G), float(G), float(0.8 * blass)});
+            }
+        }
+        // Überhang an der Kante: ein paar Brocken hängen über, bevor sie abbrechen
+        if (f.ueberhang > 1.5 && !e.boden) {
+            const double kante = f.richtung > 0 ? e.segB : e.segA;
+            const double gr = std::sqrt(f.ueberhang * sb) / 8;
+            for (int i = 0; i < 3; ++i)
+                z.push_back({uint16_t(int(Teil::Scholle0) + i), float(kante + f.richtung * (1.5 + i * 2.6) * gr * 3), float(e.kanteY - (3.0 - i * 1.4) * gr * 2 - 1),
+                             float(i * 0.9), float(gr * (1.0 - 0.18 * i) * 0.55 + 0.25), float(gr * (1.0 - 0.18 * i) * 0.55 + 0.25), 1});
+        }
+        // abgeworfene Schollen: drehen sich im Fallen (über den schlichten Brocken des Kerns gezeichnet)
+        for (const Brocken &b : sim.brocken()) {
+            if (b.herkunft != e.schluessel) continue;
+            const double menge = b.menge(), breite = b.breite();
+            const double gr = std::clamp(std::sqrt(menge * sb) * 1.25, 5.0, 30.0) / 12;
+            const int art = int(std::abs(std::fmod(b.x * 0.37, 3.0)));
+            z.push_back({uint16_t(int(Teil::Scholle0) + art), float(b.x + breite / 2), float(b.y - menge / std::max(1.0, breite / sb) * 0.5),
+                         float(b.y * 0.021 * (art == 1 ? -1 : 1) + b.x * 0.3), float(gr * std::max(1.0, breite / (gr * 13))), float(gr), 1});
         }
         const bool heliVorn = f.phase == FahrPhase::AmSeil;
         if (!heliVorn) heli(e, sim, G, zeit, z);
         if (f.art == Fahrzeugart::Raupe) raupe(f, G, z); else pflug(f, G, z);
         seilMalen(e, G, z);
         if (heliVorn) heli(e, sim, G, zeit, z);
-        sprechblase(f, G, z);
+        sprechblase(f.blase, f.x + 6 * G, f.y - (massVon(f.art).hoehe + 5) * G, G, aus.blasen);
+        {
+            // Pilot: Blase am Cockpit
+            const P2 kanzel = projizieren({34, 33, 0}, stufenWinkel(winkelstufe(e.heli.gier)));
+            sprechblase(e.heli.blase, e.heli.x + kanzel.x * G, e.heli.y + kanzel.y * G, G, aus.blasen);
+        }
     }
     for (const Staub &s : rd.staub()) {
         const float t = s.alter / s.dauer;
+        if (s.art == 2) {
+            // Bröckchen: kullern und drehen sich, werden zum Schluss kleiner
+            const float gr = s.groesse * (1 - 0.5f * t) / 8;
+            z.push_back({uint16_t(int(Teil::Scholle0) + int(s.groesse * 7) % 3), s.x, s.y, s.alter * 9 + s.x * 0.2f, gr, gr, std::min(1.0f, (1 - t) * 3)});
+            continue;
+        }
         const float gr = s.groesse * (s.art == 1 ? 1.0f + 1.6f * t : 0.8f + 0.9f * t) / 8;
         const float a = (s.art == 1 ? 0.5f : 0.85f) * (1 - t) * std::min(1.0f, s.alter * 12 + 0.3f);
         z.push_back({uint16_t(s.art == 1 ? Teil::Rauch : Teil::Staub), s.x, s.y, 0, gr, gr, a});

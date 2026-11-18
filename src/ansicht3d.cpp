@@ -90,8 +90,7 @@ Stelle stelleVon(const Teilinfo &t, P3 p, P3 &n, double u) {
         s.farbe = aus(0xff8f97a3);
         if (rad > 0.84) s.farbe = aus(0xff4a505a);
         else if (rad < 0.26) s.farbe = aus(0xfff3ac1c);
-        else if (rad > 0.42 && rad < 0.72 && t.halb.x > 4 && bruch(w * t.teilung / (2 * PI)) < 0.42) { s.farbe = aus(0xff17191d); s.stoff = Stoff::Matt; }
-        else if (t.halb.x <= 4 && rad > 0.5 && rad < 0.66) s.farbe = aus(0xff6c737e);
+        else if (rad > 0.42 && rad < 0.74 && t.teilung > 1 && bruch(w * t.teilung / (2 * PI)) < 0.42) { s.farbe = aus(0xff17191d); s.stoff = Stoff::Matt; }
         break;
     }
     case Muster::Reifen: {

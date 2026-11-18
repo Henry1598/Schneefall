@@ -108,6 +108,7 @@ Overlay::~Overlay() {
     m_vbo.destroy();
     if (m_atlasTextur) glDeleteTextures(1, &m_atlasTextur);
     if (m_fahrzeugTextur) glDeleteTextures(1, &m_fahrzeugTextur);
+    if (m_blasenTextur) glDeleteTextures(1, &m_blasenTextur);
     delete m_flockenProg;
     delete m_deckenProg;
     doneCurrent();
@@ -135,6 +136,7 @@ void Overlay::initializeGL() {
     m_atlasDpr = 0;
     m_fahrzeugTextur = 0;
     m_fahrzeugDpr = 0;
+    m_blasenTextur = 0;
 }
 
 // Lädt den Atlas für diese Skalierung als Textur (einmal, und erneut, wenn sich die Skalierung ändert)
@@ -192,6 +194,32 @@ void Overlay::fahrzeugeSammeln(float bx, float by, float bw, float bh) {
         const float e[4][5] = {{z.x + c * x0 - s * y0, z.y + s * x0 + c * y0, u0, v0, z.alpha}, {z.x + c * x1 - s * y0, z.y + s * x1 + c * y0, u1, v0, z.alpha},
                                {z.x + c * x0 - s * y1, z.y + s * x0 + c * y1, u0, v1, z.alpha}, {z.x + c * x1 - s * y1, z.y + s * x1 + c * y1, u1, v1, z.alpha}};
         viereck(e);
+    }
+}
+
+// Sprechblasen: Text steht im Blasenvorrat (je Satz einmal gemalt), hier nur noch ein Viereck je Blase.
+// Reicht der Platz rechts nicht, klappt die Blase nach links (Schwanz rechts).
+void Overlay::blasenSammeln(float bx, float by, float bw, float bh, double dpr) {
+    m_blasen.bildBeginn();
+    for (const Blasenbild &b : m_szene->blasen) {
+        if (b.alpha <= 0.004f || b.x < bx - 40 || b.x > bx + bw + 40 || b.y < by - 40 || b.y > by + bh + 200) continue;
+        const bool gespiegelt = b.x + Blasenpool::PLATZ_BREITE * b.skala > bx + bw;
+        const Blasenfeld &f = m_blasen.feld(b.text, gespiegelt, dpr * b.skala);
+        const float aw = float(m_blasen.bild().width()), ah = float(m_blasen.bild().height());
+        const float k = b.skala * b.mass;
+        const float x0 = b.x - f.px * k, x1 = b.x + (f.bw - f.px) * k, y0 = b.y - f.py * k, y1 = b.y + (f.bh - f.py) * k;
+        const float u0 = (f.x + 0.5f) / aw, u1 = (f.x + f.w - 0.5f) / aw, v0 = (f.y + 0.5f) / ah, v1 = (f.y + f.h - 0.5f) / ah;
+        const float e[4][5] = {{x0, y0, u0, v0, b.alpha}, {x1, y0, u1, v0, b.alpha}, {x0, y1, u0, v1, b.alpha}, {x1, y1, u1, v1, b.alpha}};
+        viereck(e);
+    }
+    if (m_blasen.geaendert() || !m_blasenTextur) {
+        if (!m_blasenTextur) glGenTextures(1, &m_blasenTextur);
+        glBindTexture(GL_TEXTURE_2D, m_blasenTextur);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_blasen.bild().width(), m_blasen.bild().height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, m_blasen.bild().constBits());
     }
 }
 
@@ -384,6 +412,9 @@ void Overlay::paintGL() {
     }
     const size_t fahrzeugEnde = m_daten.size();
     flockenSammeln(bx, by, bw, bh);
+    // Sprechblasen ganz vorn
+    const size_t flockenEnde = m_daten.size();
+    if (m_szene && !m_szene->blasen.empty()) blasenSammeln(bx, by, bw, bh, dpr);
     const qint64 gesammelt = stoppuhr.nsecsElapsed();
     m_sammelNs += gesammelt;
     m_eckenSumme += qint64(m_daten.size() / 5);
@@ -421,12 +452,20 @@ void Overlay::paintGL() {
         m_flockenProg->setUniformValue("atlas", 0);
         zeichnen(m_flockenProg, GL_TRIANGLES, deckenEcken, fahrzeugEcken - deckenEcken);
     }
-    if (alleEcken > fahrzeugEcken) {
+    const GLint flockenEcken = GLint(flockenEnde / 5);
+    if (flockenEcken > fahrzeugEcken) {
         m_flockenProg->bind();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
         m_flockenProg->setUniformValue("atlas", 0);
-        zeichnen(m_flockenProg, GL_TRIANGLES, fahrzeugEcken, alleEcken - fahrzeugEcken);
+        zeichnen(m_flockenProg, GL_TRIANGLES, fahrzeugEcken, flockenEcken - fahrzeugEcken);
+    }
+    if (alleEcken > flockenEcken) {
+        m_flockenProg->bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_blasenTextur);
+        m_flockenProg->setUniformValue("atlas", 0);
+        zeichnen(m_flockenProg, GL_TRIANGLES, flockenEcken, alleEcken - flockenEcken);
     }
     m_vbo.release();
     m_zeichenNs += stoppuhr.nsecsElapsed() - gesammelt;

@@ -15,7 +15,9 @@ namespace schnee {
 enum class Teil : uint16_t {
     HeliRotor0, HeliRotor1, HeliRotor2, HeliRotor3,
     LichtRot, LichtGruen, LichtWeiss, LichtOrange, Haken, Seil, Schatten,
-    Fahrer, Arm, SchneeDach, SchneeHaube, Klecks, Rauch, Staub, Ball,
+    SchneeDach, SchneeHaube, Klecks, Rauch, Staub, Ball,
+    Scholle0, Scholle1, Scholle2,                        // Schneebrocken (aufgeworfen, kullernd, fallend)
+    Spur,                                                // Kettenabdruck im geräumten Streifen
     RaupeKoerper,                                        // + Winkelstufe
     RaupeLeer = RaupeKoerper + WINKELSTUFEN,             // ohne Fahrer (er lehnt sich heraus): 0 = nach rechts, 1 = nach links
     RaupeKetteR = RaupeLeer + 2,                         // + Winkelstufe * KETTENPHASEN + Phase
@@ -26,9 +28,10 @@ enum class Teil : uint16_t {
     PflugRad = PflugLeer + 2,                            // + Winkelstufe * RADPHASEN + Phase
     PflugSchild = PflugRad + WINKELSTUFEN * RADPHASEN,
     HeliKoerper = PflugSchild + WINKELSTUFEN,
-    Blase0 = HeliKoerper + WINKELSTUFEN,                 // … Blase0 + spruchAnzahl() - 1
+    FahrerRaus = HeliKoerper + WINKELSTUFEN,             // ausgestiegener Fahrer beim Streik: (nach rechts, nach links) × zwei Faust-Haltungen
+    Anzahl = FahrerRaus + 4,
 };
-inline int teilAnzahl() { return int(Teil::Blase0) + spruchAnzahl(); }
+inline int teilAnzahl() { return int(Teil::Anzahl); }
 
 struct Zeichenteil {
     uint16_t teil;
@@ -38,10 +41,20 @@ struct Zeichenteil {
     float alpha;
 };
 
+// Sprechblase mit freiem Text (gezeichnet über den Blasenvorrat, blasen.h)
+struct Blasenbild {
+    std::string text;
+    float x, y;      // Schwanzspitze: zeigt auf den Sprecher (global logisch)
+    float skala;     // logische px je Einheit der Blase
+    float mass;      // Einblend-Animation: 1 = volle Größe
+    float alpha;
+};
+
 struct Szene {
     std::vector<Zeichenteil> teile;  // in Zeichenreihenfolge
     std::vector<Decke> haufen;       // Schneewulst vor dem Schild, gezeichnet wie eine Decke
-    void leeren() { teile.clear(); haufen.clear(); }
+    std::vector<Blasenbild> blasen;  // über allem
+    void leeren() { teile.clear(); haufen.clear(); blasen.clear(); }
 };
 
 // Maßstab der Sprechblasen (bleiben lesbar, wachsen nur wenig mit)

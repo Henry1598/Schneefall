@@ -5,6 +5,7 @@
 #pragma once
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <random>
 #include <string>
@@ -33,6 +34,23 @@ struct Klangereignis {
     double staerke = 1;  // Einmal: Stärke 0..2, Dauer: Last 0..1
 };
 
+// Wer spricht und aus welchem Anlass (Reihenfolge wie Sprecher/Anlass in sprueche.h)
+enum class Redner { Fahrer, Pilot };
+enum class Redeanlass { Treffer, Streik, BeleidigtAbflug, Gruss, HeliTreffer, HeliAbholen, HeliAbflug };
+// Liefert den Satz: trefferzahl bestimmt die Ausdrucksweise (1 = freundlich, mit jedem Treffer deutlicher).
+// Das Programm hängt hier die 1000 Sprüche an (sprueche.h); ohne Quelle gibt es ein paar eingebaute Sätze.
+using Spruchquelle = std::function<std::string(Redner, Redeanlass, int trefferzahl)>;
+
+struct Sprechblase {
+    std::string text;         // leer = keine Blase
+    double rest = 0;          // s, bis sie verschwindet
+    double dauer = 0;         // gesamte Anzeigedauer (für das Ein- und Ausblenden)
+    Redeanlass anlass = Redeanlass::Gruss;
+    bool sichtbar() const { return rest > 0 && !text.empty(); }
+};
+// Anzeigedauer nach Textlänge (Lesezeit), 2 … 6,5 s
+double blasenDauer(const std::string &text);
+
 // Last am Seil: Punktmasse an einem Seil fester Länge (zieht nur, schiebt nicht), gedämpft.
 struct Seilpendel {
     double x = 0, y = 0, vx = 0, vy = 0; // Last
@@ -53,6 +71,7 @@ struct Hubschrauber {
     double rotor = 0;     // Phase
     double unruhe = 0;    // Zeit für die Schwebe-Unruhe
     double stoss = 0;     // Wackeln nach Balltreffer
+    Sprechblase blase;    // der Pilot sagt etwas
     void schritt(double dt, double maxV, double maxA);
 };
 
@@ -89,7 +108,10 @@ struct Fahrzeug {
     double schild = 1;        // 0 = unten, 1 = oben
     double nicken = 0, nickV = 0, hub = 0, hubV = 0, wackeln = 0, wackelV = 0;
     double wulst = 0;         // Schnee vor dem Schild
-    double kippRest = 0;      // gesammelter Abwurf bis zum nächsten Brocken
+    double kippRest = 0;      // gesammelter Abwurf bis zum nächsten Brocken (seitlich am vollen Schild)
+    double ueberhang = 0;     // Schnee, der an der Fensterkante überhängt, bis er abbricht
+    double bruchAb = 40;      // bei dieser Menge bricht der Überhang (wechselt, damit die Schollen unregelmäßig sind)
+    double broeselRest = 0, pulverRest = 0;
     double last = 0;          // Motorlast 0..1
     double leuchte = 0;       // Phase der Rundumleuchte
     double schneeDach = 0;    // 0..1 liegengebliebener Schnee
@@ -98,8 +120,8 @@ struct Fahrzeug {
     int treffer = 0, streiks = 0, trefferImStreik = 0;
     double raus = 0;          // 0 = Fahrer sitzt, 1 = lehnt sich raus
     double faust = 0;         // Phase der drohenden Faust
-    int spruch = -1;          // Index in sprueche(), -1 = keine Sprechblase
-    double blaseRest = 0;     // s
+    Sprechblase blase;        // der Fahrer sagt etwas
+    int trefferGesamt = 0;    // alle Treffer dieses Einsatzes: je mehr, desto deutlicher wird er
     std::vector<Klecks> kleckse;
 };
 
@@ -114,6 +136,7 @@ struct Einsatz {
     Seilpendel seil;          // Last = Fahrzeug-Öse (angehängt) oder Haken
     bool angehaengt = true;
     bool abbruch = false, eilig = false, beleidigt = false;
+    int heliTreffer = 0;       // Schneebälle auf den Hubschrauber
     Fahrzeug fz;
     double segA = 0, segB = 0; // befahrbarer Abschnitt (Welt-x)
     double kanteY = 0;         // Fensteroberkante
@@ -121,6 +144,11 @@ struct Einsatz {
     uint32_t schluessel = 0;
     bool boden = false;
     double abwindRest = 0, warteSeite = 1, rutschKlang = 0;
+    double sichtRest = 0;      // bis zur nächsten Prüfung, ob die Kante noch zu sehen ist
+    double spurA = 0, spurB = 0; // geräumter Streifen (relativ zur linken Deckenkante): dort bleibt die Kettenspur
+    bool spur = false;
+    struct Fallstueck { double x, y, menge; };
+    std::vector<Fallstueck> fallend;   // abgeworfene Schollen im letzten Schritt (für Staub beim Aufprall)
     int ausgang = 1;           // Weltseite für den Abflug
 };
 
@@ -130,7 +158,7 @@ struct Schneeball {
     double radius() const;
 };
 
-struct Staub { float x, y, vx, vy, alter, dauer, groesse; uint8_t art; }; // art 0 = Schneestaub, 1 = Rauch
+struct Staub { float x, y, vx, vy, alter, dauer, groesse; uint8_t art; }; // art 0 = Schneestaub, 1 = Rauch, 2 = Schneebröckchen (kullert, fällt)
 
 // Form des Schneewulstes vor dem Schild (Fläche in px², g = Fahrzeuggröße)
 double wulstHoehe(double flaeche, double g);
@@ -146,13 +174,12 @@ double wendeRadius(Fahrzeugart a, double fahrzeugGroesse);
 // Profil: Höhe im Abstand s vor dem Schild
 double wulstProfil(double flaeche, double g, double s);
 
-int spruchAnzahl();
-const char *spruchText(int i);      // 0..7 Streik, 8..10 beleidigt, 11..12 Gruß
 
 class Raeumdienst {
 public:
     explicit Raeumdienst(Simulation &sim, uint32_t saat = 777);
     void setEinstellungen(const RaeumEinstellungen &e) { m_e = e; }
+    void setSpruchquelle(Spruchquelle q) { m_sprueche = std::move(q); }
     const RaeumEinstellungen &einstellungen() const { return m_e; }
 
     void schritt(double dt);
@@ -160,6 +187,9 @@ public:
     bool buchen(const std::string &id, bool vorne = false);
     // „Jetzt räumen“: sofort am Fenster mit dem meisten Schnee; gibt dessen ID zurück ("" = nichts zu räumen)
     std::string jetztRaeumen();
+    // Ist die Kante dieser Decke für einen Einsatz geeignet? Nicht bei Vollbild, minimiert, Oberkante am oberen
+    // Monitorrand (maximiert), größtenteils verdeckt oder ohne freien Abschnitt für Fahrzeug und Wende.
+    bool raeumbar(const Decke &d) const;
     // Anteil der Höchstmenge (90. Perzentil der sichtbaren Spalten)
     double fuellstand(const Decke &d) const;
 
@@ -185,6 +215,8 @@ public:
 
 private:
     bool starten(const std::string &id);
+    void ueberhangBrechen(Einsatz &e);
+    void schollenSchritt(Einsatz &e, double dt);
     bool abschnittUm(const Decke &d, double x, double &a, double &b) const;
     void einsatzSchritt(Einsatz &e, double dt);
     void fahrzeugSchritt(Einsatz &e, const Decke &d, double dt);
@@ -199,7 +231,8 @@ private:
     void staubWolke(double x, double y, int anzahl, double tempo, double groesse, uint8_t art = 0);
     void klang(Geraeusch a, double x, double y, double staerke = 1);
     void dauer(const Einsatz &e, int kanal, Geraeusch a, double x, double y, double last);
-    void sagen(Fahrzeug &f, int von, int anzahl, double dauer);
+    // neue Sprechblase (mit Murren); entprellt = nur, wenn die letzte Blase schon eine Weile steht
+    bool sagen(Sprechblase &b, Redner wer, Redeanlass anlass, int trefferzahl, double x, double y, double entprellt = 0);
     double zufall() { return m_u(m_rng); }
     double g() const { return m_e.fahrzeugGroesse; }
 
@@ -220,6 +253,7 @@ private:
     std::vector<int> m_dauerAn, m_dauerNeu; // laufende Dauerklang-IDs
     double m_pruefRest = 0;
     int m_naechsteNr = 1, m_spruchNr = 0;
+    Spruchquelle m_sprueche;
 };
 
 } // namespace schnee

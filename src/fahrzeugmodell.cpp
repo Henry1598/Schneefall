@@ -153,8 +153,9 @@ Modell raupeKette(int seite, int phase) {
     const double dreh = double(phase) / KETTENPHASEN;
     rolle("Triebrad", -23, 9.2, 6.79, 8, dreh * 2 * PI / 8);
     rolle("Leitrad", 22, 8.6, 5.94, 7, dreh * 2 * PI / 7);
-    for (double x : {-13.0, -5.5, 2.0, 9.5}) rolle("Laufrolle", x, 4.6, 3.3, 1, 0);
-    for (double x : {-8.0, 8.0}) rolle("Stuetzrolle", x, 14.3, 1.7, 1, 0);
+    // Radien so, dass ein Kettenglied Weg genau einer Teilung der Rolle entspricht: die Rollen drehen sichtbar mit
+    for (double x : {-13.0, -5.5, 2.0, 9.5}) rolle("Laufrolle", x, 4.6, 3.39, 4, -dreh * 2 * PI / 4);
+    for (double x : {-8.0, 8.0}) rolle("Stuetzrolle", x, 14.3, 1.697, 2, dreh * 2 * PI / 2);
     // Schubrahmen des Schilds: läuft außen an der Kette vorbei und gehört deshalb zu dieser Schicht
     m.quader(m.teil("Schubrahmen", Stoff::Lack, GELB_DUNKEL), 4, 33.5, 5.4, 8.8, std::min(seite * 16.8, seite * 18.6), std::max(seite * 16.8, seite * 18.6), 0.5);
     m.zylinder(m.teil("Gelenk", Stoff::Metall, STAHL_DUNKEL), {5.6, 7.1, seite * 16.4}, {5.6, 7.1, seite * 19.0}, 1.9, 10);
@@ -244,6 +245,36 @@ Modell pflugSchild() {
     }
     schildblatt(m, {28.6, 0.9}, {25.8, 7}, {28.2, 13.2}, 0.9, 1.3, 13.6, Stoff::Lack, ORANGE, ORANGE_DUNKEL);
     m.quader(m.teil("Schneidkante", Stoff::Metall, 0xff3a3e46), 27.6, 29.4, 0.2, 1.8, -13.8, 13.8, 0.25);
+    return m;
+}
+
+Modell fahrerStehend(int haltung) {
+    Modell m;
+    m.schnee = 0;
+    m.schmutz = 0;
+    const uint16_t stiefel = m.teil("Stiefel", Stoff::Gummi, 0xff1c1c20);
+    const uint16_t hose = m.teil("Hose", Stoff::Tuch, 0xff2c3852);
+    for (int seite : {-1, 1}) {
+        m.ellipsoid(stiefel, {0.7, 0.9, seite * 1.7}, {2.3, 0.95, 1.25}, 8);
+        m.rohr(hose, {0, 1.4, seite * 1.7}, {0, 9.8, seite * 1.5}, 1.3, 1.5, 8);
+    }
+    m.ellipsoid(m.teil("Fahrer", Stoff::Tuch, JACKE, Muster::Jacke), {0, 14.2, 0}, {2.9, 5.3, 4.0}, 14);
+    const uint16_t arm = m.teil("Fahrer", Stoff::Tuch, JACKE);
+    const uint16_t hand = m.teil("Faust", Stoff::Haut, HAUT);
+    // linker Arm in die Hüfte gestemmt
+    m.rohr(arm, {0, 17.6, -3.9}, {-0.6, 14.4, -5.6}, 1.2, 1.1, 8);
+    m.rohr(arm, {-0.6, 14.4, -5.6}, {0.8, 12.6, -3.6}, 1.1, 0.95, 8);
+    // rechter Arm mit geballter Faust: hoch erhoben oder nach vorn gestoßen
+    const P3 ellbogen = haltung == 0 ? P3{2.6, 20.6, 4.9} : P3{3.4, 18.6, 5.0};
+    const P3 faust = haltung == 0 ? P3{4.2, 25.6, 4.6} : P3{7.4, 22.4, 4.6};
+    m.rohr(arm, {0, 17.8, 3.9}, ellbogen, 1.25, 1.1, 8);
+    m.rohr(arm, ellbogen, faust, 1.1, 0.95, 8);
+    m.ellipsoid(hand, faust, {1.45, 1.35, 1.35}, 8);
+    m.rohr(m.teil("Fahrer", Stoff::Haut, HAUT), {0.2, 18.8, 0}, {0.4, 20.2, 0}, 1.3, 1.3, 8, false);
+    m.ellipsoid(m.teil("Fahrerkopf", Stoff::Haut, HAUT, Muster::Gesicht), {0.6, 21.8, 0}, {2.8, 3.0, 2.7}, 16);
+    const uint16_t helm = m.teil("Helm", Stoff::Lack, HELM);
+    m.ellipsoid(helm, {0.4, 22.5, 0}, {3.2, 3.1, 3.15}, 16, 0.02, 1);
+    m.rohr(helm, {1.6, 22.6, 0}, {1.6, 22.95, 0}, 3.8, 3.6, 16);
     return m;
 }
 

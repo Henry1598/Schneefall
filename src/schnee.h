@@ -161,6 +161,7 @@ public:
     // Menge, die eine Flocke dieser Größe beim Landen ablegt (für aufgewirbelten Schnee)
     double ablageJeFlocke(double groesse) const { return ablageFuer(groesse); }
     const std::vector<Rechteck> &bildschirme() const { return m_bildschirme; }
+    const std::vector<Fenster> &fenster() const { return m_fenster; }
     double maxHoeheVon(const Decke &d) const { return maxFuer(d); }
 
 private:

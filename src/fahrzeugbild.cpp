@@ -62,22 +62,6 @@ QPainterPath rund(double x, double y, double w, double h, double r) {
     return pf;
 }
 
-// Glas: oben hell (Himmel spiegelt sich), unten dunkel, schräger Lichtreflex
-void glas(QPainter &p, const QPainterPath &pfad, const QRectF &r, int deckkraft = 235) {
-    flaeche(p, pfad, verlauf(r.left(), r.top(), r.left() + r.width() * 0.25, r.bottom(),
-                             {{0, QColor(214, 238, 255, deckkraft)}, {0.45, QColor(96, 150, 200, deckkraft)}, {1, QColor(26, 48, 76, deckkraft)}}), 0.6);
-    p.save();
-    p.setClipPath(pfad, Qt::IntersectClip);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(255, 255, 255, 120));
-    const double w = r.width(), h = r.height();
-    p.drawPath(vieleck({{r.left() + w * 0.18, r.top()}, {r.left() + w * 0.36, r.top()}, {r.left() + w * 0.12, r.bottom()}, {r.left() - w * 0.06, r.bottom()}}));
-    p.setBrush(QColor(255, 255, 255, 70));
-    p.drawPath(vieleck({{r.left() + w * 0.46, r.top()}, {r.left() + w * 0.54, r.top()}, {r.left() + w * 0.3, r.bottom()}, {r.left() + w * 0.22, r.bottom()}}));
-    Q_UNUSED(h);
-    p.restore();
-}
-
 void leuchtpunkt(QPainter &p, double w, const QColor &farbe) {
     QRadialGradient g(w / 2, w / 2, w / 2);
     g.setColorAt(0, QColor(255, 255, 255, 255));
@@ -156,53 +140,6 @@ void schatten(QPainter &p) {
     p.restore();
 }
 
-// ---- Pistenraupe / Bulldozer (Schild rechts) ----
-void fahrer(QPainter &p) {
-    QPainterPath jacke;
-    jacke.moveTo(2, 18);
-    jacke.cubicTo(1.6, 12, 3.4, 9.2, 6.6, 8.8);
-    jacke.cubicTo(10.4, 9, 12.2, 12, 12, 18);
-    jacke.closeSubpath();
-    flaeche(p, jacke, verlauf(2, 9, 12, 18, {{0, QColor(255, 140, 40)}, {1, QColor(206, 84, 10)}}), 0.6);
-    p.save();
-    p.setClipPath(jacke, Qt::IntersectClip);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(236, 240, 180));
-    p.drawRect(QRectF(0, 13.2, 14, 1.5));
-    p.setBrush(QColor(200, 206, 214));
-    p.drawRect(QRectF(0, 13.7, 14, 0.5));
-    p.restore();
-    // Kopf
-    p.setPen(stift(RAND, 0.5));
-    p.setBrush(QColor(240, 196, 160));
-    p.drawEllipse(QPointF(7.4, 6.2), 3.1, 3.3);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(110, 74, 48));
-    p.drawPath(vieleck({{6.4, 7.6}, {10.2, 7.2}, {9.6, 9.6}, {7.2, 9.6}}));  // Bart
-    p.setBrush(QColor(30, 26, 26));
-    p.drawEllipse(QPointF(9.0, 5.7), 0.55, 0.65);                             // Auge
-    p.setPen(stift(QColor(60, 30, 20), 0.5));
-    p.drawLine(QPointF(8.2, 4.5), QPointF(9.9, 5.0));                         // grimmige Braue
-    // Helm mit Schirm
-    QPainterPath helm;
-    helm.moveTo(3.9, 5.0);
-    helm.cubicTo(3.8, 0.6, 10.8, 0.4, 10.9, 4.4);
-    helm.lineTo(12.6, 4.6);
-    helm.lineTo(12.6, 5.4);
-    helm.lineTo(3.9, 5.4);
-    helm.closeSubpath();
-    flaeche(p, helm, verlauf(4, 1, 11, 5, {{0, QColor(255, 255, 255)}, {1, QColor(206, 212, 222)}}), 0.5);
-}
-
-void arm(QPainter &p) {
-    flaeche(p, rund(0.9, 0.4, 3.2, 8.6, 1.5), verlauf(0.9, 0, 4.1, 0, {{0, QColor(255, 140, 40)}, {1, QColor(206, 84, 10)}}), 0.5);
-    p.setPen(stift(RAND, 0.5));
-    p.setBrush(QColor(240, 196, 160));
-    p.drawEllipse(QPointF(2.5, 9.9), 1.9, 1.9);   // Faust
-    p.setPen(stift(QColor(170, 120, 90), 0.35));
-    p.drawLine(QPointF(1.4, 10.3), QPointF(3.6, 10.3));
-}
-
 void schneeBuckel(QPainter &p, double w, double h, unsigned saat) {
     QPainterPath b;
     b.moveTo(0.6, h);
@@ -278,29 +215,48 @@ void ball(QPainter &p) {
     p.drawPath(vieleck({{m + 3, m + 6}, {m + 10, m + 3}, {m + 8, m + 9}})); // Kerbe
 }
 
-QFont blasenSchrift() {
-    QFont f(QStringLiteral("Noto Sans"));
-    f.setPixelSize(11);
-    f.setBold(true);
-    f.setHintingPreference(QFont::PreferNoHinting);
-    return f;
-}
-
-void blase(QPainter &p, const QString &text, double w, double h) {
-    QPainterPath b;
-    b.addRoundedRect(QRectF(1, 1, w - 2, h - 9), 7, 7);
-    QPainterPath zipfel = vieleck({{9, h - 9.5}, {19, h - 9.5}, {3, h - 0.8}});
-    b = b.united(zipfel);
-    p.setPen(stift(QColor(28, 32, 40), 1.3));
-    p.setBrush(verlauf(0, 0, 0, h, {{0, QColor(255, 255, 255)}, {1, QColor(232, 238, 246)}}));
-    p.drawPath(b);
-    p.setFont(blasenSchrift());
-    p.setPen(QColor(24, 28, 36));
-    p.drawText(QRectF(1, 1, w - 2, h - 10), Qt::AlignCenter, text);
-}
-
 // ---- 3D-Ansichten fürs Wenden ----
 // Seitenbild als Textur: genau die Malerei der Seitenansicht, damit die Ansicht bei Gier 0 dem gewohnten Bild gleicht
+// Schneebrocken: unregelmäßiger Klumpen, oben hell, unten bläulich im Schatten, körnig
+void scholle(QPainter &p, unsigned saat) {
+    QPainterPath k;
+    const int ecken = 9;
+    for (int i = 0; i <= ecken; ++i) {
+        const int j = i % ecken;
+        unsigned h = (saat + unsigned(j) * 97u) * 1664525u + 1013904223u;
+        const double w = j * 2 * PI / ecken + ((h >> 8) & 255) / 255.0 * 0.4, r = 4.4 + 3.2 * ((h >> 16) & 255) / 255.0;
+        const QPointF q(8 + std::cos(w) * r, 8 + std::sin(w) * r * 0.82);
+        if (i == 0) k.moveTo(q); else k.lineTo(q);
+    }
+    k.closeSubpath();
+    QLinearGradient g(4, 2, 11, 15);
+    g.setColorAt(0, QColor(255, 255, 255));
+    g.setColorAt(0.55, QColor(232, 240, 250));
+    g.setColorAt(1, QColor(170, 190, 220));
+    p.setPen(stift(QColor(130, 156, 196, 190), 0.6));
+    p.setBrush(g);
+    p.drawPath(k);
+    p.setClipPath(k);
+    p.setPen(Qt::NoPen);
+    for (int i = 0; i < 14; ++i) {   // Körnung: kleine Schatten und Glitzer
+        saat = saat * 1664525u + 1013904223u;
+        const double x = 3 + 10 * ((saat >> 8) & 255) / 255.0, y = 3 + 10 * ((saat >> 16) & 255) / 255.0;
+        p.setBrush(i % 3 ? QColor(150, 174, 208, 110) : QColor(255, 255, 255, 230));
+        p.drawEllipse(QPointF(x, y), 0.9, 0.7);
+    }
+}
+
+// Kettenabdruck im festgefahrenen Schnee: zwei Reihen kurzer Querrillen
+void spur(QPainter &p) {
+    p.setPen(Qt::NoPen);
+    for (int i = 0; i < 6; ++i) {
+        p.setBrush(QColor(96, 124, 168, 150));
+        p.drawRoundedRect(QRectF(0.6 + i * 2.67, 0.7, 1.5, 1.1), 0.4, 0.4);
+        p.setBrush(QColor(255, 255, 255, 170));
+        p.drawRect(QRectF(0.6 + i * 2.67, 0.3, 1.5, 0.4));
+    }
+}
+
 struct Vorlage {
     Teil teil;
     float w, h, px, py;
@@ -309,9 +265,9 @@ const Vorlage VORLAGEN[] = {
     {Teil::HeliRotor0, 176, 32, 88, 16}, {Teil::HeliRotor1, 176, 32, 88, 16}, {Teil::HeliRotor2, 176, 32, 88, 16}, {Teil::HeliRotor3, 176, 32, 88, 16},
     {Teil::LichtRot, 16, 16, 8, 8}, {Teil::LichtGruen, 16, 16, 8, 8}, {Teil::LichtWeiss, 16, 16, 8, 8}, {Teil::LichtOrange, 16, 16, 8, 8},
     {Teil::Haken, 8, 12, 4, 1}, {Teil::Seil, 4, 4, 2, 2}, {Teil::Schatten, 64, 12, 32, 6},
-    {Teil::Fahrer, 14, 18, 7, 18}, {Teil::Arm, 5, 12, 2.5f, 1.5f},
     {Teil::SchneeDach, 30, 8, 15, 8}, {Teil::SchneeHaube, 24, 6, 12, 6}, {Teil::Klecks, 16, 16, 8, 8},
     {Teil::Rauch, 16, 16, 8, 8}, {Teil::Staub, 16, 16, 8, 8}, {Teil::Ball, 36, 36, 18, 18},
+    {Teil::Scholle0, 16, 16, 8, 8}, {Teil::Scholle1, 16, 16, 8, 8}, {Teil::Scholle2, 16, 16, 8, 8}, {Teil::Spur, 16, 2.4f, 8, 2.4f},
 };
 
 void malen(QPainter &p, Teil t) {
@@ -327,14 +283,16 @@ void malen(QPainter &p, Teil t) {
     case Teil::Haken: haken(p); break;
     case Teil::Seil: seil(p); break;
     case Teil::Schatten: schatten(p); break;
-    case Teil::Fahrer: fahrer(p); break;
-    case Teil::Arm: arm(p); break;
     case Teil::SchneeDach: schneeBuckel(p, 30, 8, 7); break;
     case Teil::SchneeHaube: schneeBuckel(p, 24, 6, 21); break;
     case Teil::Klecks: klecks(p); break;
     case Teil::Rauch: wolke(p, QColor(120, 120, 126, 190), QColor(86, 86, 92, 150)); break;
     case Teil::Staub: wolke(p, QColor(255, 255, 255, 235), QColor(236, 243, 252, 190)); break;
     case Teil::Ball: ball(p); break;
+    case Teil::Scholle0: scholle(p, 11); break;
+    case Teil::Scholle1: scholle(p, 523); break;
+    case Teil::Scholle2: scholle(p, 90417); break;
+    case Teil::Spur: spur(p); break;
     default: break;
     }
 }
@@ -345,12 +303,6 @@ FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
     std::vector<Auftrag> auftraege;
     auftraege.resize(size_t(teilAnzahl()));
     for (const Vorlage &v : VORLAGEN) auftraege[size_t(v.teil)] = {v.w, v.h, v.px, v.py, dpr * groesse, 1, QString(), nullptr, 0};
-    const QFontMetricsF masse(blasenSchrift());
-    for (int i = 0; i < spruchAnzahl(); ++i) {
-        const QString text = QString::fromUtf8(spruchText(i));
-        const float w = float(std::ceil(masse.horizontalAdvance(text)) + 22);
-        auftraege[size_t(int(Teil::Blase0) + i)] = {w, 31, 3, 30.2f, dpr * blasenSkala(groesse), 2, text, nullptr, 0};
-    }
     // 3D-Ansichten: jede Schicht jedes Fahrzeugs je Winkelstufe. Bei sehr großen Fahrzeugen etwas gröber
     // gerastert (höchstens 3 px je Einheit), damit der Atlas nicht ausufert.
     const double skala3d = std::min(dpr * groesse, 3.0);
@@ -378,6 +330,12 @@ FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
     for (int ph = 0; ph < RADPHASEN; ++ph) schicht(Teil::PflugRad, RADPHASEN, ph, pflugRad(ph), RAHMEN_RAD);
     schicht(Teil::PflugSchild, 1, 0, pflugSchild(), RAHMEN_PSCHILD);
     schicht(Teil::HeliKoerper, 1, 0, heliKoerper(), RAHMEN_HELI);
+    // ausgestiegener Fahrer: nach rechts und nach links schauend, je zwei Faust-Haltungen
+    for (int haltung = 0; haltung < 2; ++haltung) {
+        modelle.push_back(fahrerStehend(haltung));
+        for (int k = 0; k < 2; ++k)
+            auftraege[size_t(int(Teil::FahrerRaus) + k * 2 + haltung)] = {RAHMEN_FAHRER.w, RAHMEN_FAHRER.h, RAHMEN_FAHRER.px, RAHMEN_FAHRER.py, skala3d, 3, QString(), &modelle.back(), k * PI};
+    }
 
     // einfache Regalpackung
     const int rand = 2, maxBreite = skala3d > 2 ? 4096 : 2048;
@@ -402,14 +360,13 @@ FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
         p.setRenderHint(QPainter::TextAntialiasing);
         for (size_t i = 0; i < auftraege.size(); ++i) {
             const Auftrag &t = auftraege[i];
-            if (t.art != 1 && t.art != 2) continue;
+            if (t.art != 1) continue;
             const FahrzeugFeld &f = a.felder[i];
             p.save();
             p.setClipRect(QRect(f.x, f.y, f.w, f.h));
             p.translate(f.x, f.y);
             p.scale(f.w / double(t.w), f.h / double(t.h));
-            if (t.art == 2) blase(p, t.text, t.w, t.h);
-            else malen(p, Teil(i));
+            malen(p, Teil(i));
             p.restore();
         }
     }

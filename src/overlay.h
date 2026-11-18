@@ -12,6 +12,7 @@
 #include <vector>
 #include "deckenform.h"
 #include "kristall.h"
+#include "blasen.h"
 #include "fahrzeugbild.h"
 #include "raeumszene.h"
 #include "schnee.h"
@@ -46,6 +47,7 @@ private:
     bool fahrzeugAtlasLaden(double dpr);
     void fahrzeugeSammeln(float bx, float by, float bw, float bh);
     void haufenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
+    void blasenSammeln(float bx, float by, float bw, float bh, double dpr);
     void flockenSammeln(float bx, float by, float bw, float bh);
     void deckenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
     void brockenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
@@ -67,6 +69,8 @@ private:
     double m_fahrzeugDpr = 0, m_fahrzeugMass = 0;
     std::vector<FahrzeugFeld> m_felder;
     int m_fahrzeugBreite = 1, m_fahrzeugHoehe = 1;
+    Blasenpool m_blasen;        // Sprechblasen: je Satz einmal gemalt
+    GLuint m_blasenTextur = 0;
     QRegion m_eingabe;          // zuletzt gesetzte Eingaberegion (lokal)
     bool m_gedrueckt = false;
     QElapsedTimer m_uhr;
