@@ -1,8 +1,15 @@
 // Steuerkanal: Einzelinstanz und Befehle an das laufende Programm (--status, --raeumen, --umschalten, …).
 //
 // Plattformneutral über QLocalServer/QLocalSocket (Linux: Unix-Socket im Laufzeitordner des Benutzers,
-// Windows: benannte Pipe je Benutzer). Protokoll: je Verbindung eine Zeile JSON {"befehl":…, "argumente":[…]},
-// Antwort eine Zeile {"ergebnis":"ok"|"unbekannt", "text":…}.
+// Windows: benannte Pipe je Benutzer-SID und Sitzung). Protokoll: je Verbindung eine Zeile JSON
+// {"befehl":…, "argumente":[…]}, Antwort eine Zeile {"ergebnis":"ok"|"unbekannt", "text":…}.
+//
+// Grenzen (Sicherheitsprüfung): Anfrage bis 64 KiB, je Verbindung ein Befehl und höchstens 2 s, höchstens
+// 16 Verbindungen gleichzeitig; der Client nimmt Antworten bis 4 MiB an.
+//
+// Einzelinstanz: eine Sperrdatei (QLockFile) neben dem Socket bzw. unter %LOCALAPPDATA%\Schneefall\ entscheidet.
+// Nur wer sie hält, darf einen verwaisten Socket entfernen; die Sperre eines abgestürzten Prozesses (PID lebt
+// nicht mehr) wird übernommen.
 //
 // Dazu der Systemkanal der Plattform: unter Linux der D-Bus-Dienst org.schneefall (das KWin-Skript schickt
 // dort die Fensterliste hin, qdbus6 kann Befehle senden); unter Windows gibt es keinen.
@@ -28,17 +35,25 @@ struct Antwort {
 // führt einen Befehl im laufenden Programm aus (GUI-Thread); unbekannter Befehl oder falsche Argumente → Unbekannt
 using Befehlsziel = std::function<Antwort(const QString &befehl, const QStringList &argumente)>;
 
+// Text fürs Terminal: Steuerzeichen außer Zeilenumbruch und Tabulator (ESC, BEL, CR, DEL, C1 …) werden zu „?“
+QString terminalText(const QString &text);
+
 class Steuerkanal {
 public:
+    enum class Anmeldung { Ok, LaeuftSchon, Fehler };
     explicit Steuerkanal(Befehlsziel ziel, QString name = standardName());
     ~Steuerkanal();
     Steuerkanal(const Steuerkanal &) = delete;
     Steuerkanal &operator=(const Steuerkanal &) = delete;
-    // Einzelinstanz: false, wenn unter dem Namen schon eine Instanz antwortet. Ein verwaister Socket einer
-    // abgestürzten Instanz wird ersetzt. Nur der eigene Benutzer kann sich verbinden.
-    bool anmelden();
+    // Einzelinstanz: LaeuftSchon, wenn eine andere Instanz die Sperre hält oder unter dem Namen antwortet
+    // (z. B. eine ältere Version ohne Sperre). Mit gehaltener Sperre wird ein verwaister Socket ersetzt.
+    // Fehler: Sperre oder Lauschen unmöglich (Text in fehlertext()). Nur der eigene Benutzer kann sich verbinden.
+    Anmeldung anmelden();
+    QString fehlertext() const { return m_fehler; }
     QString name() const { return m_name; }
-    // Name je Benutzer (Linux: $XDG_RUNTIME_DIR/schneefall.sock, Windows: schneefall-<Benutzer>)
+    // Sperrdatei zum Namen (Linux: <socket>.lock, Windows: %LOCALAPPDATA%\Schneefall\<name>.lock)
+    static QString sperrPfad(const QString &name);
+    // Name je Benutzer (Linux: $XDG_RUNTIME_DIR/schneefall.sock, Windows: schneefall-<Benutzer-SID>-<Sitzung>)
     static QString standardName();
     // Client: Befehl senden und auf die Antwort warten (blockiert höchstens ms). NichtErreicht, wenn keine Instanz läuft.
     static Antwort senden(const QString &befehl, const QStringList &argumente = {}, const QString &name = standardName(), int ms = 3000);
@@ -47,6 +62,7 @@ private:
     struct Impl;
     Befehlsziel m_ziel;
     QString m_name;
+    QString m_fehler;
     std::unique_ptr<Impl> m_impl;
 };
 

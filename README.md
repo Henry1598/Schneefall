@@ -44,6 +44,26 @@ Befehle für die Konsole:
 qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # dasselbe über D-Bus
 ```
 
+### Einzelinstanz und Sicherheit der Befehlswege
+
+- Nur eine Instanz je Benutzer: Sie hält die Sperrdatei `$XDG_RUNTIME_DIR/schneefall.sock.lock`
+  (Windows: `%LOCALAPPDATA%\Schneefall\<Pipe-Name>.lock`). Nach einem Absturz wird die Sperre übernommen,
+  sobald der alte Prozess nicht mehr lebt; nur wer sie hält, ersetzt einen verwaisten Socket. Lässt sich
+  der Steuerkanal nicht öffnen, meldet der Start einen Fehler (statt „läuft schon“).
+- Steuerkanal: Socket nur für den eigenen Benutzer, je Verbindung ein Befehl, höchstens 2 s und
+  16 Verbindungen gleichzeitig; Anfragen bis 64 KiB, Antworten bis 4 MiB. Zahlen müssen endlich sein
+  (`nan`/`inf` → „unbekannter Befehl“); Würfe werden auf ±5000 px um die Bildschirme und 2600 px/s
+  begrenzt, höchstens 64 Bälle fliegen gleichzeitig, jeder höchstens 20 s.
+- Ausgaben von `--status`, `--fensterliste` usw. erscheinen ohne Steuerzeichen (außer Zeilenumbruch/Tab).
+- D-Bus `org.schneefall` liegt im Sitzungsbus. **Jeder Prozess der Sitzung** kann ihn aufrufen – und den
+  Namen auch vorab belegen, bevor Schneefall startet. Dann gilt Schneefall als „läuft schon“, und das
+  KWin-Skript schickt seine Fensterliste an den fremden Prozess. Das ist kein Schutz gegen Programme, die
+  ohnehin unter dem eigenen Benutzer laufen; die Fensterliste aus `Fenster(json)` wird deshalb streng
+  geprüft (höchstens 1 MiB, 1000 Fenster, id bis 128 Zeichen ohne Steuerzeichen, endliche Zahlen,
+  Lage ±100000 px, Größe bis 100000 px).
+- Autostart: Der Programmpfad steht nach der Desktop-Entry-Spezifikation gequotet in `Exec=`; Pfade mit
+  Steuerzeichen werden abgelehnt (Hinweis im Steuerfenster).
+
 ## Steuerfenster
 
 - **Schnee an:** Pause, das Programm läuft weiter (Symbol bleibt im Systemabschnitt).
@@ -326,7 +346,8 @@ kaputte Datei ergibt eine Zählung ab null; die Datei löschen setzt die Statist
   - `fensterquelle.h` – Fensterliste (Linux: `linux/kwinfensterquelle` – das KWin-Skript über D-Bus),
   - `ebene.h` – Overlay-Fenster je Monitor (Linux: `linux/layerebene.cpp` – LayerShellQt),
   - `steuerkanal.{h,cpp}` – Einzelinstanz und Befehle, plattformneutral über `QLocalServer`
-    (Linux: `$XDG_RUNTIME_DIR/schneefall.sock`, Windows: benannte Pipe je Benutzer); dazu der Systemkanal
+    (Linux: `$XDG_RUNTIME_DIR/schneefall.sock`, Windows: benannte Pipe je Benutzer-SID und Sitzung) mit
+    Sperrdatei für die Einzelinstanz; dazu der Systemkanal
     (Linux: `linux/dbusdienst` – D-Bus `org.schneefall` wie bisher, das KWin-Skript braucht ihn),
   - `autostart.h` – Linux `.desktop`, Windows Registry `HKCU\…\Run`,
   - `pfade.{h,cpp}` – Ablage der Einstellungen (Linux `~/.config/schneefall.conf`, Windows `%APPDATA%\Schneefall\`).
@@ -360,7 +381,7 @@ cmake wird nicht gebraucht, es reicht ein Makefile mit pkg-config.
 ```
 cd ~/Schneefall
 ~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen (PLATTFORM=linux ist Standard; PLATTFORM=windows für MSYS2)
-~/.local/bin/testlauf 3G 300 make test-plattform    # nur Steuerkanal, App mit nachgebildeter Fensterquelle, KWin-Liste
+~/.local/bin/testlauf 3G 300 make test-plattform    # nur Steuerkanal, App mit nachgebildeter Fensterquelle, KWin-Liste, Autostart
 ~/.local/bin/testlauf 4G 300 make test         # QtTest: Klang, Räumdienst, Kern, Aussehen, Bildtakt, Steuerfenster + Test des KWin-Skripts (node)
 ~/.local/bin/testlauf 3G 300 make test-bildtakt # nur Bildzeiten, Teiler, Fortschreiben der Flocken, Bildrate
 ~/.local/bin/testlauf 4G 300 make test-raeumdienst   # nur Räumdienst, Schneebälle und 3D-Ansicht

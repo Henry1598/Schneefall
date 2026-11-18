@@ -31,8 +31,10 @@ public:
     // quelle: woher die Fensterliste kommt; nullptr = die der Plattform (Linux: KWin-Skript über D-Bus)
     explicit App(std::unique_ptr<plattform::Fensterquelle> quelle = nullptr);
     ~App() override;
-    // meldet Steuerkanal und Systemkanal (Linux: D-Bus org.schneefall) an; false, wenn schon eine Instanz läuft
-    bool dienstAnmelden();
+    // meldet Steuerkanal (mit Sperrdatei) und Systemkanal (Linux: D-Bus org.schneefall) an:
+    // Ok, LaeuftSchon (eine andere Instanz läuft) oder Fehler (Text in anmeldeFehler())
+    plattform::Steuerkanal::Anmeldung dienstAnmelden();
+    QString anmeldeFehler() const { return m_anmeldeFehler; }
     // ein Befehl aus Steuer- oder Systemkanal: Steuerfenster, Beenden, Umschalten, Abschuetteln, Status, Fensterliste,
     // Raeumen, Werfen x y vx vy menge, Zeitlupe faktor
     plattform::Antwort befehl(const QString &name, const QStringList &argumente);
@@ -96,6 +98,7 @@ private:
     std::unique_ptr<plattform::Fensterquelle> m_quelle;
     std::unique_ptr<plattform::Systemkanal> m_systemkanal;
     std::unique_ptr<plattform::Steuerkanal> m_steuerkanal;
+    QString m_anmeldeFehler;
     QHash<QScreen *, Overlay *> m_ebenen;
     QTimer m_takt;                 // Wächter (alle 100 ms), der eigentliche Takt kommt aus den Ebenen
     QTimer m_speicherTimer;

@@ -6,6 +6,7 @@
 
 namespace plattform {
 bool autostartAktiv();
-// programm: Pfad des zu startenden Programms (normalerweise QCoreApplication::applicationFilePath())
-void autostartSetzen(bool an, const QString &programm);
+// programm: Pfad des zu startenden Programms (normalerweise QCoreApplication::applicationFilePath()).
+// false, wenn sich der Eintrag nicht anlegen ließ (z. B. Pfad mit Steuerzeichen, Linux) – dann gibt es keinen.
+bool autostartSetzen(bool an, const QString &programm);
 } // namespace plattform

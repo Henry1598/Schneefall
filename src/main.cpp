@@ -16,11 +16,12 @@ int aufruf(const QString &befehl, const QStringList &argumente = {}) {
         return 1;
     }
     if (a.ergebnis == plattform::Antwort::Ergebnis::Unbekannt) {
-        std::fprintf(stderr, "schneefall: unbekannter Befehl oder falsche Argumente: %s %s\n", qPrintable(befehl),
-                     qPrintable(argumente.join(QLatin1Char(' '))));
+        std::fprintf(stderr, "schneefall: unbekannter Befehl oder falsche Argumente: %s %s\n", qPrintable(plattform::terminalText(befehl)),
+                     qPrintable(plattform::terminalText(argumente.join(QLatin1Char(' ')))));
         return 1;
     }
-    if (a.text) std::printf("%s\n", qPrintable(*a.text));
+    // die Antwort kommt von außen (Socket/D-Bus) und enthält z. B. Fenster-ids: ohne Steuerzeichen ausgeben
+    if (a.text) std::printf("%s\n", qPrintable(plattform::terminalText(*a.text)));
     return 0;
 }
 
@@ -55,9 +56,15 @@ int main(int argc, char **argv) {
     if (args.contains(QStringLiteral("--werfen"))) return aufruf(QStringLiteral("Werfen"), werteNach(args, QStringLiteral("--werfen"), 5));
 
     App app;
-    if (!app.dienstAnmelden()) {
+    switch (app.dienstAnmelden()) {
+    case plattform::Steuerkanal::Anmeldung::Ok:
+        break;
+    case plattform::Steuerkanal::Anmeldung::LaeuftSchon:
         // läuft schon: nur das Steuerfenster der laufenden Instanz öffnen
         return aufruf(QStringLiteral("Steuerfenster"));
+    case plattform::Steuerkanal::Anmeldung::Fehler:
+        std::fprintf(stderr, "schneefall: Start nicht möglich: %s\n", qPrintable(plattform::terminalText(app.anmeldeFehler())));
+        return 1;
     }
     app.starten();
     if (args.contains(QStringLiteral("--steuerfenster"))) app.Steuerfenster();

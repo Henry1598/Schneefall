@@ -13,10 +13,12 @@ RCC        ?= $(QT_LIBEXEC)/rcc
 QT_MODULE  := Qt6Widgets Qt6Gui Qt6OpenGL Qt6Network
 # kein LayerShellQt, kein QtDBus; Win32-Bibliotheken für das Windows-Backend (Schritt 3)
 LSQ_CFLAGS :=
-LSQ_LIBS   := -lgdi32 -ldwmapi -luser32 -lshell32 -lopengl32
+LSQ_LIBS   := -lgdi32 -ldwmapi -luser32 -lshell32 -lopengl32 -ladvapi32
+# Steuerkanal: Benutzer-SID (Pipe-Name, Prüfung des Servers)
+KANAL_LIBS := -ladvapi32
 PLAT_DATEIEN := fensterquelle ebene systemkanal autostart
 PLAT_MOC   :=
-KWIN_TEST  :=
+BACKEND_TESTS :=
 else ifeq ($(PLATTFORM),linux)
 EXE        :=
 MOC        ?= /usr/lib/qt6/moc
@@ -26,7 +28,9 @@ LSQ_CFLAGS := -I/usr/include/LayerShellQt
 LSQ_LIBS   := -lLayerShellQtInterface
 PLAT_DATEIEN := kwinfensterquelle layerebene dbusdienst autostart
 PLAT_MOC   := moc_dbusdienst
-KWIN_TEST  := test_kwinquelle
+KANAL_LIBS :=
+# Tests nur für das Linux-Backend
+BACKEND_TESTS := test_kwinquelle test_autostart
 else
 $(error PLATTFORM muss linux oder windows sein)
 endif
@@ -157,7 +161,7 @@ $(B)/test_steuerkanal.moc: tests/test_steuerkanal.cpp | $(B)
 	$(MOC) $< -o $@
 
 $(B)/test_steuerkanal$(EXE): tests/test_steuerkanal.cpp $(B)/test_steuerkanal.moc $(B)/steuerkanal.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(NET_CFLAGS) -I$(B) tests/test_steuerkanal.cpp $(B)/steuerkanal.o -o $@ $(NET_LIBS) $(TEST_LIBS)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(NET_CFLAGS) -I$(B) tests/test_steuerkanal.cpp $(B)/steuerkanal.o -o $@ $(NET_LIBS) $(TEST_LIBS) $(KANAL_LIBS)
 
 $(B)/test_kwinquelle.moc: tests/test_kwinquelle.cpp | $(B)
 	$(MOC) $< -o $@
@@ -165,10 +169,16 @@ $(B)/test_kwinquelle.moc: tests/test_kwinquelle.cpp | $(B)
 $(B)/test_kwinquelle: tests/test_kwinquelle.cpp $(B)/test_kwinquelle.moc $(B)/pl_kwinfensterquelle.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_kwinquelle.cpp $(B)/pl_kwinfensterquelle.o -o $@ $(TEST_LIBS)
 
-test-plattform: $(B)/test_steuerkanal$(EXE) $(B)/test_app$(EXE) $(if $(KWIN_TEST),$(B)/$(KWIN_TEST))
+$(B)/test_autostart.moc: tests/test_autostart.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_autostart: tests/test_autostart.cpp $(B)/test_autostart.moc $(B)/pl_autostart.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_autostart.cpp $(B)/pl_autostart.o -o $@ $(TEST_LIBS)
+
+test-plattform: $(B)/test_steuerkanal$(EXE) $(B)/test_app$(EXE) $(patsubst %,$(B)/%,$(BACKEND_TESTS))
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerkanal$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_app$(EXE)
-	$(if $(KWIN_TEST),QT_QPA_PLATFORM=offscreen ./$(B)/$(KWIN_TEST))
+	@set -e; for t in $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t; done
 
 # ---- Räumdienst (Teil B) ----
 $(B)/ansicht3d.o: src/ansicht3d.cpp src/ansicht3d.h | $(B)
@@ -231,8 +241,8 @@ test-klang: $(B)/test_klang$(EXE)
 
 TESTS := test_klang test_ansicht test_blasen test_raeumdienst test_schnee test_bild test_bildtakt test_steuerfenster test_sprueche \
          test_statistik test_steuerkanal test_app
-test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(if $(KWIN_TEST),$(B)/$(KWIN_TEST))
-	@set -e; for t in $(TESTS) $(KWIN_TEST); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
+test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%,$(BACKEND_TESTS))
+	@set -e; for t in $(TESTS) $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
 ifeq ($(PLATTFORM),linux)
 	node tests/test_kwin.js
 endif

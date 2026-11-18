@@ -198,6 +198,10 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     m_autostart = new QCheckBox(QStringLiteral("Mit dem System starten"), this);
     haupt->addWidget(m_vollbild);
     haupt->addWidget(m_autostart);
+    m_autostartHinweis = new QLabel(this);
+    m_autostartHinweis->setWordWrap(true);
+    m_autostartHinweis->hide();
+    haupt->addWidget(m_autostartHinweis);
 
     auto *unten = new QHBoxLayout;
     unten->addStretch();
@@ -216,7 +220,15 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     connect(m_bildrate, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
     connect(m_autostart, &QCheckBox::toggled, this, [this](bool an) {
         if (m_setzt) return;
-        plattform::autostartSetzen(an, QCoreApplication::applicationFilePath());
+        const bool ok = plattform::autostartSetzen(an, QCoreApplication::applicationFilePath());
+        m_autostartHinweis->setVisible(!ok);
+        if (!ok) {
+            // z. B. Programmpfad mit Steuerzeichen: kein Eintrag, Haken zurücknehmen
+            m_autostartHinweis->setText(QStringLiteral("Autostart ließ sich nicht einrichten (Programmpfad ungeeignet oder nicht beschreibbar)."));
+            m_setzt = true;
+            m_autostart->setChecked(plattform::autostartAktiv());
+            m_setzt = false;
+        }
     });
     ausEinstellungen();
 }

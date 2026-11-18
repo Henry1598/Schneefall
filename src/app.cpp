@@ -88,22 +88,27 @@ App::~App() {
 
 QString App::konfigPfad() { return plattform::konfigPfad(); }
 
-bool App::dienstAnmelden() {
+plattform::Steuerkanal::Anmeldung App::dienstAnmelden() {
+    using Anmeldung = plattform::Steuerkanal::Anmeldung;
     auto ziel = [this](const QString &name, const QStringList &argumente) { return befehl(name, argumente); };
-    // Linux: D-Bus org.schneefall (Einzelinstanz wie bisher; das KWin-Skript schickt dorthin die Fensterliste)
+    m_anmeldeFehler.clear();
+    // plattformneutral: Sperrdatei (Einzelinstanz) und lokaler Socket bzw. benannte Pipe
+    m_steuerkanal = std::make_unique<plattform::Steuerkanal>(ziel);
+    const Anmeldung a = m_steuerkanal->anmelden();
+    if (a != Anmeldung::Ok) {
+        m_anmeldeFehler = m_steuerkanal->fehlertext();
+        m_steuerkanal.reset();
+        return a;
+    }
+    // Linux: D-Bus org.schneefall (das KWin-Skript schickt dorthin die Fensterliste). Belegt ihn eine ältere
+    // Version ohne Steuerkanal (oder ein anderer Sitzungsprozess, siehe README), gilt das wie bisher als „läuft schon“.
     m_systemkanal = plattform::systemkanalErzeugen(ziel, *m_quelle);
     if (m_systemkanal && !m_systemkanal->anmelden()) {
         m_systemkanal.reset();
-        return false;
-    }
-    // plattformneutral: lokaler Socket bzw. benannte Pipe
-    m_steuerkanal = std::make_unique<plattform::Steuerkanal>(ziel);
-    if (!m_steuerkanal->anmelden()) {
         m_steuerkanal.reset();
-        m_systemkanal.reset();
-        return false;
+        return Anmeldung::LaeuftSchon;
     }
-    return true;
+    return Anmeldung::Ok;
 }
 
 plattform::Antwort App::befehl(const QString &name, const QStringList &argumente) {

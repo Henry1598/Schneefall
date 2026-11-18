@@ -29,6 +29,7 @@ private:
     QCheckBox *m_vollbild;
     QComboBox *m_modus; // Fenstermodus: 0 = fest, 1 = dahinter, 2 = davor
     QCheckBox *m_autostart;
+    QLabel *m_autostartHinweis; // erscheint, wenn sich der Autostart nicht einrichten ließ
     QCheckBox *m_ton;
     QSlider *m_laut;
     QLabel *m_lautWert;
