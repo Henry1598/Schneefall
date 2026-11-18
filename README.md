@@ -49,8 +49,9 @@ qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # Schneeba
   Tiefenwirkung, „Einfach“ alle Flocken als weiche Punkte.
 - **Schnee abschütteln:** Alle Schneedecken fallen herunter.
 - **Gruppe „Fenster“:**
-  - **Bildrate:** Auto (so oft wie der Monitor, am flüssigsten), 30, 60, 120 oder 144 Bilder/s als
-  Obergrenze (spart CPU bei schneefall und KWin).
+  - **Bildrate:** 60 Bilder/s (Standard), Auto (so oft wie der Monitor, am flüssigsten), 30, 120 oder
+  144 als Obergrenze. Gemessen mit 4 Monitoren (165/144/144/60 Hz), ca. 3 500 Flocken: 30 → 4,5 %,
+  60 → 7 %, Auto → 10 % eines Kerns (vorher fester 30-fps-Takt: 4–5 %), KWin je nach Rate +0 bis +4 Punkte.
 - **Fenstermodus:** „Fest“ (Standard, siehe oben), „Dahinter“ (fallender Schnee nur über der
     Arbeitsfläche, ein Teil bleibt auf den Kanten) oder „Davor“ (fällt vor den Fenstern).
   - **Schüttel-Schwelle:** ab welcher Beschleunigung beim Ziehen Schnee abfällt. Wie viel abfällt,
@@ -86,8 +87,8 @@ liest das laufende Programm sofort neu ein.
 | `flockengroesse` | mittlerer Durchmesser in px | 1 … 12 | 3 |
 | `max_deckenhoehe` | höchste Schneedecke in px | 2 … 80 | 18 |
 | `fallgeschwindigkeit` | px/s | 5 … 300 | 45 |
-| `bildrate` | Bilder/s je Monitor: `auto` = so oft wie der Monitor (z. B. 144/165 Hz), sonst Obergrenze | auto, 10 … 360 | auto |
-| `fps` | alter fester Takt; wird nur noch für ältere Versionen mitgeschrieben (fehlt `bildrate`, zählt ein selbst gewählter `fps`-Wert, der alte Standard 30 wird zu `auto`) | 10 … 120 | 30 |
+| `bildrate` | Bilder/s je Monitor: `auto` = so oft wie der Monitor (z. B. 144/165 Hz), sonst Obergrenze | auto, 10 … 360 | 60 |
+| `fps` | alter fester Takt; wird nur noch für ältere Versionen mitgeschrieben (fehlt `bildrate`, zählt ein selbst gewählter `fps`-Wert, der alte Standard 30 wird zu 60) | 10 … 120 | 30 |
 | `an` | Schnee an | true/false | true |
 | `fenstermodus` | fest, dahinter oder davor | fest/dahinter/davor | fest |
 | `schuetteln_schwelle` | Beschleunigung beim Ziehen, ab der Schnee abfällt (px/s²) | 1000 … 100000 | 15000 |

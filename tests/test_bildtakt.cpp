@@ -180,8 +180,8 @@ private Q_SLOTS:
     void bildrateWirdGelesen_data() {
         QTest::addColumn<QString>("text");
         QTest::addColumn<int>("bildrate");
-        QTest::newRow("leer: auto") << "" << 0;
-        QTest::newRow("alter Standard fps=30: auto") << "fps=30\n" << 0;
+        QTest::newRow("leer: Standard 60") << "" << 60;
+        QTest::newRow("alter Standard fps=30: 60") << "fps=30\n" << 60;
         QTest::newRow("eigener fps-Wert bleibt") << "fps=45\n" << 45;
         QTest::newRow("bildrate auto") << "fps=45\nbildrate=auto\n" << 0;
         QTest::newRow("bildrate 144") << "fps=30\nbildrate=144\n" << 144;
@@ -198,13 +198,16 @@ private Q_SLOTS:
         QVERIFY(einstellungenBrauchtErgaenzung(alt));
         const Programmeinstellungen p = einstellungenAusText(alt);
         const std::string neu = einstellungenAlsText(p);
-        QVERIFY(neu.find("\nbildrate=auto\n") != std::string::npos);
+        QVERIFY(neu.find("\nbildrate=60\n") != std::string::npos);
         QVERIFY(neu.find("\nfps=30\n") != std::string::npos); // ältere Versionen lesen weiter fps
         QVERIFY(!einstellungenBrauchtErgaenzung(neu));
         Programmeinstellungen q = p;
         q.bildrate = 120;
         QCOMPARE(einstellungenAusText(einstellungenAlsText(q)).bildrate, 120);
         QCOMPARE(einstellungenAusText(einstellungenAlsText(q)).fps, 30);
+        q.bildrate = 0;
+        QVERIFY(einstellungenAlsText(q).find("\nbildrate=auto\n") != std::string::npos);
+        QCOMPARE(einstellungenAusText(einstellungenAlsText(q)).bildrate, 0);
     }
 };
 

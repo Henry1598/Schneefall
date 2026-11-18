@@ -110,12 +110,12 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         }
     }
     // Bildrate: „auto“ oder Bilder/s. Fehlt sie (Datei einer älteren Version), zählt ein selbst
-    // gewählter fps-Wert; der alte Standard fps=30 wird zu auto.
+    // gewählter fps-Wert; der alte Standard fps=30 wird zum neuen Standard 60.
     std::transform(bildrate.begin(), bildrate.end(), bildrate.begin(), [](unsigned char c) { return char(std::tolower(c)); });
     double v = 0;
     if (bildrate == "auto") p.bildrate = 0;
     else if (zahl(bildrate, v)) p.bildrate = v <= 0 ? 0 : int(std::lround(std::clamp(v, 10.0, 360.0)));
-    else p.bildrate = p.fps == 30 ? 0 : p.fps;
+    else p.bildrate = p.fps == 30 ? Programmeinstellungen{}.bildrate : p.fps;
     return p;
 }
 

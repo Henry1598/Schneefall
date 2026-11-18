@@ -97,14 +97,16 @@ private slots:
         QCOMPARE(detail->currentText(), QString("Realistisch (Schneekristalle)"));
         detail->setCurrentIndex(detail->findText("Einfach (weiche Punkte)"));
         QCOMPARE(app.einstellungen().realistisch, false);
-        // Bildrate: Standard auto (so oft wie der Monitor), Obergrenzen 30/60/120/144
+        // Bildrate: Standard 60, wählbar Auto (so oft wie der Monitor) und Obergrenzen 30/60/120/144
         auto *rate = f->findChild<QComboBox *>("bildrate");
         QVERIFY(rate);
-        QCOMPARE(app.einstellungen().bildrate, 0);
-        QCOMPARE(rate->currentIndex(), 0);
-        QCOMPARE(rate->count(), 5);
-        rate->setCurrentIndex(rate->findText("60 Bilder/s"));
         QCOMPARE(app.einstellungen().bildrate, 60);
+        QCOMPARE(rate->currentText(), QString("60 Bilder/s"));
+        QCOMPARE(rate->count(), 5);
+        rate->setCurrentIndex(0);
+        QCOMPARE(app.einstellungen().bildrate, 0);
+        rate->setCurrentIndex(rate->findText("30 Bilder/s"));
+        QCOMPARE(app.einstellungen().bildrate, 30);
         haken("Bei Vollbild pausieren")->click();
         QCOMPARE(app.einstellungen().vollbildPausieren, false);
         haken("Schnee an")->click();
@@ -130,7 +132,7 @@ private slots:
                 && t.contains("flockendetail=einfach\n") && t.contains("raeumen_ab=60\n") && t.contains("fahrzeug_groesse=1.5\n")
                 && t.contains("einsaetze_gleichzeitig=2\n") && t.contains("treffer_bis_streik=5\n") && t.contains("raeumdienst=false\n")
                 && t.contains("taskleiste_raeumen=false\n") && t.contains("schnee_anfassbar=false\n") && t.contains("lautstaerke=70\n")
-                && t.contains("bildrate=60\n");
+                && t.contains("bildrate=30\n");
         }(), 3000);
     }
     void dateiAenderungKommtImFensterAn() {
