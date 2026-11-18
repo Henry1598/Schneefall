@@ -452,6 +452,154 @@ private slots:
         for (const Klangereignis &k : w.rd.klaengeAbholen()) stopps += k.typ == Klangereignis::Stopp;
         QCOMPARE(stopps, 1);
     }
+    void wendenIstEineDrehungAufDerStelle() {
+        Welt w;
+        w.fuellen("a", 16);
+        w.buche("a");
+        // erste Wende: nach der rechten Bahn, zurück in der Mitte
+        QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->fz.phase == FahrPhase::Wenden && w.einsatz()->fz.dreht; }, 120));
+        const Fahrzeug &f = w.einsatz()->fz;
+        const double x0 = f.x, kette0 = f.kette;
+        QCOMPARE(f.blick, 1);
+        QVERIFY(f.schild > 0.97);                      // Schild ist angehoben
+        w.rd.klaengeAbholen();
+        double zeit = 0, letzter = f.gier, groessterSchritt = 0, hoechsteLast = 0;
+        bool front = false, heck = false, monoton = true, staub = false;
+        while (f.phase == FahrPhase::Wenden && zeit < 10) {
+            w.laufen(1.0 / 30);
+            zeit += 1.0 / 30;
+            if (f.phase != FahrPhase::Wenden) break;
+            monoton &= f.gier >= letzter - 1e-9;
+            groessterSchritt = std::max(groessterSchritt, f.gier - letzter);
+            letzter = f.gier;
+            front |= std::abs(f.gier - M_PI / 2) < 0.15;
+            heck |= std::abs(f.gier - 3 * M_PI / 2) < 0.15;
+            hoechsteLast = std::max(hoechsteLast, f.last);
+            staub |= !w.rd.staub().empty();
+            QVERIFY(std::abs(f.x - x0) < 1e-6);        // dreht auf der Stelle
+            QVERIFY(std::abs(f.v) < 1e-6);
+        }
+        QVERIFY2(zeit >= 1.5 && zeit <= 2.6, qPrintable(QString::number(zeit)));   // so lange braucht ein Kettenfahrzeug
+        QVERIFY(monoton);
+        QVERIFY2(groessterSchritt < 0.12, "Drehung ruckt (Winkelsprung)");          // gleitend, kein Umklappen
+        QVERIFY(front && !heck);                       // von rechts nach links über die Frontansicht
+        QCOMPARE(f.blick, -1);
+        QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
+        QVERIFY(std::abs(f.kette - kette0) > 30);      // die Ketten sind dabei gelaufen
+        QVERIFY2(hoechsteLast > 0.55, qPrintable(QString::number(hoechsteLast)));   // Motor arbeitet
+        QVERIFY(staub);                                // Ketten wirbeln Schnee auf
+        bool motorLaut = false;
+        for (const Klangereignis &k : w.rd.klaengeAbholen()) motorLaut |= k.typ == Klangereignis::Dauer && k.art == Geraeusch::Motor && k.staerke > 0.5;
+        QVERIFY(motorLaut);
+        // der nächste Einsatz dreht andersherum: über die Heckansicht
+        QVERIFY(w.bis([&] { return w.rd.einsaetze().empty(); }, 120));
+        w.fuellen("a", 16);
+        QVERIFY(!w.rd.jetztRaeumen().empty());
+        QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->fz.phase == FahrPhase::Wenden && w.einsatz()->fz.dreht; }, 120));
+        const Fahrzeug &f2 = w.einsatz()->fz;
+        front = heck = false;
+        while (w.einsatz() && f2.phase == FahrPhase::Wenden) {
+            w.laufen(1.0 / 30);
+            front |= std::abs(f2.gier - M_PI / 2) < 0.15;
+            heck |= std::abs(f2.gier - 3 * M_PI / 2) < 0.15;
+        }
+        QVERIFY(heck && !front);
+        QCOMPARE(f2.blick, -1);
+        QVERIFY(std::abs(f2.gier - M_PI) < 1e-9);
+        QCOMPARE(wendeDauer(1.0), 1.8);
+        QVERIFY(wendeDauer(0.5) >= 1.5 && wendeDauer(3.0) <= 2.5 && wendeDauer(3.0) > wendeDauer(1.0));
+    }
+    void wendenBrauchtPlatzUndRangiertSonstErst() {
+        Welt w;
+        w.fuellen("a", 16);
+        w.buche("a");
+        QVERIFY(w.bis([&] { return w.raeumt(); }, 120));
+        // ein Fenster schiebt sich über die linke Hälfte: befahrbar bleibt nur 985 … 1300, die Mitte liegt jetzt am Rand
+        w.fenster_.push_back(fenster("c", 600, 300, 385, 300, 5));
+        w.sim.setFenster(w.fenster_);
+        const Fahrzeug &f = w.einsatz()->fz;
+        QVERIFY(w.bis([&] { return w.einsatz() && f.phase == FahrPhase::Wenden; }, 120));
+        QVERIFY(!w.einsatz()->abbruch);
+        const double radius = wendeRadius(Fahrzeugart::Raupe, 1.0);
+        QCOMPARE(radius, 39.0);
+        bool gedreht = false;
+        double zeit = 0;
+        while (f.phase == FahrPhase::Wenden && zeit < 20) {
+            if (f.dreht) {
+                gedreht = true;
+                // während der Drehung ragt nichts weiter als das erlaubte Spiel über den befahrbaren Abschnitt
+                QVERIFY2(f.x - radius >= w.einsatz()->segA - 4 - 1.01 && f.x + radius <= w.einsatz()->segB + 4 + 1.01,
+                         qPrintable(QString("x=%1 Abschnitt %2 … %3").arg(f.x).arg(w.einsatz()->segA).arg(w.einsatz()->segB)));
+            } else {
+                QVERIFY(std::abs(std::sin(f.gier)) < 1e-9);   // beim Rangieren steht es noch gerade
+            }
+            w.laufen(1.0 / 30);
+            zeit += 1.0 / 30;
+        }
+        QVERIFY(gedreht);
+        QVERIFY(f.x >= 985 + radius - 4 - 1.01);             // ist dafür ein Stück von der Kante weggefahren
+    }
+    void trefferWaehrendDerDrehungWartenUndHubschrauberGiertGleitend() {
+        Welt w;
+        RaeumEinstellungen e;
+        e.an = false;
+        e.trefferBisStreik = 1;
+        w.rd.setEinstellungen(e);
+        w.fenster_[0].r = {300, 400, 1400, 300};   // breit genug für einen zweiten Durchgang nach links … rechts
+        w.sim.setFenster(w.fenster_);
+        w.fuellen("a", 16);
+        w.buche("a");
+        const auto dreht = [&] { return w.einsatz() && w.einsatz()->fz.phase == FahrPhase::Wenden && w.einsatz()->fz.dreht; };
+        QVERIFY(w.bis(dreht, 120));
+        const Fahrzeug &f = w.einsatz()->fz;
+        w.laufen(0.5);
+        QVERIFY(dreht());
+        // Treffer mitten in der Drehung: er dreht zu Ende und beschwert sich dann
+        w.triff();
+        QCOMPARE(f.phase, FahrPhase::Wenden);
+        QVERIFY(w.bis([&] { return f.phase != FahrPhase::Wenden; }, 5));
+        QCOMPARE(f.phase, FahrPhase::Streik);
+        QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
+        QVERIFY(f.spruch >= 0);
+        // Hubschrauber: giert gleitend statt umzuklappen
+        const Hubschrauber &h = w.einsatz()->heli;
+        double letzter = h.gier, sprung = 0;
+        for (int i = 0; i < 30 * 40 && w.einsatz(); ++i) {
+            w.laufen(1.0 / 30);
+            if (!w.einsatz()) break;
+            double d = std::abs(h.gier - letzter);
+            if (d > M_PI) d = 2 * M_PI - d;
+            sprung = std::max(sprung, d);
+            letzter = h.gier;
+        }
+        QVERIFY2(sprung < 0.1, qPrintable(QString::number(sprung)));
+    }
+    void hubschrauberGiertUeberFrontUndHeck() {
+        Hubschrauber h;
+        h.zielX = -1000;                         // Ziel weit links: dreht von rechts (0) über die Front (π/2) nach links (π)
+        bool front = false;
+        double zeit = 0;
+        for (; zeit < 5 && std::abs(h.gier - M_PI) > 1e-9; zeit += 1.0 / 30) {
+            h.schritt(1.0 / 30, 260, 220);
+            front |= std::abs(h.gier - M_PI / 2) < 0.1;
+            h.zielX = h.x - 1000;
+        }
+        QVERIFY(front);
+        QVERIFY2(zeit > 1.0 && zeit < 2.0, qPrintable(QString::number(zeit)));
+        // zurück nach rechts: weiter in derselben Drehrichtung, also über die Heckansicht (3π/2)
+        bool heck = false;
+        for (zeit = 0; zeit < 5 && h.gier > 1e-9; zeit += 1.0 / 30) {
+            h.zielX = h.x + 1000;
+            h.schritt(1.0 / 30, 260, 220);
+            heck |= std::abs(h.gier - 3 * M_PI / 2) < 0.1;
+        }
+        QVERIFY(heck);
+        QCOMPARE(h.gier, 0.0);
+        // nah am Ziel bleibt er, wie er steht (kein Hin und Her beim Schweben)
+        h.zielX = h.x - 50;
+        for (int i = 0; i < 60; ++i) h.schritt(1.0 / 30, 260, 220);
+        QCOMPARE(h.gier, 0.0);
+    }
     void wulstformWaechstUndBleibtBegrenzt() {
         QCOMPARE(wulstHoehe(0, 1), 0.0);
         QVERIFY(wulstHoehe(200, 1) > wulstHoehe(50, 1));

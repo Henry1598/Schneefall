@@ -1,6 +1,7 @@
 #include "raeumszene.h"
 #include <algorithm>
 #include <cmath>
+#include "fahrzeugmodell.h"
 
 namespace schnee {
 namespace {
@@ -25,7 +26,6 @@ struct Lage {
     }
 };
 
-double mindestens(double v, double m) { return std::abs(v) < m ? (v < 0 ? -m : m) : v; }
 
 void sprechblase(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
     if (f.spruch < 0 || f.blaseRest <= 0) return;
@@ -36,8 +36,36 @@ void sprechblase(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
     z.push_back({uint8_t(int(Teil::Blase0) + f.spruch), float(f.x + 8 * G), float(f.y - (hoehe + 6) * G), 0, float(B), float(B), float(alpha)});
 }
 
+// Fahrzeug dreht gerade: vorgemalte 3D-Ansicht zum Gierwinkel, dazu Leuchte, Schnee und Kleckse an der gedrehten Stelle
+bool dreht(const Fahrzeug &f) { return f.phase == FahrPhase::Wenden && f.dreht && f.wendeT > 0; }
+
+void gedreht(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
+    const bool raupe = f.art == Fahrzeugart::Raupe;
+    const double gier = stufenWinkel(winkelstufe(f.gier));
+    const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5 + f.nicken * std::cos(f.gier), G, G, &z};
+    boden.teil(Teil::Schatten, 0, 0.5, 0, raupe ? 1.25 : 0.8, raupe ? 0.6 : 0.5, 0.3);
+    // Ketten laufen gegenläufig: je halbem Glied wechselt das Bild
+    const int phase = int(std::floor(std::abs(f.kette) / G / (raupe ? 2.67 : 3.0))) & 1;
+    boden.teil(Teil(int(raupe ? Teil::Raupe3D : Teil::Pflug3D) + winkelstufe(f.gier) * 2 + phase), 0, f.hub * 0.5 / G);
+    auto bei = [&](P3 p) { return projizieren(p, gier); };
+    if (f.schneeDach > 0.05 && raupe) {
+        const P2 d = bei(RAUPE_DACH);
+        const double breit = (30 * std::abs(std::cos(gier)) + 23 * std::abs(std::sin(gier))) / 30;
+        boden.teil(Teil::SchneeDach, d.x, d.y + 0.4, 0, breit, 0.35 + 0.65 * f.schneeDach);
+    }
+    const P2 l = bei(raupe ? RAUPE_LEUCHTE : PFLUG_LEUCHTE);
+    const double dreh = f.leuchte * 7.5;
+    const double hell = 0.3 + 0.7 * std::pow(std::max(0.0, std::sin(dreh)), 2);
+    boden.teil(Teil::LichtOrange, l.x, l.y, 0, (raupe ? 0.55 : 0.45) + 0.7 * std::abs(std::cos(dreh * 0.5)), raupe ? 0.8 : 0.65, hell);
+    for (const Klecks &k : f.kleckse) {
+        const P2 q = bei({double(k.x), double(-k.y), std::sin(gier) >= 0 || std::cos(gier) > 0 ? (raupe ? 10.5 : 7.5) : (raupe ? -10.5 : -7.5)});
+        boden.teil(Teil::Klecks, q.x, q.y, k.x, k.groesse / 10, k.groesse / 10, 0.95);
+    }
+}
+
 void raupe(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
-    const double w = mindestens(f.wende, 0.12);
+    if (dreht(f)) { gedreht(f, G, z); return; }
+    const double w = f.blick;
     const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5, G * w, G, &z};
     if (f.phase != FahrPhase::AmSeil) boden.teil(Teil::Schatten, 0, 0.5, 0, 1.25, 0.55, 0.3);
     boden.teil(Teil::RaupeUnterwagen, 0, 0);
@@ -86,7 +114,8 @@ void raupe(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
 }
 
 void pflug(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
-    const double w = mindestens(f.wende, 0.12);
+    if (dreht(f)) { gedreht(f, G, z); return; }
+    const double w = f.blick;
     const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5, G * w, G, &z};
     if (f.phase != FahrPhase::AmSeil) boden.teil(Teil::Schatten, 0, 0.5, 0, 0.8, 0.45, 0.3);
     const double weg = f.kette / G;
@@ -127,24 +156,35 @@ void seilMalen(const Einsatz &e, double G, std::vector<Zeichenteil> &z) {
 
 void heli(const Einsatz &e, const Simulation &sim, double G, double zeit, std::vector<Zeichenteil> &z) {
     const Hubschrauber &h = e.heli;
-    const double b = mindestens(h.blick, 0.14);
     const double wackel = h.stoss * std::sin(zeit * 30);
-    const Lage l{h.x, h.y, h.neigung + wackel, G * b, G, &z};
     // Schatten auf dem Schnee darunter
     const double oben = e.kanteY - std::max(0.0, sim.hoeheBei(e.id, h.x));
     const double hoch = oben - h.y;
     if (hoch > 0 && hoch < 420 * G && sim.decke(e.id)) {
         const double naehe = 1 - hoch / (420 * G);
-        z.push_back({uint8_t(Teil::Schatten), float(h.x), float(oben + 1), 0, float(G * (1.2 + 1.0 * naehe)), float(G * 0.6), float(0.34 * naehe)});
+        const double lang = 0.45 + 0.55 * std::abs(std::cos(h.gier));
+        z.push_back({uint8_t(Teil::Schatten), float(h.x), float(oben + 1), 0, float(G * (1.2 + 1.0 * naehe) * lang), float(G * 0.6), float(0.34 * naehe)});
     }
     const int bild = int(zeit * 30) % 3;
-    l.teil(Teil(int(Teil::Heckrotor0) + bild), -82, -31, 0, 1 / std::abs(b) * 0.9, 1);
+    const double t1 = std::fmod(zeit, 1.0);
+    const bool seitlich = std::abs(std::sin(h.gier)) < 0.02;
+    if (!seitlich) {
+        // giert gerade: vorgemalte 3D-Ansicht, Rotorscheibe und Blinklicht an der gedrehten Stelle
+        const double gier = stufenWinkel(winkelstufe(h.gier));
+        const Lage l{h.x, h.y, h.neigung * std::cos(h.gier) + wackel, G, G, &z};
+        l.teil(Teil(int(Teil::Heli3D) + winkelstufe(h.gier)), 0, 0);
+        const P2 r = projizieren(HELI_ROTOR, gier);
+        l.teil(Teil(int(Teil::HeliRotor0) + bild), r.x, r.y);
+        if (t1 < 0.12) { const P2 q = projizieren(HELI_BLINKLICHT, gier); l.teil(Teil::LichtRot, q.x, q.y, 0, 1.1, 1.1, 1); }
+        return;
+    }
+    const double b = std::cos(h.gier) < 0 ? -1 : 1;
+    const Lage l{h.x, h.y, h.neigung + wackel, G * b, G, &z};
+    l.teil(Teil(int(Teil::Heckrotor0) + bild), -82, -31, 0, 0.9, 1);
     l.teil(Teil::HeliRumpf, 0, 0);
-    // Rotorscheibe bleibt beim Wenden voll breit
-    l.teil(Teil(int(Teil::HeliRotor0) + bild), -4, -42.5, 0, 1 / std::abs(b), 1);
+    l.teil(Teil(int(Teil::HeliRotor0) + bild), -4, -42.5, 0, 1, 1);
     // Positionslichter: grün am Bug, rotes Blinklicht unten, weißer Doppelblitz am Heck
     l.teil(Teil::LichtGruen, 50, -14, 0, 0.5, 0.5, 0.9);
-    const double t1 = std::fmod(zeit, 1.0);
     if (t1 < 0.12) l.teil(Teil::LichtRot, -22, 0.5, 0, 1.1, 1.1, 1);
     const double t2 = std::fmod(zeit + 0.4, 1.3);
     if (t2 < 0.05 || (t2 > 0.12 && t2 < 0.17)) l.teil(Teil::LichtWeiss, -86, -41, 0, 1.3, 1.3, 1);

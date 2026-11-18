@@ -48,7 +48,8 @@ struct Hubschrauber {
     double x = 0, y = 0, vx = 0, vy = 0; // Bezugspunkt: Lasthaken-Aufhängung unter dem Rumpf
     double zielX = 0, zielY = 0;
     double neigung = 0;   // rad im Bild (Uhrzeigersinn): Nase senkt sich in Beschleunigungsrichtung
-    double blick = 1;     // -1 … 1, Vorzeichen = Flugrichtung (dreht sich weich)
+    double gier = 0;      // rad: 0 = Bug nach rechts, π = nach links; dreht über die Front- bzw. Heckansicht
+    int blickSoll = 1;    // wohin der Bug zeigen soll (+1 rechts, -1 links)
     double rotor = 0;     // Phase
     double unruhe = 0;    // Zeit für die Schwebe-Unruhe
     double stoss = 0;     // Wackeln nach Balltreffer
@@ -61,7 +62,7 @@ enum class FahrPhase : uint8_t { AmSeil, Aufgesetzt, Wenden, Senken, Schieben, K
 struct Fahrzeugmass { double halb, hoehe, schildVorn, trefferB, trefferH; };
 Fahrzeugmass massVon(Fahrzeugart a); // in Einheiten (px bei Größe 1)
 
-struct Klecks { float x, y, groesse, menge; double seit; }; // klebender Schnee, x/y in Einheiten ab Fahrzeugmitte unten
+struct Klecks { float x, y, groesse, menge; double seit; }; // klebender Schnee in Einheiten ab Fahrzeugmitte unten: x nach vorn, y nach unten
 
 struct Fahrzeug {
     Fahrzeugart art = Fahrzeugart::Raupe;
@@ -70,7 +71,10 @@ struct Fahrzeug {
     double v = 0;             // px/s
     double neigung = 0;       // am Seil: Pendelwinkel
     int blick = 1;            // Schild zeigt nach rechts (+1) oder links (-1)
-    double wende = 1;         // -1 … 1 fürs Zeichnen beim Wenden
+    double gier = 0;          // rad: 0 = Schild rechts, π = links; beim Wenden dreht das Fahrzeug auf der Stelle
+    double wendeT = 0;        // 0 … 1 Fortschritt der Drehung
+    double wendeVon = 0;      // Gierwinkel beim Beginn der Drehung
+    bool dreht = false;       // Phase Wenden: die eigentliche Drehung läuft (vorher wird ggf. rangiert)
     int richtung = 1;         // Bahnrichtung
     int seite = 0, durchgang = 0;
     bool nochmal = false;
@@ -84,7 +88,8 @@ struct Fahrzeug {
     double last = 0;          // Motorlast 0..1
     double leuchte = 0;       // Phase der Rundumleuchte
     double schneeDach = 0;    // 0..1 liegengebliebener Schnee
-    double rauchRest = 0;
+    double rauchRest = 0, staubRest = 0;
+    bool streikFaellig = false; // Treffergrenze erreicht, Streik beginnt (nach einer laufenden Drehung)
     int treffer = 0, streiks = 0, trefferImStreik = 0;
     double raus = 0;          // 0 = Fahrer sitzt, 1 = lehnt sich raus
     double faust = 0;         // Phase der drohenden Faust
@@ -129,6 +134,10 @@ double wulstFlaecheFuerLaenge(double laenge, double g);
 double wulstKapazitaet(double g);   // px²
 // Maßstab des Wulstes: der kleine Pflug schiebt weniger vor sich her
 double wulstMass(Fahrzeugart a, double fahrzeugGroesse);
+// Dauer einer halben Drehung auf der Stelle in Sekunden (größere Fahrzeuge drehen langsamer)
+double wendeDauer(double fahrzeugGroesse);
+// so viel Platz braucht das Fahrzeug beim Drehen nach jeder Seite (px)
+double wendeRadius(Fahrzeugart a, double fahrzeugGroesse);
 // Profil: Höhe im Abstand s vor dem Schild
 double wulstProfil(double flaeche, double g, double s);
 
@@ -180,6 +189,7 @@ private:
     void ballSchritt(double dt);
     void platzen(const Schneeball &b, const std::string &deckenId, double anteilLiegen);
     void treffer(Einsatz &e, const Schneeball &b);
+    void streikPruefen(Einsatz &e);
     void pulver(double x, double y, double menge, double tempo, double vx0, double vy0, const std::string &rest);
     void staubWolke(double x, double y, int anzahl, double tempo, double groesse, uint8_t art = 0);
     void klang(Geraeusch a, double x, double y, double staerke = 1);

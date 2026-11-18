@@ -88,6 +88,20 @@ int main(int argc, char **argv) {
         p.drawImage(0, 0, a.bild);
         p.end();
         auf.save(ordner + "/atlas.png");
+        // die 3D-Ansichten einzeln, groß: alle zwei Winkelstufen
+        for (int basis : {int(Teil::Raupe3D), int(Teil::Pflug3D), int(Teil::Heli3D)}) {
+            const int je = basis == int(Teil::Heli3D) ? 1 : 2;
+            const FahrzeugFeld &f0 = a.felder[size_t(basis)];
+            QImage streifen(f0.w * 6, f0.h * 2, QImage::Format_ARGB32_Premultiplied);
+            streifen.fill(QColor(90, 120, 160));
+            QPainter q(&streifen);
+            for (int i = 0; i < 12; ++i) {
+                const FahrzeugFeld &f = a.felder[size_t(basis + i * 2 * je)];
+                q.drawImage(QPoint((i % 6) * f0.w, (i / 6) * f0.h), a.bild, QRect(f.x, f.y, f.w, f.h));
+            }
+            q.end();
+            streifen.save(ordner + QStringLiteral("/ansichten_%1.png").arg(basis == int(Teil::Raupe3D) ? "raupe" : basis == int(Teil::Pflug3D) ? "pflug" : "heli"));
+        }
         std::printf("Atlas %dx%d\n", a.bild.width(), a.bild.height());
     }
     Einstellungen e;
@@ -147,9 +161,18 @@ int main(int argc, char **argv) {
     bis([&] { return E.fz.phase == FahrPhase::Zurueck; });
     laufen(0.8);
     bild(ordner + "/09_zurueck.png", sim, rd, zeit, dpr, nah());
-    bis([&] { return E.fz.phase == FahrPhase::Wenden; });
-    laufen(0.25);
-    bild(ordner + "/10_wenden.png", sim, rd, zeit, dpr, nah());
+    // Wende: zwölf Bilder über die Drehung
+    bis([&] { return E.fz.phase == FahrPhase::Wenden && E.fz.dreht; });
+    for (int i = 0; i < 12 && E.fz.phase == FahrPhase::Wenden; ++i) {
+        bild(ordner + QStringLiteral("/wende_%1.png").arg(i + 1, 2, 10, QLatin1Char('0')), sim, rd, zeit, dpr, QRectF(E.fz.x - 90, 420 - 90, 180, 110));
+        laufen(wendeDauer(groesse) / 11);
+    }
+    // Hubschrauber giert beim Anflug zum Abholen
+    bis([&] { return std::abs(std::sin(E.heli.gier)) > 0.1; });
+    for (int i = 0; i < 8; ++i) {
+        bild(ordner + QStringLiteral("/heli_giert_%1.png").arg(i + 1), sim, rd, zeit, dpr, QRectF(E.heli.x - 130, E.heli.y - 90, 260, 150));
+        laufen(0.17);
+    }
     bis([&] { return E.phase == Phase::Anheben; });
     laufen(0.5);
     bild(ordner + "/11_anheben.png", sim, rd, zeit, dpr, nah(420, 320));
@@ -164,5 +187,10 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 3; ++i) { rd.werfen(P.fz.x, P.fz.y - 12, 0, 0, 90); laufen(0.1); }
     laufen(0.9);
     bild(ordner + "/13_pflug_streik.png", sim, rd, zeit, dpr, QRectF(P.fz.x - 180, 610, 420, 190));
+    bis([&] { return P.fz.phase == FahrPhase::Wenden && P.fz.dreht; });
+    for (int i = 0; i < 8 && P.fz.phase == FahrPhase::Wenden; ++i) {
+        bild(ordner + QStringLiteral("/pflug_wende_%1.png").arg(i + 1), sim, rd, zeit, dpr, QRectF(P.fz.x - 60, 800 - 70, 120, 80));
+        laufen(wendeDauer(groesse) / 7);
+    }
     return 0;
 }

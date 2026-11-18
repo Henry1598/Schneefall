@@ -46,6 +46,8 @@ public Q_SLOTS:
     Q_SCRIPTABLE QString Raeumen();      // „Jetzt räumen“: Einsatz am Fenster mit dem meisten Schnee, gibt dessen ID zurück
     // wirft einen Schneeball (globale Koordinaten, px/s, Menge bis 220) – zum Spielen und Testen ohne Maus
     Q_SCRIPTABLE void Werfen(double x, double y, double vx, double vy, double menge);
+    // Zeitlupe zum Begutachten schneller Abläufe (z. B. der Wende): 0.2 = fünfmal langsamer, 1 = normal
+    Q_SCRIPTABLE void Zeitlupe(double faktor);
 
 private:
     void bildschirmHinzu(QScreen *s);
@@ -67,6 +69,7 @@ private:
     schnee::Szene m_szene;        // was vom Räumdienst zu zeichnen ist (einmal je Takt für alle Ebenen)
     QElapsedTimer m_mausUhr;
     int m_eingabeTakt = 0;
+    double m_zeitlupe = 1.0;
     std::vector<schnee::Fenster> m_fenster;
     QString m_letzteListe;
     QHash<QScreen *, Overlay *> m_ebenen;

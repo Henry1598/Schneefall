@@ -4,6 +4,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include "ansicht3d.h"
 #include "raeumdienst.h"
 #include "schnee.h"
 
@@ -17,8 +18,13 @@ enum class Teil : uint8_t {
     SchneeDach, SchneeHaube, Klecks,
     PflugRumpf, Rad, PflugSchild,
     Rauch, Staub, Ball,
-    Blase0, // … Blase0 + spruchAnzahl() - 1
+    // vorgemalte 3D-Ansichten fürs Wenden: je Winkelstufe (ansicht3d.h), Raupe und Pflug in zwei Ketten-/Radphasen
+    Raupe3D,
+    Pflug3D = Raupe3D + 2 * 24,
+    Heli3D = Pflug3D + 2 * 24,
+    Blase0 = Heli3D + 24, // … Blase0 + spruchAnzahl() - 1
 };
+static_assert(WINKELSTUFEN == 24, "Teil-Nummern passen zu 24 Winkelstufen");
 inline int teilAnzahl() { return int(Teil::Blase0) + spruchAnzahl(); }
 
 struct Zeichenteil {

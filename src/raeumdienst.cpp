@@ -32,6 +32,9 @@ const char *spruchText(int i) { return i >= 0 && i < spruchAnzahl() ? SPRUECHE[i
 
 double wulstMass(Fahrzeugart a, double g) { return a == Fahrzeugart::Pflug ? 0.55 * g : g; }
 
+double wendeDauer(double g) { return std::clamp(1.8 * std::sqrt(g), 1.5, 2.5); }
+double wendeRadius(Fahrzeugart a, double g) { return massVon(a).schildVorn * g; }
+
 Fahrzeugmass massVon(Fahrzeugart a) {
     if (a == Fahrzeugart::Raupe) return {32, 44, 39, 36, 22};
     return {19, 27, 24, 23, 14};
@@ -108,8 +111,16 @@ void Hubschrauber::schritt(double dt, double maxV, double maxA) {
     const double zielNeigung = std::clamp(bx / maxA * 0.2 + vx / maxV * 0.1, -0.3, 0.3);
     neigung += (zielNeigung - neigung) * std::min(1.0, 4 * dt);
     // dreht die Nase nur zum Ziel, wenn es weiter weg ist (kein Hin und Her beim Abbremsen und Schweben)
-    const double zielBlick = zielX - x > 130 ? 1 : zielX - x < -130 ? -1 : (blick < 0 ? -1 : 1);
-    blick += std::clamp(zielBlick - blick, -3 * dt, 3 * dt);
+    if (zielX - x > 130) blickSoll = 1;
+    else if (zielX - x < -130) blickSoll = -1;
+    // giert immer in derselben Drehrichtung: von rechts nach links über die Front-, zurück über die Heckansicht
+    const double zwei_pi = 6.28318530718, ziel = blickSoll > 0 ? 0 : 3.14159265359;
+    double rest = std::fmod(ziel - gier + 2 * zwei_pi, zwei_pi);
+    if (rest > zwei_pi - 1e-4) rest = 0;
+    if (rest > 0) {
+        const double schritt = std::min(rest, 2.4 * dt);
+        gier = schritt >= rest ? ziel : std::fmod(gier + schritt, zwei_pi);
+    }
 }
 
 Raeumdienst::Raeumdienst(Simulation &sim, uint32_t saat) : m_sim(sim), m_rng(saat) {}
@@ -205,13 +216,14 @@ bool Raeumdienst::starten(const std::string &id) {
     const double fzH = m.hoehe * G, flug = SEIL_FLUG * G;
     e.heli.x = e.ausgang < 0 ? links - 140 * G : rechts + 140 * G;
     e.heli.y = d->y - fzH - flug - 25 * G - 70;
-    e.heli.blick = -e.ausgang;
+    e.heli.blickSoll = -e.ausgang;
+    e.heli.gier = e.ausgang > 0 ? 3.14159265359 : 0;
     e.heli.zielX = landX;
     e.heli.zielY = d->y - fzH - flug - 25 * G;
     e.seil.laenge = flug;
     e.seil.haengen(e.heli.x, e.heli.y);
     e.fz.blick = e.fz.richtung = 1;
-    e.fz.wende = 1;
+    e.fz.gier = 0;
     e.fz.x = e.seil.x;
     e.fz.y = e.seil.y + fzH;
     m_einsaetze.push_back(std::move(e));
@@ -401,10 +413,56 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     case FahrPhase::Aufgesetzt:
         if (e.phase == Phase::Raeumen && f.t > 0.3) { f.phase = f.blick != r ? FahrPhase::Wenden : FahrPhase::Senken; f.t = 0; }
         break;
-    case FahrPhase::Wenden:
-        f.wende += std::clamp(double(r) - f.wende, -2.5 * dt, 2.5 * dt);
-        if (std::abs(f.wende - r) < 1e-3) { f.blick = r; f.wende = r; f.phase = FahrPhase::Senken; f.t = 0; }
+    case FahrPhase::Wenden: {
+        // dreht auf der Stelle (Ketten gegenläufig), über die Front- bzw. Heckansicht. Vorher Schild hoch und,
+        // wenn es beim Drehen über die Kante ragen würde, erst ein Stück zur Fenstermitte rangieren.
+        zielLast = 0.3;
+        if (!f.dreht) {
+            const double radius = wendeRadius(f.art, G), spiel = 4 * G;
+            const double lo = a + radius - spiel, hi = b - radius + spiel;
+            const double platz = lo <= hi ? std::clamp(f.x, lo, hi) : (a + b) / 2;
+            const double weg = platz - f.x;
+            if (std::abs(weg) > 1) {
+                zielV = vorzeichen(weg) * std::min(vRueck * 0.6, std::sqrt(2 * 200 * std::abs(weg)) + 5);
+                if (zielV * f.blick < 0 && std::abs(f.v) > 5) dauer(e, 2, Geraeusch::Rueckfahrwarner, f.x, f.y, 1);
+            } else if (std::abs(f.v) < 2 && f.schild > 0.97) {
+                f.dreht = true;
+                f.wendeT = 0;
+                f.wendeVon = f.gier;
+                f.v = 0;
+                f.nickV -= 0.35;                 // Ruck beim Anfahren der Ketten
+            }
+            break;
+        }
+        const double vorher = f.wendeT;
+        f.wendeT = std::min(1.0, f.wendeT + dt / wendeDauer(G));
+        const auto weich = [](double t) { return t * t * (3 - 2 * t); };
+        const double dGier = 3.14159265359 * (weich(f.wendeT) - weich(vorher));
+        // Drehsinn wechselt von Einsatz zu Einsatz: einmal über die Front-, einmal über die Heckansicht
+        const double sinn = e.nr % 2 ? 1 : -1;
+        f.gier = std::fmod(f.wendeVon + sinn * 3.14159265359 * weich(f.wendeT) + 6.28318530718, 6.28318530718);
+        f.kette += dGier * 15.5 * G;             // Kettenweg am Rand: die Glieder laufen sichtbar um
+        zielLast = 0.8;                          // Drehen auf der Stelle kostet Kraft
+        f.wackelV += (zufall() - 0.5) * 3 * dt;        // rüttelt leicht
+        if (vorher < 0.5 && f.wendeT >= 0.5) f.blick = r;
+        // die Ketten wühlen Schnee auf
+        f.staubRest += dt * (f.art == Fahrzeugart::Raupe ? 22 : 10) * std::sin(3.14159265359 * f.wendeT);
+        while (f.staubRest >= 1) {
+            f.staubRest -= 1;
+            const double seite = zufall() < 0.5 ? -1 : 1;
+            staubWolke(f.x + seite * (0.25 + 0.7 * std::abs(std::cos(f.gier))) * m.halb * G, f.y - 2, 1, 55, 0.2 * m.halb * G);
+        }
+        if (f.wendeT >= 1) {
+            f.gier = r > 0 ? 0 : 3.14159265359;
+            f.blick = r;
+            f.dreht = false;
+            f.nickV += 0.45;                     // und beim Anhalten
+            f.phase = FahrPhase::Senken;
+            f.t = 0;
+            streikPruefen(e);                    // Treffer während der Drehung: beschwert sich erst jetzt
+        }
         break;
+    }
     case FahrPhase::Senken:
         zielSchild = 0;
         if (f.schild < 0.03) { f.phase = FahrPhase::Schieben; f.t = 0; }
@@ -491,7 +549,7 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     // klebende Schneebälle fallen nach einer Weile ab
     for (size_t i = 0; i < f.kleckse.size();) {
         if (m_sim.zeit() - f.kleckse[i].seit > 25) {
-            m_sim.brockenFallenLassen(f.x + f.kleckse[i].x * G, f.y - 1, 2 * sb, f.kleckse[i].menge, 0, 0, 0);
+            m_sim.brockenFallenLassen(f.x + f.kleckse[i].x * f.blick * G, f.y - 1, 2 * sb, f.kleckse[i].menge, 0, 0, 0);
             f.kleckse.erase(f.kleckse.begin() + long(i));
         } else ++i;
     }
@@ -500,7 +558,7 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     while (f.rauchRest >= 1) {
         f.rauchRest -= 1;
         const bool raupe = f.art == Fahrzeugart::Raupe;
-        const double ax = f.x + f.blick * (raupe ? 9 : -12) * G, ay = f.y - (raupe ? 41 : 20) * G;
+        const double ax = f.x + std::cos(f.gier) * (raupe ? 9 : -12) * G, ay = f.y - (raupe ? 41 : 20) * G;
         Staub s{float(ax), float(ay), float(-f.v * 0.2 + (zufall() - 0.5) * 12 + m_sim.einstellungen().wind * 0.3),
                 float(-28 - 30 * f.last - 10 * zufall()), 0, float(0.7 + 0.6 * zufall()), float((3 + 3 * f.last + 2 * zufall()) * G), 1};
         if (m_staub.size() < 500) m_staub.push_back(s);
@@ -792,8 +850,11 @@ void Raeumdienst::treffer(Einsatz &e, const Schneeball &b) {
     klang(Geraeusch::Treffer, b.x, b.y, std::clamp(b.menge / 100, 0.4, 2.0));
     // ein Teil bleibt kleben, der Rest zerplatzt zu Staub und Pulver
     const double klebt = b.menge * 0.3;
-    Klecks k{float(std::clamp((b.x - f.x) / G, -m.trefferB, m.trefferB)), float(std::clamp((b.y - f.y) / G, -2 * m.trefferH, -3.0)),
-             float(b.radius() * 0.9 / G), float(klebt), m_sim.zeit()};
+    // klebt am Fahrzeug, nicht in der Luft daneben: über der Haube niedriger als an der Kabine
+    const bool raupe = f.art == Fahrzeugart::Raupe;
+    const double kx = std::clamp((b.x - f.x) / G * f.blick, raupe ? -26.0 : -15.0, raupe ? 27.0 : 16.0);
+    const double hoch = raupe ? (kx > 3 ? 29.0 : 41.0) : (kx > 1 ? 17.0 : 22.0);
+    Klecks k{float(kx), float(std::clamp((b.y - f.y) / G, -hoch, -4.0)), float(b.radius() * 0.9 / G), float(klebt), m_sim.zeit()};
     if (f.kleckse.size() >= 8) {
         m_sim.brockenFallenLassen(f.x, f.y - 1, 6, f.kleckse.front().menge);
         f.kleckse.erase(f.kleckse.begin());
@@ -806,29 +867,40 @@ void Raeumdienst::treffer(Einsatz &e, const Schneeball &b) {
     f.schneeDach *= 0.6;
     if (f.phase == FahrPhase::AmSeil) { e.seil.vx += std::clamp(b.vx * 0.08, -120.0, 120.0); return; }
     if (e.abbruch || f.phase == FahrPhase::Beleidigt || e.phase < Phase::Ausklinken || e.phase > Phase::Raeumen) return;
-    bool beleidigt = false;
     if (f.phase == FahrPhase::Streik) {
         // weitere Treffer während er sich beschwert
-        beleidigt = ++f.trefferImStreik >= 2;
-        if (!beleidigt) { sagen(f, 0, 8, 3.5); f.t = std::min(f.t, 2.5); klang(Geraeusch::Murren, f.x, f.y, 1.3); }
+        if (++f.trefferImStreik >= 2) {
+            f.treffer = 0;
+            f.streiks = 2;
+            f.phase = FahrPhase::Bereit; // damit streikPruefen den beleidigten Abflug auslöst
+            f.streikFaellig = true;
+        } else { sagen(f, 0, 8, 3.5); f.t = std::min(f.t, 2.5); klang(Geraeusch::Murren, f.x, f.y, 1.3); }
     } else if (++f.treffer >= std::max(1, m_e.trefferBisStreik)) {
         f.treffer = 0;
-        beleidigt = ++f.streiks >= 2;
-        if (!beleidigt) {
-            f.vorStreik = f.phase;
-            f.phase = FahrPhase::Streik;
-            f.t = 0;
-            f.trefferImStreik = 0;
-            sagen(f, 0, 8, 5.0);
-            klang(Geraeusch::Murren, f.x, f.y, 1.0);
-        }
+        ++f.streiks;
+        f.streikFaellig = true;
     }
-    if (beleidigt) {
+    streikPruefen(e);
+}
+
+// löst den fälligen Streik aus – aber nicht mitten in der Drehung (dann danach)
+void Raeumdienst::streikPruefen(Einsatz &e) {
+    Fahrzeug &f = e.fz;
+    if (!f.streikFaellig || (f.phase == FahrPhase::Wenden && f.dreht)) return;
+    f.streikFaellig = false;
+    if (f.streiks >= 2) {
         f.phase = FahrPhase::Beleidigt;
         f.t = 0;
         e.beleidigt = true;
         sagen(f, 8, 3, 3.0);
         klang(Geraeusch::Murren, f.x, f.y, 1.8);
+    } else {
+        f.vorStreik = f.phase;
+        f.phase = FahrPhase::Streik;
+        f.t = 0;
+        f.trefferImStreik = 0;
+        sagen(f, 0, 8, 5.0);
+        klang(Geraeusch::Murren, f.x, f.y, 1.0);
     }
 }
 

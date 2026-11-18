@@ -3,6 +3,9 @@
 #include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
+#include <QTransform>
+#include "fahrzeugmodell.h"
 #include <cmath>
 #include <initializer_list>
 #include <map>
@@ -613,6 +616,90 @@ void blase(QPainter &p, const QString &text, double w, double h) {
     p.drawText(QRectF(1, 1, w - 2, h - 10), Qt::AlignCenter, text);
 }
 
+// ---- 3D-Ansichten fürs Wenden ----
+// Seitenbild als Textur: genau die Malerei der Seitenansicht, damit die Ansicht bei Gier 0 dem gewohnten Bild gleicht
+QImage seitenbild(int bild, double skala) {
+    static const QSizeF groessen[SeitenbildAnzahl] = {{60, 34}, {70, 18}, {150, 58}, {44, 28}, {12, 12}};
+    const QSizeF g = groessen[bild];
+    QImage img(int(std::ceil(g.width() * skala)), int(std::ceil(g.height() * skala)), QImage::Format_ARGB32_Premultiplied);
+    img.fill(Qt::transparent);
+    QPainter p(&img);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.scale(skala, skala);
+    auto bei = [&p](double x, double y, auto malen) { p.save(); p.translate(x, y); malen(); p.restore(); };
+    switch (bild) {
+    case BildRaupeAufbau:
+        raupeAufbau(p);
+        bei(13, 8, [&] { fahrer(p); });
+        bei(8, 4, [&] { raupeKabine(p); });
+        break;
+    case BildRaupeKette:
+        raupeUnterwagen(p);
+        bei(4.5, 1.5, [&] { rolle(p, 15, 5, true); });
+        bei(50, 2.5, [&] { rolle(p, 14, 4, false); });
+        for (double x : {-13.0, -5.5, 2.0, 9.5}) bei(x + 31, 9.4, [&] { rolle(p, 8, 0, false); });
+        break;
+    case BildHeli: heliRumpf(p); break;
+    case BildPflug: pflugRumpf(p); break;
+    case BildRad: rad(p); break;
+    }
+    return img;
+}
+
+QColor abgetoent(QColor c, double hell) {
+    if (hell <= 1) return QColor(int(c.red() * hell), int(c.green() * hell), int(c.blue() * hell), c.alpha());
+    const double w = std::min(1.0, (hell - 1) * 0.9);
+    return QColor(int(c.red() + (255 - c.red()) * w), int(c.green() + (255 - c.green()) * w), int(c.blue() + (255 - c.blue()) * w), c.alpha());
+}
+
+// malt das Modell im Gierwinkel; der Maler steht in Einheiten mit dem Modellursprung im Nullpunkt
+void modellMalen(QPainter &p, const Modell &m, double gier, const std::vector<QImage> &texturen, double texturSkala) {
+    for (const Sichtflaeche &v : ansicht(m, gier)) {
+        const Flaeche &f = *v.quelle;
+        QPolygonF vieleck;
+        for (const P2 &e : v.ecken) vieleck << QPointF(e.x, e.y);
+        QColor grund = QColor::fromRgba(f.farbe);
+        bool bemalt = false;
+        if (f.textur >= 0 && f.ecken.size() >= 3) {
+            // Seitenbild liegt in der x-y-Ebene: Bildpunkt (u, v) = (x + tu, tv - y). Je Fläche ist die Abbildung
+            // Bild → Leinwand affin; steht die Fläche fast quer zur Bildebene, taugt sie nicht (dann einfarbig).
+            const size_t n = f.ecken.size(), i1 = std::max<size_t>(1, n / 3), i2 = std::max<size_t>(2, 2 * n / 3);
+            const P3 &a = f.ecken[0], &b = f.ecken[i1], &c = f.ecken[i2];
+            const double u0 = a.x + f.tu, v0 = f.tv - a.y, du1 = b.x - a.x, dv1 = -(b.y - a.y), du2 = c.x - a.x, dv2 = -(c.y - a.y);
+            const double det = du1 * dv2 - du2 * dv1;
+            const double nz = std::abs(normale(f).z);
+            const QImage &bild = texturen[size_t(f.textur)];
+            if (nz > 0.3 && std::abs(det) > 1e-6) {
+                const QPointF A = vieleck[0], B = vieleck[int(i1)], C = vieleck[int(i2)];
+                const double xu = ((B.x() - A.x()) * dv2 - (C.x() - A.x()) * dv1) / det, xv = ((C.x() - A.x()) * du1 - (B.x() - A.x()) * du2) / det;
+                const double yu = ((B.y() - A.y()) * dv2 - (C.y() - A.y()) * dv1) / det, yv = ((C.y() - A.y()) * du1 - (B.y() - A.y()) * du2) / det;
+                QBrush pinsel(bild);
+                pinsel.setTransform(QTransform(xu / texturSkala, yu / texturSkala, xv / texturSkala, yv / texturSkala,
+                                               A.x() - xu * u0 - xv * v0, A.y() - yu * u0 - yv * v0));
+                p.setPen(QPen(pinsel, 0.35));
+                p.setBrush(pinsel);
+                p.drawPolygon(vieleck);
+                // Licht: abgewandte Flächen dunkler, dem Licht zugewandte heller
+                p.setPen(Qt::NoPen);
+                p.setBrush(v.hell < 1 ? QColor(10, 14, 24, int(std::min(1.0, (1 - v.hell) * 1.1) * 255)) : QColor(255, 255, 255, int(std::min(0.5, (v.hell - 1) * 0.7) * 255)));
+                p.drawPolygon(vieleck);
+                bemalt = true;
+            } else {
+                // Farbe des Seitenbilds an dieser Stelle übernehmen (z. B. Rot des Rumpfs, Blau der Kanzel)
+                P3 mitte;
+                for (const P3 &e : f.ecken) { mitte.x += e.x / f.ecken.size(); mitte.y += e.y / f.ecken.size(); }
+                const QPoint q(int((mitte.x + f.tu) * texturSkala), int((f.tv - mitte.y) * texturSkala));
+                if (bild.rect().contains(q) && bild.pixelColor(q).alpha() > 220) grund = bild.pixelColor(q);
+            }
+        }
+        if (bemalt) continue;
+        const QColor farbe = grund.alpha() < 255 ? grund : abgetoent(grund, v.hell);
+        p.setPen(grund.alpha() < 255 ? QPen(Qt::NoPen) : QPen(farbe.darker(106), 0.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setBrush(farbe);
+        p.drawPolygon(vieleck);
+    }
+}
+
 struct Vorlage {
     Teil teil;
     float w, h, px, py;
@@ -666,13 +753,13 @@ void malen(QPainter &p, Teil t) {
     case Teil::Rauch: wolke(p, QColor(120, 120, 126, 190), QColor(86, 86, 92, 150)); break;
     case Teil::Staub: wolke(p, QColor(255, 255, 255, 235), QColor(236, 243, 252, 190)); break;
     case Teil::Ball: ball(p); break;
-    case Teil::Blase0: break;
+    default: break;
     }
 }
 } // namespace
 
 FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
-    struct Auftrag { float w, h, px, py; double skala; int teil; QString text; };
+    struct Auftrag { float w, h, px, py; double skala; int teil; QString text; const Modell *modell = nullptr; double gier = 0; };
     std::vector<Auftrag> auftraege;
     auftraege.resize(size_t(teilAnzahl()));
     for (const Vorlage &v : VORLAGEN) auftraege[size_t(v.teil)] = {v.w, v.h, v.px, v.py, dpr * groesse, int(v.teil), QString()};
@@ -682,8 +769,25 @@ FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
         const float w = float(std::ceil(masse.horizontalAdvance(text)) + 22);
         auftraege[size_t(int(Teil::Blase0) + i)] = {w, 31, 3, 30.2f, dpr * blasenSkala(groesse), int(Teil::Blase0), text};
     }
+    // 3D-Ansichten fürs Wenden: je Winkelstufe ein Bild (Raupe und Pflug in zwei Phasen). Bei sehr großen
+    // Fahrzeugen etwas gröber gerastert – sie sind nur kurz und in Bewegung zu sehen.
+    const double skala3d = std::min(dpr * groesse, 3.0);
+    const Modell modelle[5] = {raupenModell(0), raupenModell(1), pflugModell(0), pflugModell(1), heliModell()};
+    std::vector<QImage> texturen;
+    for (int b = 0; b < SeitenbildAnzahl; ++b) texturen.push_back(seitenbild(b, skala3d));
+    for (int stufe = 0; stufe < WINKELSTUFEN; ++stufe) {
+        const double gier = stufenWinkel(stufe);
+        for (int phase = 0; phase < 2; ++phase) {
+            auftraege[size_t(int(Teil::Raupe3D) + stufe * 2 + phase)] = {RAHMEN_RAUPE.w, RAHMEN_RAUPE.h, RAHMEN_RAUPE.px, RAHMEN_RAUPE.py, skala3d,
+                                                                         int(Teil::Raupe3D), QString(), &modelle[phase], gier};
+            auftraege[size_t(int(Teil::Pflug3D) + stufe * 2 + phase)] = {RAHMEN_PFLUG.w, RAHMEN_PFLUG.h, RAHMEN_PFLUG.px, RAHMEN_PFLUG.py, skala3d,
+                                                                         int(Teil::Pflug3D), QString(), &modelle[2 + phase], gier};
+        }
+        auftraege[size_t(int(Teil::Heli3D) + stufe)] = {RAHMEN_HELI.w, RAHMEN_HELI.h, RAHMEN_HELI.px, RAHMEN_HELI.py, skala3d, int(Teil::Heli3D),
+                                                        QString(), &modelle[4], gier};
+    }
     // einfache Regalpackung
-    const int rand = 2, maxBreite = 2048;
+    const int rand = 2, maxBreite = skala3d > 2 ? 4096 : 2048;
     FahrzeugAtlas a;
     a.felder.resize(auftraege.size());
     int x = rand, y = rand, zeile = 0, breite = 0;
@@ -708,7 +812,10 @@ FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
         p.setClipRect(QRect(f.x, f.y, f.w, f.h));
         p.translate(f.x, f.y);
         p.scale(f.w / double(t.w), f.h / double(t.h));
-        if (t.teil == int(Teil::Blase0)) blase(p, t.text, t.w, t.h);
+        if (t.modell) {
+            p.translate(t.px, t.py);
+            modellMalen(p, *t.modell, t.gier, texturen, skala3d);
+        } else if (t.teil == int(Teil::Blase0)) blase(p, t.text, t.w, t.h);
         else malen(p, Teil(t.teil));
         p.restore();
     }

@@ -13,7 +13,7 @@ LSQ_CFLAGS := -I/usr/include/LayerShellQt
 LSQ_LIBS   := -lLayerShellQtInterface
 
 B ?= build
-RAEUM_O := $(B)/raeumdienst.o $(B)/raeumszene.o $(B)/fahrzeugbild.o
+RAEUM_O := $(B)/raeumdienst.o $(B)/raeumszene.o $(B)/fahrzeugbild.o $(B)/ansicht3d.o $(B)/fahrzeugmodell.o
 
 all: $(B)/schneefall
 
@@ -44,7 +44,7 @@ $(B)/klang.o: src/klang.cpp src/klang.h | $(B)
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h | $(B)
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
@@ -72,10 +72,16 @@ $(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.mo
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o $(RAEUM_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
 
 # ---- Räumdienst (Teil B) ----
-$(B)/raeumszene.o: src/raeumszene.cpp src/raeumszene.h src/raeumdienst.h src/schnee.h | $(B)
+$(B)/ansicht3d.o: src/ansicht3d.cpp src/ansicht3d.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(B)/fahrzeugbild.o: src/fahrzeugbild.cpp src/fahrzeugbild.h src/raeumszene.h src/raeumdienst.h src/schnee.h | $(B)
+$(B)/fahrzeugmodell.o: src/fahrzeugmodell.cpp src/fahrzeugmodell.h src/ansicht3d.h | $(B)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(B)/raeumszene.o: src/raeumszene.cpp src/raeumszene.h src/raeumdienst.h src/schnee.h src/ansicht3d.h src/fahrzeugmodell.h | $(B)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(B)/fahrzeugbild.o: src/fahrzeugbild.cpp src/fahrzeugbild.h src/raeumszene.h src/raeumdienst.h src/schnee.h src/ansicht3d.h src/fahrzeugmodell.h | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
 $(B)/szenenprobe: tools/szenenprobe.cpp $(RAEUM_O) $(B)/schnee.o
@@ -89,7 +95,14 @@ $(B)/test_raeumdienst.moc: tests/test_raeumdienst.cpp | $(B)
 $(B)/test_raeumdienst: tests/test_raeumdienst.cpp $(B)/test_raeumdienst.moc $(B)/raeumdienst.o $(B)/schnee.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_raeumdienst.cpp $(B)/raeumdienst.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
-test-raeumdienst: $(B)/test_raeumdienst
+$(B)/test_ansicht.moc: tests/test_ansicht.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_ansicht: tests/test_ansicht.cpp $(B)/test_ansicht.moc $(B)/ansicht3d.o $(B)/fahrzeugmodell.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_ansicht.cpp $(B)/ansicht3d.o $(B)/fahrzeugmodell.o -o $@ $(TEST_LIBS)
+
+test-raeumdienst: $(B)/test_raeumdienst $(B)/test_ansicht
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_ansicht
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_raeumdienst
 
 # ---- Geräusche (Teil C) ----
@@ -107,8 +120,9 @@ klangprobe: $(B)/klangprobe
 test-klang: $(B)/test_klang
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 
-test: $(B)/test_klang $(B)/test_raeumdienst $(B)/test_schnee $(B)/test_bild $(B)/test_steuerfenster
+test: $(B)/test_klang $(B)/test_ansicht $(B)/test_raeumdienst $(B)/test_schnee $(B)/test_bild $(B)/test_steuerfenster
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_ansicht
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_raeumdienst
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_schnee
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_bild

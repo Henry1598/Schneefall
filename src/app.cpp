@@ -230,6 +230,7 @@ void App::sichtbarkeitPruefen() {
 
 void App::takt() {
     double dt = std::min(0.1, m_uhr.restart() / 1000.0);
+    dt *= m_zeitlupe;
     QElapsedTimer t;
     t.start();
     m_sim.schritt(dt, true);
@@ -331,6 +332,8 @@ QString App::Status() {
 QString App::Fensterliste() { return m_letzteListe; }
 
 QString App::Raeumen() { return QString::fromStdString(m_raeum.jetztRaeumen()); }
+
+void App::Zeitlupe(double faktor) { m_zeitlupe = std::clamp(faktor, 0.02, 1.0); }
 
 void App::Werfen(double x, double y, double vx, double vy, double menge) { m_raeum.werfen(x, y, vx, vy, menge); }
 

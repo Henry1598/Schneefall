@@ -127,8 +127,8 @@ Ablauf eines Einsatzes (Zustandsautomat in `src/raeumdienst.cpp`, vom Zeichnen g
    Abwind bläst Schnee unter dem Hubschrauber zur Seite und wirbelt Staub auf.
 3. **Aufsetzen und Ausklinken:** Das Fahrzeug federt ein, der Schnee darunter wird zur Seite
    gedrückt. Der Hubschrauber zieht den Haken ein und wartet seitlich.
-4. **Räumen:** Schild senken, bis zur Kante schieben, zurücksetzen (mit Rückfahrwarner), wenden,
-   andere Seite. Vor dem Schild türmt sich der Wulst; was über die Fensterkante ragt, fällt als
+4. **Räumen:** Schild senken, bis zur Kante schieben, zurücksetzen (mit Rückfahrwarner), wenden
+   (siehe „Wenden“), andere Seite. Vor dem Schild türmt sich der Wulst; was über die Fensterkante ragt, fällt als
    Brocken hinunter und landet auf dem Fenster darunter oder dem Boden. Ist der Wulst voll,
    rutscht der Überschuss am Schild vorbei und fällt vorn über die Kante. Liegt danach noch
    merklich Schnee, gibt es bis zu zwei weitere Durchgänge.
@@ -141,6 +141,28 @@ Ablauf eines Einsatzes (Zustandsautomat in `src/raeumdienst.cpp`, vom Zeichnen g
 - Fenster, auf deren freie Oberkante das Fahrzeug nicht passt, werden nicht geräumt.
 - Die Schneemenge bleibt erhalten: Was geräumt wird, fällt nach unten. Nur am Bildschirmboden
   ist der Schnee weg („vom Bildschirmrand geschoben“).
+
+### Wenden
+
+Das Fahrzeug klappt nicht um, sondern dreht wie ein Kettenfahrzeug auf der Stelle: Schild hoch,
+dann 180° um die Hochachse in 1,5 bis 2,5 s (je nach Fahrzeuggröße, weich an- und auslaufend).
+Zu sehen sind echte Zwischenansichten – Seite, schräg, Front (Schild in voller Breite) bzw. Heck
+(Rücklichter, Auspuff), schräg, andere Seite; die Länge verkürzt sich dabei. Der Drehsinn wechselt
+von Einsatz zu Einsatz (einmal über die Front-, einmal über die Heckansicht). Dabei laufen die
+Kettenglieder um, der Motor arbeitet (mehr Rauch, mit Ton lauter), das Fahrzeug ruckt beim Anfahren
+und Anhalten und die Ketten wirbeln Schnee auf. Würde es beim Drehen über die Kante des befahrbaren
+Abschnitts ragen, rangiert es vorher ein Stück zur Mitte. Ein Schneeballtreffer mitten in der
+Drehung zählt, der Fahrer beschwert sich aber erst danach. Der kleine Pflug dreht genauso, der
+Hubschrauber giert beim Richtungswechsel über die Front- bzw. Heckansicht.
+
+Technik: `src/ansicht3d.{h,cpp}` (Parallelprojektion mit Gierwinkel, Blick leicht von oben,
+weltfestes Licht von oben links, Sichtbarkeit und Tiefenordnung) und `src/fahrzeugmodell.{h,cpp}`
+(Raupe, Pflug und Hubschrauber aus Quadern, Prismen und Schalen). Die Seitenflächen tragen die
+gemalten Seitenbilder als Textur, deshalb gleicht die Ansicht bei 0° dem gewohnten Bild.
+`fahrzeugbild.cpp` malt je Fahrzeug 24 Ansichten (15°-Schritte, Raupe und Pflug in zwei
+Kettenphasen) einmal in den Atlas. Zum Begutachten: `build/szenenprobe` schreibt
+`ansichten_*.png`, `wende_*.png`, `heli_giert_*.png` und `pflug_wende_*.png`; live hilft
+`qdbus6 org.schneefall / org.schneefall.Zeitlupe 0.12` (1 = wieder normal).
 
 ### Schneebälle
 
@@ -199,6 +221,7 @@ das, „Schnee anfassbar“ abschalten.
 - `src/raeumdienst.{h,cpp}`: Räumdienst und Schneebälle ohne GUI (Einsatz-Zustandsautomat,
   Warteschlange, Seilpendel, Hubschrauber, Fahrzeug, Wulst, Bälle, Treffer und Streik,
   Eingabeflächen, Klangereignisse).
+- `src/ansicht3d.{h,cpp}`, `src/fahrzeugmodell.{h,cpp}`: 3D-Ansichten fürs Wenden (ohne Qt).
 - `src/raeumszene.{h,cpp}`: setzt aus dem Zustand das Bild zusammen (Liste von Einzelteilen mit
   Lage, Drehung, Maßstab; Wulst als Decke). Ohne Qt.
 - `src/fahrzeugbild.{h,cpp}`: malt den Fahrzeug-Atlas mit QPainter.
@@ -237,7 +260,7 @@ cmake wird nicht gebraucht, es reicht ein Makefile mit pkg-config.
 cd ~/Schneefall
 ~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen
 ~/.local/bin/testlauf 4G 300 make test         # QtTest: Klang, Räumdienst, Kern, Aussehen, Steuerfenster + Test des KWin-Skripts (node)
-~/.local/bin/testlauf 4G 300 make test-raeumdienst   # nur Räumdienst und Schneebälle
+~/.local/bin/testlauf 4G 300 make test-raeumdienst   # nur Räumdienst, Schneebälle und 3D-Ansicht
 tests/rauchtest.sh                             # Live-Test der D-Bus-Schnittstelle (Sitzung nötig)
 make install                                   # schneefall-umschalten + Starter
 make kwin-skript                               # KWin-Skript installieren/aktualisieren und einschalten
