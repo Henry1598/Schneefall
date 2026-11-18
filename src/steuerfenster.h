@@ -21,6 +21,7 @@ private:
     App *m_app;
     QCheckBox *m_an;
     QCheckBox *m_vollbild;
+    QCheckBox *m_vorFenstern;
     QCheckBox *m_autostart;
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
     QString m_einheiten[5];

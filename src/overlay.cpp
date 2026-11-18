@@ -104,6 +104,7 @@ void Overlay::paintGL() {
     for (const Flocke &f : m_sim->flocken()) {
         float r = float(f.groesse * 0.5 + 0.8);
         if (f.x + r < bx || f.x - r > bx + bw || f.y + r < by || f.y - r > by + bh) continue;
+        if (!m_sim->flockeZeichnen(f)) continue; // „hinter“ einem Fenster
         float x0 = f.x - r, x1 = f.x + r, y0 = f.y - r, y1 = f.y + r;
         float a = 0.92f;
         ecke(x0, y0, -1, -1, a); ecke(x1, y0, 1, -1, a); ecke(x0, y1, -1, 1, a);

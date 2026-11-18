@@ -9,6 +9,11 @@ Simulation::Simulation(Einstellungen e, uint32_t saat) : m_e(e), m_rng(saat) {}
 void Simulation::setEinstellungen(const Einstellungen &e) { m_e = e; }
 
 namespace {
+uint32_t schluesselVon(const std::string &id) {
+    uint32_t h = 2166136261u; // FNV-1a
+    for (unsigned char c : id) { h ^= c; h *= 16777619u; }
+    return h ? h : 1;
+}
 using Sichtbarkeit = std::vector<std::pair<std::string, std::vector<uint8_t>>>;
 Sichtbarkeit merken(const std::vector<Decke> &decken) {
     Sichtbarkeit v;
@@ -44,6 +49,7 @@ void Simulation::bodenAufbauen() {
         const Rechteck &b = m_bildschirme[i];
         Decke d;
         d.id = "boden:" + std::to_string(i);
+        d.schluessel = schluesselVon(d.id);
         d.boden = true;
         d.x = b.x;
         d.y = b.unten();
@@ -149,6 +155,7 @@ void Simulation::setFenster(const std::vector<Fenster> &f) {
         if (!traegt(&w) || decke(w.id)) continue;
         Decke d;
         d.id = w.id;
+        d.schluessel = schluesselVon(d.id);
         d.x = w.r.x;
         d.y = w.r.y;
         d.dock = w.dock;
@@ -179,6 +186,7 @@ void Simulation::zerfallen(Decke &d, size_t von, size_t bis) {
             f.vy = 10 + 30 * u(m_rng);
             f.fang = 1.0f;
             f.vx = (u(m_rng) - 0.5) * 20 + m_e.wind * 0.3;
+            f.herkunft = d.schluessel;
             m_flocken.push_back(f);
         }
     }
@@ -325,6 +333,7 @@ void Simulation::schritt(double dt, bool erzeugenAn) {
             if (rel < 0) continue;
             size_t s = size_t(rel);
             if (s >= d.hoehe.size() || !d.sichtbar[s]) continue;
+            if (f.herkunft == d.schluessel) continue;          // gerade von hier heruntergefallen
             if (!d.boden && !d.dock && !faengt(f, d)) continue; // fällt vor diesem Fenster vorbei
             double oben = d.y - d.hoehe[s];
             // y0 <= d.y: auch Flocken, in die die Decke hineingewachsen ist, bleiben liegen
@@ -374,6 +383,15 @@ double Simulation::gesamtSchnee(const std::string &id) const {
     return s;
 }
 
+
+bool Simulation::flockeZeichnen(const Flocke &f) const {
+    if (m_e.vorFenstern) return true;
+    for (const Fenster &w : m_fenster) {
+        if (w.minimiert || w.dock) continue; // Taskleiste/Panels zählen nicht
+        if (w.r.enthaelt(f.x, f.y)) return false;
+    }
+    return true;
+}
 
 void Simulation::vorfuellen() {
     std::uniform_real_distribution<double> u(0, 1);

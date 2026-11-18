@@ -52,6 +52,7 @@ private slots:
     void henrysMonitoreUndFenster();
     void vorfuellenVerteiltFlockenSofortUeberAlleMonitore();
     void bodenSchmilztLangsamerAlsEsSchneit();
+    void hinterFensternWerdenFlockenImFensterNichtGezeichnet();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -221,6 +222,11 @@ void TestSchnee::abschuettelnLaesstAlleDeckenFallen() {
     s.abschuetteln();
     QCOMPARE(s.gesamtSchnee("a"), 0.0);
     QVERIFY(s.flocken().size() >= 8);
+    // Regression 18.11.: die Flocken blieben sofort wieder auf derselben Kante liegen
+    laufen(s, 0.5);
+    QCOMPARE(s.gesamtSchnee("a"), 0.0);
+    QVERIFY(!s.flocken().empty());
+    for (const Flocke &f : s.flocken()) QVERIFY(f.y > 300);   // unter die Kante gefallen
     // die Decke selbst bleibt bestehen und sammelt weiter
     s.flockeHinzufuegen(flocke(250, 200));
     s.alleFlockenEntfernen();
@@ -385,6 +391,39 @@ void TestSchnee::bodenSchmilztLangsamerAlsEsSchneit() {
     for (int i = 0; i < 60 * 180; ++i) s.schritt(1.0 / 60, true);
     // nach 3 Minuten liegt am Boden sichtbar Schnee (im Mittel mehr als 1,5 px; ohne Schmelzen wären es gut 2)
     QVERIFY2(s.gesamtSchnee("boden:0") / (1000 / 3.0) > 1.5, qPrintable(QString::number(s.gesamtSchnee("boden:0"))));
+}
+
+void TestSchnee::hinterFensternWerdenFlockenImFensterNichtGezeichnet() {
+    Einstellungen e = ruhig();
+    e.vorFenstern = false;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster leiste = fenster("leiste", 0, 760, 1000, 40, 5);
+    leiste.dock = true;
+    Fenster mini = fenster("mini", 600, 100, 300, 300, 3);
+    mini.minimiert = true;
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1), leiste, mini});
+    QVERIFY(!s.flockeZeichnen(flocke(250, 450)));   // mitten im Fenster
+    QVERIFY(s.flockeZeichnen(flocke(250, 250)));    // über dem Fenster (Arbeitsfläche)
+    QVERIFY(s.flockeZeichnen(flocke(250, 297)));    // auf der Decke über der Oberkante
+    QVERIFY(s.flockeZeichnen(flocke(50, 450)));     // neben dem Fenster
+    QVERIFY(s.flockeZeichnen(flocke(300, 780)));    // vor der Taskleiste
+    QVERIFY(s.flockeZeichnen(flocke(700, 200)));    // minimiertes Fenster verdeckt nichts
+    // Decken werden weiter gesammelt
+    s.flockeHinzufuegen(flocke(250, 250));
+    laufen(s, 2.0);
+    QVERIFY(hoeheUm(s, "a", 250) > 0.5);
+    // Standard: Schnee fällt vor den Fenstern
+    Simulation v(ruhig());
+    v.setBildschirme({{0, 0, 1000, 800}});
+    v.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    QVERIFY(v.flockeZeichnen(flocke(250, 450)));
+    // Einstellung aus der Datei
+    QCOMPARE(einstellungenAusText("vor_fenstern=false\n").sim.vorFenstern, false);
+    QCOMPARE(einstellungenAusText("").sim.vorFenstern, true);
+    Programmeinstellungen p;
+    p.sim.vorFenstern = false;
+    QCOMPARE(einstellungenAusText(einstellungenAlsText(p)).sim.vorFenstern, false);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

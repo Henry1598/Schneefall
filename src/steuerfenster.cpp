@@ -62,6 +62,10 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     haupt->addWidget(abschuetteln);
     connect(abschuetteln, &QPushButton::clicked, m_app, &App::Abschuetteln);
 
+    m_vorFenstern = new QCheckBox(QStringLiteral("Schnee fällt vor Fenstern"), this);
+    m_vorFenstern->setToolTip(QStringLiteral("Aus: fallender Schnee ist nur über der Arbeitsfläche zu sehen, als fiele er hinter den Fenstern. "
+                                             "Die Schneedecken auf den Fenstern bleiben sichtbar."));
+    haupt->addWidget(m_vorFenstern);
     m_vollbild = new QCheckBox(QStringLiteral("Bei Vollbild pausieren"), this);
     m_autostart = new QCheckBox(QStringLiteral("Mit dem System starten"), this);
     haupt->addWidget(m_vollbild);
@@ -79,6 +83,7 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
 
     connect(m_an, &QCheckBox::toggled, this, [this] { uebernehmen(); });
     connect(m_vollbild, &QCheckBox::toggled, this, [this] { uebernehmen(); });
+    connect(m_vorFenstern, &QCheckBox::toggled, this, [this] { uebernehmen(); });
     connect(m_autostart, &QCheckBox::toggled, this, [this](bool an) {
         if (m_setzt) return;
         const QString pfad = autostartPfad();
@@ -105,6 +110,7 @@ void Steuerfenster::ausEinstellungen() {
     const Programmeinstellungen &p = m_app->einstellungen();
     m_an->setChecked(p.an);
     m_vollbild->setChecked(p.vollbildPausieren);
+    m_vorFenstern->setChecked(p.sim.vorFenstern);
     m_autostart->setChecked(QFile::exists(autostartPfad()));
     auto setze = [](Regler &r, double wert) { r.slider->setValue(int(std::lround(wert / r.faktor))); };
     setze(m_menge, p.sim.menge);
@@ -128,13 +134,14 @@ void Steuerfenster::uebernehmen() {
     Programmeinstellungen p = m_app->einstellungen();
     p.an = m_an->isChecked();
     p.vollbildPausieren = m_vollbild->isChecked();
+    p.sim.vorFenstern = m_vorFenstern->isChecked();
     p.sim.menge = m_menge.slider->value() * m_menge.faktor;
     p.sim.wind = m_wind.slider->value() * m_wind.faktor;
     p.sim.groesse = m_groesse.slider->value() * m_groesse.faktor;
     p.sim.maxHoehe = m_hoehe.slider->value() * m_hoehe.faktor;
     p.sim.fallGeschw = m_fall.slider->value() * m_fall.faktor;
     const Programmeinstellungen &alt = m_app->einstellungen();
-    if (p.an == alt.an && p.vollbildPausieren == alt.vollbildPausieren && p.sim.menge == alt.sim.menge && p.sim.wind == alt.sim.wind
+    if (p.an == alt.an && p.vollbildPausieren == alt.vollbildPausieren && p.sim.vorFenstern == alt.sim.vorFenstern && p.sim.menge == alt.sim.menge && p.sim.wind == alt.sim.wind
         && p.sim.groesse == alt.sim.groesse && p.sim.maxHoehe == alt.sim.maxHoehe && p.sim.fallGeschw == alt.sim.fallGeschw)
         return;
     m_app->einstellungenAendern(p);

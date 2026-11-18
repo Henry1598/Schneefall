@@ -34,6 +34,7 @@ struct Einstellungen {
     double fallGeschw = 45.0;    // mittlere Fallgeschwindigkeit px/s
     double schmelzen = 0.01;     // px/s Abbau am unteren Bildschirmrand (×(0,2 + Höhe/maxHöhe))
     double ablageJeFlocke = 0.0; // Höhenzuwachs je Flocke; 0 = aus Größe berechnet
+    bool vorFenstern = true;     // false: fallende Flocken nur über der Arbeitsfläche zeichnen (wirkt wie hinter den Fenstern)
     double fangAnteil = 0.4;     // Anteil der Flocken, die auf einer Fensterkante liegen bleiben (Rest fällt davor vorbei)
 };
 
@@ -44,6 +45,7 @@ struct Flocke {
     double phase;     // für das Schaukeln
     float fang = 1.0f;  // Wahrscheinlichkeit, auf einer Fensterkante liegen zu bleiben (Boden/Taskleiste: immer)
     uint32_t los = 0;   // Zufallszahl der Flocke; entscheidet je Kante fest, ob sie fängt
+    uint32_t herkunft = 0; // Schlüssel der Decke, aus der sie zerfallen ist (dort nie wieder landen)
 };
 
 // Schneedecke auf einer Kante (Fensteroberkante oder Bildschirmboden)
@@ -55,6 +57,7 @@ struct Decke {
     std::vector<uint8_t> sichtbar; // 1 = Kante sichtbar (nicht verdeckt, auf Bildschirm)
     bool boden = false;
     bool dock = false;       // Taskleiste: fängt wie der Boden alle Flocken
+    uint32_t schluessel = 0;      // aus id, nie 0
     float abfallLinks = 0, abfallRechts = 0; // gesammelter Überhang, der als Flocke herunterfällt
     double breite() const { return hoehe.size() * spaltenBreite; }
 };
@@ -84,6 +87,8 @@ public:
 
     // Zielanzahl fallender Flocken für die aktuelle Bildschirmfläche
     int zielAnzahl() const;
+    // Soll diese Flocke gezeichnet werden? (bei vorFenstern=false nicht über normalen Fenstern)
+    bool flockeZeichnen(const Flocke &f) const;
     void alleFlockenEntfernen() { m_flocken.clear(); }
     void abschuetteln(); // alle Decken zerfallen in Flocken
     void vorfuellen();   // Flocken gleichmäßig über alle Monitore verteilen (Start)

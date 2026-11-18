@@ -7,6 +7,8 @@ P=./build/schneefall
 if busctl --user status org.schneefall >/dev/null 2>&1; then echo "schneefall läuft schon – erst beenden"; exit 1; fi
 setsid -f $P >/dev/null 2>&1
 for i in $(seq 50); do busctl --user status org.schneefall >/dev/null 2>&1 && break; sleep 0.1; done
+# auf die erste Fensterliste vom KWin-Skript warten (kommt spätestens nach 2 s)
+for i in $(seq 40); do [ "$($P --status 2>/dev/null | grep -o 'fenster=[0-9]*')" != "fenster=0" ] && break; sleep 0.1; done
 fehler=0
 for m in Status Fensterliste Umschalten Umschalten Abschuetteln; do
     busctl --user call org.schneefall / org.schneefall $m >/dev/null 2>&1

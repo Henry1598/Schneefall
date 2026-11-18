@@ -60,6 +60,7 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "fallgeschwindigkeit") setzen(p.sim.fallGeschw, w, 5.0, 300.0);
         else if (k == "fps") { double v = p.fps; setzen(v, w, 10.0, 120.0); p.fps = int(v); }
         else if (k == "an") wahrheit(w, p.an);
+        else if (k == "vor_fenstern") wahrheit(w, p.sim.vorFenstern);
         else if (k == "vollbild_pausieren") wahrheit(w, p.vollbildPausieren);
     }
     return p;
@@ -82,6 +83,8 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "fps=" << p.fps << "\n"
       << "# Schnee an (true) oder pausiert (false)\n"
       << "an=" << (p.an ? "true" : "false") << "\n"
+      << "# Schnee fällt vor den Fenstern (true) oder nur über der Arbeitsfläche, also scheinbar dahinter (false)\n"
+      << "vor_fenstern=" << (p.sim.vorFenstern ? "true" : "false") << "\n"
       << "# bei aktivem Vollbildfenster (Spiele, Videos) pausieren\n"
       << "vollbild_pausieren=" << (p.vollbildPausieren ? "true" : "false") << "\n";
     return o.str();
