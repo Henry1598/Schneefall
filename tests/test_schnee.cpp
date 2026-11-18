@@ -29,6 +29,9 @@ private slots:
     void flockeBleibtAufFensterkanteLiegen();
     void verdeckteKanteNimmtKeinenSchneeAuf();
     void deckeIstBegrenztUndRutschtAmRandAb();
+    void deckeZerfaelltBeiVeraenderung_data();
+    void deckeZerfaelltBeiVeraenderung();
+    void schmalerWerdenWirftUeberstandAb();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -86,6 +89,56 @@ void TestSchnee::deckeIstBegrenztUndRutschtAmRandAb() {
     // ein Teil ist über die Fensterkanten heruntergefallen
     QVERIFY(fielHerunter);
     QVERIFY(s.gesamtSchnee("a") < 400.0);
+}
+
+void TestSchnee::deckeZerfaelltBeiVeraenderung_data() {
+    QTest::addColumn<QString>("art");
+    QTest::newRow("verschoben") << "verschoben";
+    QTest::newRow("geschlossen") << "geschlossen";
+    QTest::newRow("minimiert") << "minimiert";
+    QTest::newRow("verdeckt") << "verdeckt";
+}
+
+void TestSchnee::deckeZerfaelltBeiVeraenderung() {
+    QFETCH(QString, art);
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    for (int i = 0; i < 20; ++i) s.flockeHinzufuegen(flocke(120 + i * 15, 250));
+    laufen(s, 2.0);
+    QCOMPARE(s.gesamtSchnee("a"), 20.0);
+    QCOMPARE(int(s.flocken().size()), 0);
+
+    if (art == "verschoben") s.setFenster({fenster("a", 150, 400, 400, 300, 1)});
+    if (art == "geschlossen") s.setFenster({});
+    if (art == "minimiert") { Fenster f = fenster("a", 100, 300, 400, 300, 1); f.minimiert = true; s.setFenster({f}); }
+    if (art == "verdeckt") s.setFenster({fenster("a", 100, 300, 400, 300, 1), fenster("b", 50, 200, 600, 400, 2)});
+
+    QCOMPARE(s.gesamtSchnee("a"), 0.0);
+    // der Schnee ist zu fallenden Flocken an der alten Stelle geworden
+    QVERIFY(s.flocken().size() >= 10);
+    for (const Flocke &f : s.flocken()) {
+        QVERIFY(f.x >= 95 && f.x <= 505);
+        QVERIFY(f.y <= 301 && f.y > 270);
+        QVERIFY(f.vy > 0);
+    }
+    // und fällt nach unten
+    double yVorher = s.flocken().front().y;
+    s.schritt(0.1, false);
+    QVERIFY(s.flocken().front().y > yVorher);
+}
+
+void TestSchnee::schmalerWerdenWirftUeberstandAb() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    for (int i = 0; i < 20; ++i) s.flockeHinzufuegen(flocke(120 + i * 15, 250));
+    laufen(s, 2.0);
+    // gleiche Oberkante, nur schmaler: linker Teil bleibt liegen
+    s.setFenster({fenster("a", 100, 300, 200, 300, 1)});
+    QCOMPARE(s.gesamtSchnee("a"), 12.0);   // x = 120 … 285
+    QVERIFY(s.flocken().size() >= 7);
+    for (const Flocke &f : s.flocken()) QVERIFY(f.x >= 295);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

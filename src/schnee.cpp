@@ -8,17 +8,64 @@ Simulation::Simulation(Einstellungen e, uint32_t saat) : m_e(e), m_rng(saat) {}
 
 void Simulation::setEinstellungen(const Einstellungen &e) { m_e = e; }
 
+namespace {
+using Sichtbarkeit = std::vector<std::pair<std::string, std::vector<uint8_t>>>;
+Sichtbarkeit merken(const std::vector<Decke> &decken) {
+    Sichtbarkeit v;
+    for (const Decke &d : decken) v.emplace_back(d.id, d.sichtbar);
+    return v;
+}
+}
+
+void Simulation::nachSichtbarkeitZerfallen() {
+    auto vorher = merken(m_decken);
+    sichtbarkeitBerechnen();
+    for (Decke &d : m_decken)
+        for (auto &[id, sicht] : vorher)
+            if (id == d.id)
+                for (size_t i = 0; i < d.hoehe.size() && i < sicht.size(); ++i)
+                    if (sicht[i] && !d.sichtbar[i]) zerfallen(d, i, i + 1);
+}
+
 void Simulation::setBildschirme(const std::vector<Rechteck> &b) {
     m_bildschirme = b;
-    sichtbarkeitBerechnen();
+    // Bodendecken neu aufbauen (Monitore geändert)
+    for (Decke &d : m_decken)
+        if (d.boden) zerfallen(d, 0, d.hoehe.size());
+    m_decken.erase(std::remove_if(m_decken.begin(), m_decken.end(), [](const Decke &d) { return d.boden; }), m_decken.end());
+    bodenAufbauen();
+    nachSichtbarkeitZerfallen();
 }
+
+void Simulation::bodenAufbauen() {}
 
 void Simulation::setFenster(const std::vector<Fenster> &f) {
     m_fenster = f;
+    auto finde = [&](const std::string &id) -> const Fenster * {
+        for (const Fenster &w : m_fenster)
+            if (w.id == id) return &w;
+        return nullptr;
+    };
+    auto traegt = [](const Fenster *w) { return w && !w->minimiert && !w->vollbild && w->r.w >= 1; };
+    // bestehende Decken anpassen oder zerfallen lassen
+    for (Decke &d : m_decken) {
+        if (d.boden) continue;
+        const Fenster *w = finde(d.id);
+        bool weg = !traegt(w) || std::abs(w->r.x - d.x) > 0.5 || std::abs(w->r.y - d.y) > 0.5;
+        if (weg) {
+            zerfallen(d, 0, d.hoehe.size());
+            d.hoehe.clear();
+            continue;
+        }
+        size_t n = std::max<size_t>(1, size_t(std::floor(w->r.w / d.spaltenBreite)));
+        if (n < d.hoehe.size()) zerfallen(d, n, d.hoehe.size());
+        d.hoehe.resize(n, 0.f);
+        d.sichtbar.resize(n, 1);
+    }
+    m_decken.erase(std::remove_if(m_decken.begin(), m_decken.end(), [](const Decke &d) { return !d.boden && d.hoehe.empty(); }), m_decken.end());
+    // neue Decken
     for (const Fenster &w : m_fenster) {
-        if (w.minimiert || w.vollbild || w.r.w <= 0) continue;
-        auto it = std::find_if(m_decken.begin(), m_decken.end(), [&](const Decke &d) { return d.id == w.id; });
-        if (it != m_decken.end()) continue;
+        if (!traegt(&w) || decke(w.id)) continue;
         Decke d;
         d.id = w.id;
         d.x = w.r.x;
@@ -29,7 +76,29 @@ void Simulation::setFenster(const std::vector<Fenster> &f) {
         d.sichtbar.assign(n, 1);
         m_decken.push_back(std::move(d));
     }
-    sichtbarkeitBerechnen();
+    nachSichtbarkeitZerfallen();
+}
+
+void Simulation::zerfallen(Decke &d, size_t von, size_t bis) {
+    std::uniform_real_distribution<double> u(0, 1);
+    const double portion = ablageFuer(m_e.groesse);
+    const size_t grenze = 6000; // Schutz gegen Flockenlawinen
+    for (size_t i = von; i < bis && i < d.hoehe.size(); ++i) {
+        double h = d.hoehe[i];
+        d.hoehe[i] = 0;
+        if (h <= 0) continue;
+        double anzahlD = h / portion;
+        int anzahl = int(anzahlD);
+        if (u(m_rng) < anzahlD - anzahl) ++anzahl;
+        for (int k = 0; k < anzahl && m_flocken.size() < grenze; ++k) {
+            double x = d.x + (i + u(m_rng)) * d.spaltenBreite;
+            double y = d.y - u(m_rng) * h - 0.5;
+            Flocke f = neueFlocke(x, y);
+            f.vy = 10 + 30 * u(m_rng);
+            f.vx = (u(m_rng) - 0.5) * 20 + m_e.wind * 0.3;
+            m_flocken.push_back(f);
+        }
+    }
 }
 
 void Simulation::sichtbarkeitBerechnen() {

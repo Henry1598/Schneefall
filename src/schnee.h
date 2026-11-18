@@ -82,6 +82,7 @@ public:
 private:
     void zerfallen(Decke &d, size_t von, size_t bis); // Spalten [von,bis) in Flocken
     void sichtbarkeitBerechnen();
+    void nachSichtbarkeitZerfallen();
     void bodenAufbauen();
     void ablegen(Decke &d, size_t spalte, double menge);
     void rutschen(Decke &d, double dt);
