@@ -459,7 +459,7 @@ private slots:
         // erste Wende: nach der rechten Bahn, zurück in der Mitte
         QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->fz.phase == FahrPhase::Wenden && w.einsatz()->fz.dreht; }, 120));
         const Fahrzeug &f = w.einsatz()->fz;
-        const double x0 = f.x, kette0 = f.kette;
+        const double x0 = f.x, kette0 = f.kette, dreh0 = f.drehweg;
         QCOMPARE(f.blick, 1);
         QVERIFY(f.schild > 0.97);                      // Schild ist angehoben
         w.rd.klaengeAbholen();
@@ -485,7 +485,8 @@ private slots:
         QVERIFY(front && !heck);                       // von rechts nach links über die Frontansicht
         QCOMPARE(f.blick, -1);
         QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
-        QVERIFY(std::abs(f.kette - kette0) > 30);      // die Ketten sind dabei gelaufen
+        QVERIFY(std::abs(f.drehweg - dreh0) > 30);     // die Ketten sind gegenläufig gelaufen (rechte vor, linke zurück) …
+        QCOMPARE(f.kette, kette0);                     // … ohne dass das Fahrzeug Strecke gemacht hat
         QVERIFY2(hoechsteLast > 0.55, qPrintable(QString::number(hoechsteLast)));   // Motor arbeitet
         QVERIFY(staub);                                // Ketten wirbeln Schnee auf
         bool motorLaut = false;
@@ -599,6 +600,80 @@ private slots:
         h.zielX = h.x - 50;
         for (int i = 0; i < 60; ++i) h.schritt(1.0 / 30, 260, 220);
         QCOMPARE(h.gier, 0.0);
+    }
+    void radpflugWendetInZuegenStattAufDerStelle() {
+        Welt w;
+        RaeumEinstellungen e;
+        e.an = false;
+        w.rd.setEinstellungen(e);
+        w.fuellen("boden:0", 18);
+        w.buche("boden:0");
+        QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->fz.phase == FahrPhase::Wenden && w.einsatz()->fz.dreht; }, 600));
+        const Fahrzeug &f = w.einsatz()->fz;
+        QCOMPARE(f.art, Fahrzeugart::Pflug);
+        QCOMPARE(f.wendeZuege, 3);                     // genug Platz: vor, zurück, vor
+        const double x0 = f.x, kette0 = f.kette;
+        w.rd.klaengeAbholen();
+        double zeit = 0, letzter = f.gier, weitesteAusfahrt = 0, tiefste = 0;
+        bool vor = false, zurueck = false, linksEin = false, rechtsEin = false, monoton = true, warner = false;
+        int richtungswechsel = 0;
+        double letztesTempo = 0;
+        while (f.phase == FahrPhase::Wenden && zeit < 20) {
+            w.laufen(1.0 / 30);
+            zeit += 1.0 / 30;
+            if (f.phase != FahrPhase::Wenden) break;
+            monoton &= f.gier >= letzter - 1e-9;
+            letzter = f.gier;
+            weitesteAusfahrt = std::max(weitesteAusfahrt, std::abs(f.x - x0));
+            tiefste = std::max(tiefste, std::abs(f.tiefeZ));
+            vor |= f.v > 8;
+            zurueck |= f.v < -8;
+            linksEin |= f.lenk > 0.4;
+            rechtsEin |= f.lenk < -0.4;
+            if (std::abs(f.v) > 8 && letztesTempo * f.v < 0) ++richtungswechsel;
+            if (std::abs(f.v) > 8) letztesTempo = f.v;
+            // gedreht wird nur im Fahren: steht er, bleibt der Winkel
+            for (const Klangereignis &k : w.rd.klaengeAbholen()) warner |= k.typ == Klangereignis::Dauer && k.art == Geraeusch::Rueckfahrwarner;
+        }
+        QVERIFY(monoton);
+        QVERIFY2(weitesteAusfahrt > 15, qPrintable(QString::number(weitesteAusfahrt)));   // fährt Bögen, dreht nicht auf der Stelle
+        QVERIFY(tiefste > 6);                          // holt dabei zum Betrachter hin aus
+        QVERIFY(vor && zurueck);
+        QCOMPARE(richtungswechsel, 2);                 // vor → zurück → vor
+        QVERIFY(linksEin && rechtsEin);                // Vorderräder schlagen in beide Richtungen ein
+        QVERIFY(warner);                               // piept beim Zurücksetzen
+        QVERIFY2(zeit > 2 && zeit < 9, qPrintable(QString::number(zeit)));
+        QCOMPARE(f.blick, -1);
+        QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
+        QVERIFY2(std::abs(f.x - x0) < 4, qPrintable(QString::number(f.x - x0)));          // steht wieder, wo er losfuhr
+        QVERIFY(std::abs(f.kette - kette0) > 25);      // die Räder sind gerollt (zwei Bögen vor, einer zurück)
+        // danach stellt er die Räder gerade und fährt in der Spur weiter
+        w.laufen(1.5);
+        QVERIFY(std::abs(f.lenk) < 0.02);
+        QVERIFY(std::abs(f.tiefeZ) < 0.5);
+    }
+    void radpflugBrauchtBeiWenigPlatzMehrZuege() {
+        Welt w;
+        RaeumEinstellungen e;
+        e.an = false;
+        w.rd.setEinstellungen(e);
+        Fenster leiste = fenster("leiste", 900, 1100, 100, 100, 9);   // schmale Taskleiste
+        leiste.dock = true;
+        w.fenster_.push_back(leiste);
+        w.sim.setFenster(w.fenster_);
+        w.fuellen("leiste", 16);
+        w.buche("leiste");
+        QVERIFY(w.einsatz());
+        QVERIFY(w.bis([&] { return w.einsatz() && w.einsatz()->fz.phase == FahrPhase::Wenden && w.einsatz()->fz.dreht; }, 300));
+        const Fahrzeug &f = w.einsatz()->fz;
+        QCOMPARE(f.art, Fahrzeugart::Pflug);
+        QVERIFY2(f.wendeZuege > 3, qPrintable(QString::number(f.wendeZuege)));
+        const double x0 = f.x;
+        double weiteste = 0, zeit = 0;
+        while (f.phase == FahrPhase::Wenden && zeit < 30) { w.laufen(1.0 / 30); zeit += 1.0 / 30; weiteste = std::max(weiteste, std::abs(f.x - x0)); }
+        QVERIFY(std::abs(f.gier - M_PI) < 1e-9);
+        // kürzere Bögen: er holt weniger weit aus als bei der Wende in drei Zügen (dort knapp 28 px)
+        QVERIFY2(weiteste < 22, qPrintable(QString::number(weiteste)));
     }
     void wulstformWaechstUndBleibtBegrenzt() {
         QCOMPARE(wulstHoehe(0, 1), 0.0);

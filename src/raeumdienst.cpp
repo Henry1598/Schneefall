@@ -1,6 +1,7 @@
 #include "raeumdienst.h"
 #include <algorithm>
 #include <cmath>
+#include "fahrzeugmodell.h"
 
 namespace schnee {
 namespace {
@@ -36,8 +37,8 @@ double wendeDauer(double g) { return std::clamp(1.8 * std::sqrt(g), 1.5, 2.5); }
 double wendeRadius(Fahrzeugart a, double g) { return massVon(a).schildVorn * g; }
 
 Fahrzeugmass massVon(Fahrzeugart a) {
-    if (a == Fahrzeugart::Raupe) return {32, 44, 39, 36, 22};
-    return {19, 27, 24, 23, 14};
+    if (a == Fahrzeugart::Raupe) return {32, 46, 39, 36, 23};
+    return {20, 28, 29.5, 25, 15};
 }
 
 double Schneeball::radius() const { return std::clamp(1.15 * std::sqrt(std::max(0.0, menge) * 3.0 / 3.14159265), 3.0, 18.0); }
@@ -405,6 +406,7 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     const double kap = wulstKapazitaet(WG) / sb;
     const int r = f.richtung;
     double zielV = 0, zielSchild = 1, zielLast = 0.12, zielRaus = 0;
+    bool eigenfahrt = false;   // der Radpflug fährt beim Wenden seine Bögen selbst
     const double vorn0 = f.x + r * m.schildVorn * G;
     const double ende = r > 0 ? b : a;
 
@@ -419,18 +421,75 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
         zielLast = 0.3;
         if (!f.dreht) {
             const double radius = wendeRadius(f.art, G), spiel = 4 * G;
-            const double lo = a + radius - spiel, hi = b - radius + spiel;
+            double lo = a + radius - spiel, hi = b - radius + spiel;
+            bool passt = true;
+            if (f.art == Fahrzeugart::Pflug) {
+                // Wende in Zügen: der erste Bogen führt ein Stück nach vorn (oder, rückwärts begonnen, nach hinten).
+                // So wenige Züge wie der Platz erlaubt; reicht er nirgends, erst zur Mitte rangieren.
+                const double wendekreis = PFLUG_RADSTAND / std::tan(0.6) * G;
+                const double vorn = (f.blick > 0 ? b - f.x : f.x - a) + spiel, hinten = (f.blick > 0 ? f.x - a : b - f.x) + spiel;
+                passt = false;
+                for (int zuege : {3, 5, 7}) {
+                    const double ausholen = wendekreis * std::sin(3.14159265359 / zuege);
+                    if (ausholen + m.schildVorn * G <= vorn && m.schildVorn * G <= hinten) { f.wendeZuege = zuege; f.wendeErster = 1; passt = true; break; }
+                    if (ausholen + m.schildVorn * G <= hinten && m.schildVorn * G <= vorn) { f.wendeZuege = zuege; f.wendeErster = -1; passt = true; break; }
+                }
+                if (!passt) { f.wendeZuege = 7; f.wendeErster = 1; lo = hi = (a + b) / 2; passt = std::abs(f.x - lo) <= 1; }
+                else lo = hi = f.x;
+            }
             const double platz = lo <= hi ? std::clamp(f.x, lo, hi) : (a + b) / 2;
-            const double weg = platz - f.x;
+            const double weg = passt && f.art == Fahrzeugart::Pflug ? 0.0 : platz - f.x;
             if (std::abs(weg) > 1) {
                 zielV = vorzeichen(weg) * std::min(vRueck * 0.6, std::sqrt(2 * 200 * std::abs(weg)) + 5);
                 if (zielV * f.blick < 0 && std::abs(f.v) > 5) dauer(e, 2, Geraeusch::Rueckfahrwarner, f.x, f.y, 1);
             } else if (std::abs(f.v) < 2 && f.schild > 0.97) {
                 f.dreht = true;
+                f.wendeZug = 0;
                 f.wendeT = 0;
                 f.wendeVon = f.gier;
                 f.v = 0;
                 f.nickV -= 0.35;                 // Ruck beim Anfahren der Ketten
+            }
+            break;
+        }
+        if (f.art == Fahrzeugart::Pflug) {
+            // Radfahrzeug: Wende in Zügen. Je Zug ein Bogen um π/Züge, abwechselnd vor und zurück; dazwischen
+            // steht er kurz und schlägt die Räder um.
+            eigenfahrt = true;
+            const double einschlag = 0.6, wendekreis = PFLUG_RADSTAND / std::tan(einschlag) * G;
+            const double bogen = 3.14159265359 / f.wendeZuege;
+            const int dir = (f.wendeZug % 2 == 0 ? 1 : -1) * f.wendeErster;      // +1 vorwärts, -1 rückwärts
+            const double zielLenk = dir * einschlag;                               // so dreht der Bug immer in dieselbe Richtung
+            const double gedreht = f.wendeT * 3.14159265359, zugEnde = (f.wendeZug + 1) * bogen;
+            zielLast = 0.45;
+            double zielTempo = 0;
+            if (std::abs(f.lenk - zielLenk) > 0.02) {
+                f.lenk += std::clamp(zielLenk - f.lenk, -3.4 * dt, 3.4 * dt);     // steht und lenkt um
+            } else {
+                const double rest = std::max(0.0, zugEnde - gedreht) * wendekreis;
+                zielTempo = dir * std::min(42 * std::sqrt(G), std::sqrt(2 * 150 * rest) + 4);
+            }
+            f.v += std::clamp(zielTempo - f.v, -190 * dt, 190 * dt);
+            const double weg = f.v * dt;
+            const double dGier = std::abs(weg) / wendekreis * std::tan(std::abs(f.lenk)) / std::tan(einschlag);
+            f.x += weg * std::cos(f.gier);
+            f.tiefeZ += weg * std::sin(f.gier);
+            f.kette += weg;                                                       // Räder rollen mit
+            f.wendeT = std::min(1.0, f.wendeT + dGier / 3.14159265359);
+            f.gier = std::fmod(f.wendeVon + f.wendeT * 3.14159265359, 6.28318530718);
+            if (f.v < -5) dauer(e, 2, Geraeusch::Rueckfahrwarner, f.x, f.y, 1);
+            if (f.wendeT >= 0.5) f.blick = r;
+            if (f.wendeT * 3.14159265359 >= zugEnde - 1e-4) {
+                f.v = 0;
+                f.nickV += dir * 0.3;
+                if (++f.wendeZug >= f.wendeZuege) {
+                    f.gier = r > 0 ? 0 : 3.14159265359;
+                    f.blick = r;
+                    f.dreht = false;
+                    f.phase = FahrPhase::Senken;
+                    f.t = 0;
+                    streikPruefen(e);
+                }
             }
             break;
         }
@@ -441,7 +500,7 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
         // Drehsinn wechselt von Einsatz zu Einsatz: einmal über die Front-, einmal über die Heckansicht
         const double sinn = e.nr % 2 ? 1 : -1;
         f.gier = std::fmod(f.wendeVon + sinn * 3.14159265359 * weich(f.wendeT) + 6.28318530718, 6.28318530718);
-        f.kette += dGier * 15.5 * G;             // Kettenweg am Rand: die Glieder laufen sichtbar um
+        f.drehweg += sinn * dGier * 15.5 * G;    // Kettenweg am Rand: rechte Kette vor, linke zurück (oder umgekehrt)
         zielLast = 0.8;                          // Drehen auf der Stelle kostet Kraft
         f.wackelV += (zufall() - 0.5) * 3 * dt;        // rüttelt leicht
         if (vorher < 0.5 && f.wendeT >= 0.5) f.blick = r;
@@ -517,11 +576,16 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     }
 
     // Fahren mit begrenzter Beschleunigung, Federung nickt mit
-    const double dv = std::clamp(zielV - f.v, -260 * dt, 260 * dt);
+    const double dv = eigenfahrt ? 0.0 : std::clamp(zielV - f.v, -260 * dt, 260 * dt);
     const double beschl = dt > 0 ? dv / dt : 0;
-    f.v += dv;
-    f.x += f.v * dt;
-    f.kette += f.v * f.blick * dt;
+    if (!eigenfahrt) {
+        f.v += dv;
+        f.x += f.v * dt;
+        f.kette += f.v * f.blick * dt;
+        // nach der Wende: Räder wieder gerade, zurück auf die Spur
+        f.lenk -= std::clamp(f.lenk, -3.4 * dt, 3.4 * dt);
+        f.tiefeZ -= std::clamp(f.tiefeZ, -30 * dt, 30 * dt);
+    }
     f.nickV += (-120 * f.nicken - 13 * f.nickV - beschl * f.blick * 0.024) * dt;
     f.nicken += f.nickV * dt;
     f.hubV += (-300 * f.hub - 16 * f.hubV) * dt;
@@ -558,7 +622,8 @@ void Raeumdienst::fahrzeugSchritt(Einsatz &e, const Decke &d, double dt) {
     while (f.rauchRest >= 1) {
         f.rauchRest -= 1;
         const bool raupe = f.art == Fahrzeugart::Raupe;
-        const double ax = f.x + std::cos(f.gier) * (raupe ? 9 : -12) * G, ay = f.y - (raupe ? 41 : 20) * G;
+        const P2 rohr = projizieren(raupe ? RAUPE_AUSPUFF : PFLUG_AUSPUFF, f.gier);
+        const double ax = f.x + rohr.x * G, ay = f.y + rohr.y * G;
         Staub s{float(ax), float(ay), float(-f.v * 0.2 + (zufall() - 0.5) * 12 + m_sim.einstellungen().wind * 0.3),
                 float(-28 - 30 * f.last - 10 * zufall()), 0, float(0.7 + 0.6 * zufall()), float((3 + 3 * f.last + 2 * zufall()) * G), 1};
         if (m_staub.size() < 500) m_staub.push_back(s);

@@ -1,6 +1,6 @@
-// Fahrzeug-Atlas: Hubschrauber, Pistenraupe, kleiner Pflug, Fahrer, Sprechblasen, Schneeball …
-// werden einmal je Monitor-Skalierung und Fahrzeuggröße mit QPainter als Vektorgrafik gemalt
-// (Licht von links oben, Glanz, Schatten) und danach nur noch als Sprites gezeichnet.
+// Fahrzeug-Atlas: Hubschrauber, Raupe und Pflug werden einmal je Monitor-Skalierung und Fahrzeuggröße aus
+// ihren 3D-Modellen gerastert (alle Schichten in allen Winkelstufen, siehe fahrzeugmodell.h), Rotor,
+// Lichter, Schneeball, Sprechblasen usw. mit QPainter gemalt. Danach wird nur noch aus dem Atlas gezeichnet.
 #pragma once
 #include <QImage>
 #include <vector>
@@ -17,7 +17,7 @@ struct FahrzeugAtlas {
     std::vector<FahrzeugFeld> felder;  // Index = schnee::Teil
 };
 
-// dpr: Gerätepixel je logischem Pixel; groesse: fahrzeug_groesse
+// dpr: Gerätepixel je logischem Pixel; groesse: fahrzeug_groesse. Malt alles sofort (Probe, Tests).
 FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse);
-// geteilt zwischen allen Ebenen: je (dpr, groesse) einmal gemalt
-const FahrzeugAtlas &fahrzeugAtlasFuer(double dpr, double groesse);
+// Geteilt zwischen allen Ebenen und im Hintergrund gemalt: nullptr, solange der Atlas noch nicht fertig ist.
+const FahrzeugAtlas *fahrzeugAtlasFuer(double dpr, double groesse);

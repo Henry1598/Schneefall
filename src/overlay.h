@@ -43,7 +43,7 @@ protected:
 private:
     void viereck(const float e[4][5]);
     void atlasLaden(double dpr);
-    void fahrzeugAtlasLaden(double dpr);
+    bool fahrzeugAtlasLaden(double dpr);
     void fahrzeugeSammeln(float bx, float by, float bw, float bh);
     void haufenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
     void flockenSammeln(float bx, float by, float bw, float bh);

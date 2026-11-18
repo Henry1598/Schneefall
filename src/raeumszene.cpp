@@ -12,10 +12,11 @@ struct Lage {
     double sx, sy; // px je Einheit; sx < 0 = gespiegelt
     std::vector<Zeichenteil> *ziel;
     void teil(Teil t, double lx, double ly, double lokalWinkel = 0, double fx = 1, double fy = 1, double alpha = 1) const {
+        if (alpha <= 0) return;
         const double c = std::cos(winkel), s = std::sin(winkel);
         const double px = lx * sx, py = ly * sy;
         const double spiegel = sx < 0 ? -1 : 1;
-        ziel->push_back({uint8_t(t), float(x + c * px - s * py), float(y + s * px + c * py), float(winkel + spiegel * lokalWinkel),
+        ziel->push_back({uint16_t(t), float(x + c * px - s * py), float(y + s * px + c * py), float(winkel + spiegel * lokalWinkel),
                          float(sx * fx), float(sy * fy), float(alpha)});
     }
     // Unterkörper an lokaler Stelle mit eigener Drehung
@@ -33,105 +34,104 @@ void sprechblase(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
     const double alpha = std::clamp(f.blaseRest / 0.3, 0.0, 1.0);
     const double hoehe = massVon(f.art).hoehe;
     // ploppt auf: kurz etwas größer
-    z.push_back({uint8_t(int(Teil::Blase0) + f.spruch), float(f.x + 8 * G), float(f.y - (hoehe + 6) * G), 0, float(B), float(B), float(alpha)});
+    z.push_back({uint16_t(int(Teil::Blase0) + f.spruch), float(f.x + 8 * G), float(f.y - (hoehe + 6) * G), 0, float(B), float(B), float(alpha)});
 }
 
-// Fahrzeug dreht gerade: vorgemalte 3D-Ansicht zum Gierwinkel, dazu Leuchte, Schnee und Kleckse an der gedrehten Stelle
-bool dreht(const Fahrzeug &f) { return f.phase == FahrPhase::Wenden && f.dreht && f.wendeT > 0; }
+// Schicht eines Fahrzeugs mit ihrer Tiefe (größer = näher): gezeichnet wird von hinten nach vorn
+struct Schicht { double tiefe; int art; double x, y; int teil; };
 
-void gedreht(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
+bool dreht(const Fahrzeug &f) { return f.phase == FahrPhase::Wenden && f.dreht; }
+double gierVon(const Fahrzeug &f) { return dreht(f) ? f.gier : (f.blick > 0 ? 0.0 : 3.14159265359); }
+int phaseVon(double anteil, int phasen) {
+    const double b = anteil - std::floor(anteil);
+    return std::min(phasen - 1, int(b * phasen));
+}
+
+// Gemeinsames für Raupe und Pflug: Fahrer lehnt sich beim Streik aus dem Seitenfenster, Leuchte, Schnee, Kleckse
+void zubehoer(const Fahrzeug &f, const Lage &boden, double gier, P3 fenster, P3 leuchte, double mass, double halbeBreite) {
     const bool raupe = f.art == Fahrzeugart::Raupe;
-    const double gier = stufenWinkel(winkelstufe(f.gier));
-    const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5 + f.nicken * std::cos(f.gier), G, G, &z};
-    boden.teil(Teil::Schatten, 0, 0.5, 0, raupe ? 1.25 : 0.8, raupe ? 0.6 : 0.5, 0.3);
-    // Ketten laufen gegenläufig: je halbem Glied wechselt das Bild
-    const int phase = int(std::floor(std::abs(f.kette) / G / (raupe ? 2.67 : 3.0))) & 1;
-    boden.teil(Teil(int(raupe ? Teil::Raupe3D : Teil::Pflug3D) + winkelstufe(f.gier) * 2 + phase), 0, f.hub * 0.5 / G);
     auto bei = [&](P3 p) { return projizieren(p, gier); };
+    if (f.raus > 0.05 && !dreht(f)) {
+        // Seitenansicht: er hängt bis zur Hüfte aus dem Fenster (schaut in Fahrtrichtung)
+        const P2 q = projizieren(fenster, 0);
+        const Lage gespiegelt{boden.x, boden.y, boden.winkel, boden.sy * f.blick, boden.sy, boden.ziel};
+        Lage mensch = gespiegelt.kind(q.x - 1.5 * f.raus, q.y - 1.5 * f.raus, -0.3 * f.raus);
+        mensch.sx *= mass;
+        mensch.sy *= mass;
+        mensch.teil(Teil::Fahrer, 0, 0);
+        mensch.teil(Teil::Arm, -1.5, -10.5, (2.55 + 0.45 * std::sin(f.faust)) * f.raus, 1, 1, std::min(1.0, f.raus * 2));
+    }
     if (f.schneeDach > 0.05 && raupe) {
         const P2 d = bei(RAUPE_DACH);
         const double breit = (30 * std::abs(std::cos(gier)) + 23 * std::abs(std::sin(gier))) / 30;
-        boden.teil(Teil::SchneeDach, d.x, d.y + 0.4, 0, breit, 0.35 + 0.65 * f.schneeDach);
+        boden.teil(Teil::SchneeDach, d.x, d.y + 0.6, 0, breit, 0.3 + 0.7 * f.schneeDach);
     }
-    const P2 l = bei(raupe ? RAUPE_LEUCHTE : PFLUG_LEUCHTE);
+    const P2 l = bei(leuchte);
     const double dreh = f.leuchte * 7.5;
     const double hell = 0.3 + 0.7 * std::pow(std::max(0.0, std::sin(dreh)), 2);
     boden.teil(Teil::LichtOrange, l.x, l.y, 0, (raupe ? 0.55 : 0.45) + 0.7 * std::abs(std::cos(dreh * 0.5)), raupe ? 0.8 : 0.65, hell);
     for (const Klecks &k : f.kleckse) {
-        const P2 q = bei({double(k.x), double(-k.y), std::sin(gier) >= 0 || std::cos(gier) > 0 ? (raupe ? 10.5 : 7.5) : (raupe ? -10.5 : -7.5)});
-        boden.teil(Teil::Klecks, q.x, q.y, k.x, k.groesse / 10, k.groesse / 10, 0.95);
+        const double seite = std::sin(gier) >= 0 || std::cos(gier) > 0 ? halbeBreite : -halbeBreite;
+        const P2 q = bei({double(k.x), double(-k.y), seite});
+        boden.teil(Teil::Klecks, q.x, q.y, k.x, k.groesse / 15, k.groesse / 15, 0.95);
     }
 }
 
 void raupe(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
-    if (dreht(f)) { gedreht(f, G, z); return; }
-    const double w = f.blick;
-    const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5, G * w, G, &z};
-    if (f.phase != FahrPhase::AmSeil) boden.teil(Teil::Schatten, 0, 0.5, 0, 1.25, 0.55, 0.3);
-    boden.teil(Teil::RaupeUnterwagen, 0, 0);
-    // Räder drehen passend zum gefahrenen Weg (in Einheiten)
-    const double weg = f.kette / G;
-    boden.teil(Teil::Antriebsrad, -23, -9, weg / 7);
-    boden.teil(Teil::Leitrad, 22, -8.5, weg / 6.5);
-    for (double x : {-13.0, -5.5, 2.0, 9.5}) boden.teil(Teil::Laufrolle, x, -4.6, weg / 3.5);
-    // Kette: Glieder laufen um (unten rückwärts, oben vorwärts)
-    const double r1 = 8, r2 = 7.6, gerade = 45, b1 = 3.14159265 * r1, b2 = 3.14159265 * r2, umfang = 2 * gerade + b1 + b2;
-    const int glieder = 26;
-    for (int i = 0; i < glieder; ++i) {
-        double s = std::fmod(i * umfang / glieder + weg, umfang);
-        if (s < 0) s += umfang;
-        double x, y, wi;
-        if (s < gerade) { x = 22 - s; y = -1.2; wi = 0; }
-        else if (s < gerade + b1) { const double a = (s - gerade) / r1; x = -23 - std::sin(a) * r1; y = -9.2 + std::cos(a) * r1; wi = a; }
-        else if (s < 2 * gerade + b1) { const double t = (s - gerade - b1) / gerade; x = -23 + t * gerade; y = -17.2 + t * 1.0; wi = 3.14159265 + 0.022; }
-        else { const double a = (s - 2 * gerade - b1) / r2; x = 22 + std::sin(a) * r2; y = -8.6 - std::cos(a) * r2; wi = 3.14159265 + a; }
-        boden.teil(Teil::Kettenglied, x, y, wi);
+    const int stufe = winkelstufe(gierVon(f));
+    const double gier = stufenWinkel(stufe), c = std::cos(gier), s = std::sin(gier);
+    const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5, G, G, &z};
+    if (f.phase != FahrPhase::AmSeil) boden.teil(Teil::Schatten, 0, 0.5, 0, 0.55 + 0.7 * std::abs(c), 0.6, 0.3);
+    // Ketten: beim Fahren laufen beide gleich, beim Drehen auf der Stelle gegenläufig
+    const double weg = f.kette / G / KETTEN_TEILUNG, dreh = f.drehweg / G / KETTEN_TEILUNG;
+    const int rechts = int(Teil::RaupeKetteR) + stufe * KETTENPHASEN + phaseVon(weg + dreh, KETTENPHASEN);
+    const int links = int(Teil::RaupeKetteL) + stufe * KETTENPHASEN + phaseVon(weg - dreh, KETTENPHASEN);
+    const bool leer = f.raus > 0.05 && !dreht(f);
+    const int koerper = leer ? int(Teil::RaupeLeer) + (f.blick > 0 ? 0 : 1) : int(Teil::RaupeKoerper) + stufe;
+    Schicht schichten[4] = {{12.25 * c, 0, 0, 0, rechts}, {-12.25 * c, 0, 0, 0, links}, {0.01, 1, 0, 0, koerper},
+                            {37 * s + 13 * std::abs(c), 2, 0, 0, int(Teil::RaupeSchild) + stufe}};
+    std::sort(std::begin(schichten), std::end(schichten), [](const Schicht &a, const Schicht &b) { return a.tiefe < b.tiefe; });
+    for (const Schicht &sch : schichten) {
+        if (sch.art == 1) {
+            // Aufbau federt und nickt auf dem Fahrwerk
+            const Lage auf = boden.kind(0, f.hub * 0.5 / G, f.nicken * c);
+            auf.teil(Teil(sch.teil), 0, 0);
+        } else if (sch.art == 2) {
+            boden.teil(Teil(sch.teil), 0, -RAUPE_SCHILDHUB * f.schild);
+        } else {
+            boden.teil(Teil(sch.teil), 0, 0);
+        }
     }
-    // Aufbau federt und nickt auf dem Fahrwerk
-    const Lage auf = boden.kind(0, -14 + f.hub * 0.5 / G, f.nicken);
-    auf.teil(Teil::RaupeAufbau, 0, 0);
-    // Fahrer sitzt hinter Scheibe und Tür; beim Streik lehnt er sich bis zur Hüfte heraus
-    const bool draussen = f.raus > 0.3;
-    const Lage fahrer = auf.kind(-10 - 4 * f.raus, -8 - 3 * f.raus, -0.3 * f.raus);
-    auto fahrerMalen = [&] {
-        fahrer.teil(Teil::Fahrer, 0, 0);
-        if (f.raus > 0.15) fahrer.teil(Teil::Arm, -1.5, -10.5, (2.55 + 0.45 * std::sin(f.faust)) * f.raus, 1, 1, std::min(1.0, f.raus * 2));
-    };
-    if (!draussen) fahrerMalen();
-    auf.teil(Teil::RaupeGlas, -22, -30);
-    if (draussen) fahrerMalen();
-    if (f.schneeDach > 0.05) {
-        auf.teil(Teil::SchneeDach, -10, -30.6, 0, 1, 0.35 + 0.65 * f.schneeDach);
-        auf.teil(Teil::SchneeHaube, 14, -16.6, 0.05, 1, 0.3 + 0.7 * f.schneeDach);
-    }
-    // Schild hebt und senkt sich am Schubarm
-    boden.teil(Teil::RaupeSchild, 19, -8, -0.42 * f.schild);
-    // Rundumleuchte: dreht sich, das Licht schwillt an und ab
-    const double dreh = f.leuchte * 7.5;
-    const double hell = 0.3 + 0.7 * std::pow(std::max(0.0, std::sin(dreh)), 2);
-    auf.teil(Teil::LichtOrange, -16, -33.5, 0, 0.55 + 0.75 * std::abs(std::cos(dreh * 0.5)), 0.8, hell);
-    for (const Klecks &k : f.kleckse) boden.teil(Teil::Klecks, k.x, k.y, k.x, k.groesse / 10, k.groesse / 10, 0.95);
+    zubehoer(f, boden, gier, RAUPE_FENSTER, RAUPE_LEUCHTE, 1.0, 10.5);
 }
 
 void pflug(const Fahrzeug &f, double G, std::vector<Zeichenteil> &z) {
-    if (dreht(f)) { gedreht(f, G, z); return; }
-    const double w = f.blick;
-    const Lage boden{f.x, f.y, f.neigung + f.wackeln * 0.5, G * w, G, &z};
-    if (f.phase != FahrPhase::AmSeil) boden.teil(Teil::Schatten, 0, 0.5, 0, 0.8, 0.45, 0.3);
-    const double weg = f.kette / G;
-    const Lage auf = boden.kind(0, -3 + f.hub * 0.5 / G, f.nicken);
-    auf.teil(Teil::PflugRumpf, 0, 0);
-    const Lage fahrer = auf.kind(-5, -9 - 3.5 * f.raus, -0.15 * f.raus);
-    fahrer.teil(Teil::Fahrer, 0, 0, 0, 0.9, 0.9);
-    if (f.raus > 0.15) fahrer.teil(Teil::Arm, -1.5, -10, (2.55 + 0.45 * std::sin(f.faust)) * f.raus, 0.9, 0.9, std::min(1.0, f.raus * 2));
-    boden.teil(Teil::Rad, -11, -5.8, weg / 5.8);
-    boden.teil(Teil::Rad, 11, -5.8, weg / 5.8);
-    boden.teil(Teil::PflugSchild, 13, -5, -0.4 * f.schild);
-    if (f.schneeDach > 0.05) auf.teil(Teil::SchneeHaube, 9, -12.8, 0.03, 0.6, 0.3 + 0.7 * f.schneeDach);
-    const double dreh = f.leuchte * 7.5;
-    const double hell = 0.3 + 0.7 * std::pow(std::max(0.0, std::sin(dreh)), 2);
-    auf.teil(Teil::LichtOrange, -11, -23.5, 0, 0.45 + 0.6 * std::abs(std::cos(dreh * 0.5)), 0.65, hell);
-    for (const Klecks &k : f.kleckse) boden.teil(Teil::Klecks, k.x, k.y, k.x, k.groesse / 10, k.groesse / 10, 0.95);
+    const int stufe = winkelstufe(gierVon(f));
+    const double gier = stufenWinkel(stufe), c = std::cos(gier), s = std::sin(gier);
+    // beim Wenden fährt er einen Bogen: ein Stück zum Betrachter hin bzw. von ihm weg
+    const Lage boden{f.x, f.y + f.tiefeZ * std::sin(KAMERA_NEIGUNG), f.neigung + f.wackeln * 0.5, G, G, &z};
+    if (f.phase != FahrPhase::AmSeil) boden.teil(Teil::Schatten, 0, 0.5, 0, 0.4 + 0.45 * std::abs(c), 0.5, 0.3);
+    const bool leer = f.raus > 0.05 && !dreht(f);
+    Schicht schichten[6];
+    int n = 0;
+    // vier Räder: drehen sich mit dem Weg, die vorderen schlagen beim Lenken ein
+    const double umdrehung = f.kette / G / PFLUG_RADHOEHE / (3.14159265359 / 3);
+    for (double x : {-PFLUG_RADSTAND / 2, PFLUG_RADSTAND / 2})
+        for (double seite : {-PFLUG_SPUR, PFLUG_SPUR}) {
+            const P2 q = projizieren({x, PFLUG_RADHOEHE, seite}, gier);
+            const int radStufe = winkelstufe(gier + (x > 0 ? f.lenk : 0.0));
+            schichten[n++] = {x * s + seite * c, 0, q.x, q.y, int(Teil::PflugRad) + radStufe * RADPHASEN + phaseVon(umdrehung, RADPHASEN)};
+        }
+    schichten[n++] = {0.01, 1, 0, 0, leer ? int(Teil::PflugLeer) + (f.blick > 0 ? 0 : 1) : int(Teil::PflugKoerper) + stufe};
+    schichten[n++] = {26 * s + 9.5 * std::abs(c), 2, 0, 0, int(Teil::PflugSchild) + stufe};
+    std::sort(schichten, schichten + n, [](const Schicht &a, const Schicht &b) { return a.tiefe < b.tiefe; });
+    for (int i = 0; i < n; ++i) {
+        const Schicht &sch = schichten[i];
+        if (sch.art == 1) boden.kind(0, f.hub * 0.5 / G, f.nicken * c).teil(Teil(sch.teil), 0, 0);
+        else if (sch.art == 2) boden.teil(Teil(sch.teil), 0, -PFLUG_SCHILDHUB * f.schild);
+        else boden.teil(Teil(sch.teil), sch.x, sch.y);
+    }
+    zubehoer(f, boden, gier, PFLUG_FENSTER, PFLUG_LEUCHTE, 0.74, 8.4);
 }
 
 void seilMalen(const Einsatz &e, double G, std::vector<Zeichenteil> &z) {
@@ -146,12 +146,12 @@ void seilMalen(const Einsatz &e, double G, std::vector<Zeichenteil> &z) {
         const double bx = x0 + (x1 - x0) * t - e.seil.vx * 0.01 * 4 * t * (1 - t);
         const double by = y0 + (y1 - y0) * t + durch * 4 * t * (1 - t);
         const double l = std::hypot(bx - ax, by - ay);
-        z.push_back({uint8_t(Teil::Seil), float((ax + bx) / 2), float((ay + by) / 2), float(std::atan2(by - ay, bx - ax)),
+        z.push_back({uint16_t(Teil::Seil), float((ax + bx) / 2), float((ay + by) / 2), float(std::atan2(by - ay, bx - ax)),
                      float((l + 0.6) / 4), float(std::max(1.2, 1.5 * G) / 2), 1});
         ax = bx; ay = by;
     }
     const double wi = std::atan2(x0 - x1, y1 - y0); // Haken hängt in Seilrichtung
-    z.push_back({uint8_t(Teil::Haken), float(x1), float(y1), float(-wi), float(G), float(G), 1});
+    z.push_back({uint16_t(Teil::Haken), float(x1), float(y1), float(-wi), float(G), float(G), 1});
 }
 
 void heli(const Einsatz &e, const Simulation &sim, double G, double zeit, std::vector<Zeichenteil> &z) {
@@ -163,36 +163,50 @@ void heli(const Einsatz &e, const Simulation &sim, double G, double zeit, std::v
     if (hoch > 0 && hoch < 420 * G && sim.decke(e.id)) {
         const double naehe = 1 - hoch / (420 * G);
         const double lang = 0.45 + 0.55 * std::abs(std::cos(h.gier));
-        z.push_back({uint8_t(Teil::Schatten), float(h.x), float(oben + 1), 0, float(G * (1.2 + 1.0 * naehe) * lang), float(G * 0.6), float(0.34 * naehe)});
+        z.push_back({uint16_t(Teil::Schatten), float(h.x), float(oben + 1), 0, float(G * (1.2 + 1.0 * naehe) * lang), float(G * 0.6), float(0.34 * naehe)});
     }
-    const int bild = int(zeit * 30) % 3;
-    const double t1 = std::fmod(zeit, 1.0);
-    const bool seitlich = std::abs(std::sin(h.gier)) < 0.02;
-    if (!seitlich) {
-        // giert gerade: vorgemalte 3D-Ansicht, Rotorscheibe und Blinklicht an der gedrehten Stelle
-        const double gier = stufenWinkel(winkelstufe(h.gier));
-        const Lage l{h.x, h.y, h.neigung * std::cos(h.gier) + wackel, G, G, &z};
-        l.teil(Teil(int(Teil::Heli3D) + winkelstufe(h.gier)), 0, 0);
-        const P2 r = projizieren(HELI_ROTOR, gier);
-        l.teil(Teil(int(Teil::HeliRotor0) + bild), r.x, r.y);
-        if (t1 < 0.12) { const P2 q = projizieren(HELI_BLINKLICHT, gier); l.teil(Teil::LichtRot, q.x, q.y, 0, 1.1, 1.1, 1); }
-        return;
-    }
-    const double b = std::cos(h.gier) < 0 ? -1 : 1;
-    const Lage l{h.x, h.y, h.neigung + wackel, G * b, G, &z};
-    l.teil(Teil(int(Teil::Heckrotor0) + bild), -82, -31, 0, 0.9, 1);
-    l.teil(Teil::HeliRumpf, 0, 0);
-    l.teil(Teil(int(Teil::HeliRotor0) + bild), -4, -42.5, 0, 1, 1);
-    // Positionslichter: grün am Bug, rotes Blinklicht unten, weißer Doppelblitz am Heck
-    l.teil(Teil::LichtGruen, 50, -14, 0, 0.5, 0.5, 0.9);
-    if (t1 < 0.12) l.teil(Teil::LichtRot, -22, 0.5, 0, 1.1, 1.1, 1);
+    // Rumpf in der Ansicht zum Gierwinkel; die Neigung (Nicken) sieht man nur von der Seite voll
+    const int stufe = winkelstufe(h.gier);
+    const double gier = stufenWinkel(stufe);
+    const double nick = h.neigung * std::cos(gier);
+    const Lage l{h.x, h.y, nick + wackel, G, G, &z};
+    l.teil(Teil(int(Teil::HeliKoerper) + stufe), 0, 0);
+    // Rotor: Blattkreis über dem Mast, kippt beim Beschleunigen etwas weiter als der Rumpf
+    const P2 r = projizieren(HELI_ROTOR, gier);
+    l.teil(Teil(int(Teil::HeliRotor0) + int(zeit * 30) % 4), r.x, r.y, nick * 0.6);
+    // Lichter: rotes Blinklicht am Bauch, weißer Doppelblitz am Leitwerk, Positionslicht der zugewandten Seite
+    auto licht = [&](Teil t, P3 p, double gr, double a) { const P2 q = projizieren(p, gier); l.teil(t, q.x, q.y, 0, gr, gr, a); };
+    if (std::fmod(zeit, 1.0) < 0.12) licht(Teil::LichtRot, HELI_BLINKLICHT, 1.1, 1);
     const double t2 = std::fmod(zeit + 0.4, 1.3);
-    if (t2 < 0.05 || (t2 > 0.12 && t2 < 0.17)) l.teil(Teil::LichtWeiss, -86, -41, 0, 1.3, 1.3, 1);
+    if (t2 < 0.05 || (t2 > 0.12 && t2 < 0.17)) licht(Teil::LichtWeiss, HELI_HECKBLITZ, 1.3, 1);
+    if (tiefe(HELI_GRUEN, gier) > 2) licht(Teil::LichtGruen, HELI_GRUEN, 0.5, 0.9);
+    if (tiefe(HELI_ROT, gier) > 2) licht(Teil::LichtRot, HELI_ROT, 0.5, 0.9);
 }
 
 } // namespace
 
 double blasenSkala(double g) { return std::clamp(g, 1.0, 1.5); }
+
+void szeneAnsicht(int art, double gier, double x, double y, double lauf, Szene &aus) {
+    if (art == 2) {
+        Einsatz e;
+        e.heli.x = x; e.heli.y = y; e.heli.gier = gier;
+        e.kanteY = -1e9;
+        Simulation leer;
+        heli(e, leer, 1.0, lauf, aus.teile);
+        return;
+    }
+    Fahrzeug f;
+    f.art = art == 0 ? Fahrzeugart::Raupe : Fahrzeugart::Pflug;
+    f.phase = FahrPhase::Wenden;
+    f.dreht = true;
+    f.gier = gier;
+    f.x = x; f.y = y;
+    f.kette = lauf * 4;
+    f.lenk = art == 1 ? 0.5 : 0;
+    f.schild = 0;
+    if (art == 0) raupe(f, 1.0, aus.teile); else pflug(f, 1.0, aus.teile);
+}
 
 void szeneBauen(const Raeumdienst &rd, const Simulation &sim, double zeit, Szene &aus) {
     aus.leeren();
@@ -237,11 +251,11 @@ void szeneBauen(const Raeumdienst &rd, const Simulation &sim, double zeit, Szene
         const float t = s.alter / s.dauer;
         const float gr = s.groesse * (s.art == 1 ? 1.0f + 1.6f * t : 0.8f + 0.9f * t) / 8;
         const float a = (s.art == 1 ? 0.5f : 0.85f) * (1 - t) * std::min(1.0f, s.alter * 12 + 0.3f);
-        z.push_back({uint8_t(s.art == 1 ? Teil::Rauch : Teil::Staub), s.x, s.y, 0, gr, gr, a});
+        z.push_back({uint16_t(s.art == 1 ? Teil::Rauch : Teil::Staub), s.x, s.y, 0, gr, gr, a});
     }
     auto ball = [&](const Schneeball &b) {
         const float s = float(b.radius() / 16);
-        z.push_back({uint8_t(Teil::Ball), float(b.x), float(b.y), float(b.winkel), s, s, 1});
+        z.push_back({uint16_t(Teil::Ball), float(b.x), float(b.y), float(b.winkel), s, s, 1});
     };
     for (const Schneeball &b : rd.baelle()) ball(b);
     if (const Schneeball *b = rd.ballInHand()) ball(*b);

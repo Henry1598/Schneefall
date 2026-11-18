@@ -75,6 +75,11 @@ struct Fahrzeug {
     double wendeT = 0;        // 0 … 1 Fortschritt der Drehung
     double wendeVon = 0;      // Gierwinkel beim Beginn der Drehung
     bool dreht = false;       // Phase Wenden: die eigentliche Drehung läuft (vorher wird ggf. rangiert)
+    double drehweg = 0;       // Raupe: Kettenweg aus dem Drehen auf der Stelle (rechte Kette +, linke -)
+    // Radpflug: wendet wie ein Auto in mehreren Zügen (vor, zurück, vor) mit eingeschlagenen Vorderrädern
+    double lenk = 0;          // Lenkwinkel der Vorderräder in rad (+ = Bug dreht zum Betrachter)
+    double tiefeZ = 0;        // Versatz zum Betrachter hin (px), entsteht beim Bogenfahren
+    int wendeZuege = 3, wendeZug = 0, wendeErster = 1;   // Zahl der Züge, laufender Zug, erster Zug vorwärts (+1) oder rückwärts (-1)
     int richtung = 1;         // Bahnrichtung
     int seite = 0, durchgang = 0;
     bool nochmal = false;

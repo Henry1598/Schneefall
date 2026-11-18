@@ -35,7 +35,7 @@ $(B)/deckenform.o: src/deckenform.cpp src/deckenform.h src/schnee.h | $(B)
 $(B)/flockenbild.o: src/flockenbild.cpp src/flockenbild.h src/schnee.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(B)/raeumdienst.o: src/raeumdienst.cpp src/raeumdienst.h src/schnee.h | $(B)
+$(B)/raeumdienst.o: src/raeumdienst.cpp src/raeumdienst.h src/schnee.h src/ansicht3d.h src/fahrzeugmodell.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(B)/klang.o: src/klang.cpp src/klang.h | $(B)
@@ -92,14 +92,14 @@ szenenprobe: $(B)/szenenprobe
 $(B)/test_raeumdienst.moc: tests/test_raeumdienst.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_raeumdienst: tests/test_raeumdienst.cpp $(B)/test_raeumdienst.moc $(B)/raeumdienst.o $(B)/schnee.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_raeumdienst.cpp $(B)/raeumdienst.o $(B)/schnee.o -o $@ $(TEST_LIBS)
+$(B)/test_raeumdienst: tests/test_raeumdienst.cpp $(B)/test_raeumdienst.moc $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_raeumdienst.cpp $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o -o $@ $(TEST_LIBS)
 
 $(B)/test_ansicht.moc: tests/test_ansicht.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_ansicht: tests/test_ansicht.cpp $(B)/test_ansicht.moc $(B)/ansicht3d.o $(B)/fahrzeugmodell.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_ansicht.cpp $(B)/ansicht3d.o $(B)/fahrzeugmodell.o -o $@ $(TEST_LIBS)
+$(B)/test_ansicht: tests/test_ansicht.cpp $(B)/test_ansicht.moc $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/raeumszene.o $(B)/raeumdienst.o $(B)/schnee.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_ansicht.cpp $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/raeumszene.o $(B)/raeumdienst.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
 test-raeumdienst: $(B)/test_raeumdienst $(B)/test_ansicht
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_ansicht

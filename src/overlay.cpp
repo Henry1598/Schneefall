@@ -154,10 +154,12 @@ void Overlay::atlasLaden(double dpr) {
 }
 
 // Fahrzeug-Atlas für Skalierung und Fahrzeuggröße (erst beim ersten Einsatz, neu bei geänderter Größe)
-void Overlay::fahrzeugAtlasLaden(double dpr) {
+bool Overlay::fahrzeugAtlasLaden(double dpr) {
     const double mass = m_fahrzeugGroesse ? *m_fahrzeugGroesse : 1.0;
-    if (m_fahrzeugTextur && dpr == m_fahrzeugDpr && mass == m_fahrzeugMass) return;
-    const FahrzeugAtlas &a = fahrzeugAtlasFuer(dpr, mass);
+    if (m_fahrzeugTextur && dpr == m_fahrzeugDpr && mass == m_fahrzeugMass) return true;
+    const FahrzeugAtlas *fertig = fahrzeugAtlasFuer(dpr, mass);
+    if (!fertig) return false;   // wird noch im Hintergrund gemalt
+    const FahrzeugAtlas &a = *fertig;
     m_felder = a.felder;
     m_fahrzeugBreite = a.bild.width();
     m_fahrzeugHoehe = a.bild.height();
@@ -173,6 +175,7 @@ void Overlay::fahrzeugAtlasLaden(double dpr) {
     // Zeilen von QImage sind auf 4 Byte ausgerichtet; RGBA hat ohnehin 4 Byte je Pixel
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, a.bild.width(), a.bild.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, a.bild.constBits());
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    return true;
 }
 
 // Räumdienst: jedes Teil ist ein gedrehtes, evtl. gespiegeltes Viereck aus dem Fahrzeug-Atlas
@@ -377,8 +380,7 @@ void Overlay::paintGL() {
     const size_t deckenEnde = m_daten.size();
     // Räumdienst (Hubschrauber, Fahrzeuge, Bälle, Staub): hinter den fallenden Flocken, vor den Decken
     if (m_szene && !m_szene->teile.empty()) {
-        fahrzeugAtlasLaden(dpr);
-        fahrzeugeSammeln(bx, by, bw, bh);
+        if (fahrzeugAtlasLaden(dpr)) fahrzeugeSammeln(bx, by, bw, bh);
     }
     const size_t fahrzeugEnde = m_daten.size();
     flockenSammeln(bx, by, bw, bh);

@@ -3,13 +3,16 @@
 #include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
-#include <QPolygonF>
-#include <QTransform>
-#include "fahrzeugmodell.h"
+#include <atomic>
 #include <cmath>
+#include <cstring>
+#include <future>
 #include <initializer_list>
 #include <map>
+#include <memory>
+#include <thread>
 #include <utility>
+#include "fahrzeugmodell.h"
 
 using namespace schnee;
 
@@ -87,128 +90,36 @@ void leuchtpunkt(QPainter &p, double w, const QColor &farbe) {
 }
 
 // ---- Hubschrauber (Bug rechts) ----
-void heliRumpf(QPainter &p) {
-    // Heckausleger
-    flaeche(p, vieleck({{72, 21}, {10, 24.5}, {8, 29}, {72, 37}}), verlauf(0, 21, 0, 37, {{0, ROT_HELL}, {0.5, ROT}, {1, ROT_DUNKEL}}));
-    p.setPen(stift(QColor(255, 255, 255, 210), 1.6));
-    p.drawLine(QPointF(14, 27.2), QPointF(66, 30)); // weißer Zierstreifen
-    // Seitenleitwerk und Höhenflosse
-    flaeche(p, vieleck({{3, 3}, {11, 3}, {19, 25}, {6, 29}}), verlauf(0, 3, 0, 29, {{0, ROT_HELL}, {1, ROT_DUNKEL}}));
-    flaeche(p, vieleck({{5, 8}, {12.5, 8}, {13.5, 11}, {5.6, 11}}), QColor(250, 250, 250), 0);
-    flaeche(p, vieleck({{16, 26}, {34, 27.5}, {34, 29.5}, {16, 29.5}}), verlauf(0, 26, 0, 30, {{0, STAHL_HELL}, {1, STAHL_DUNKEL}}), 0.5);
-    // Triebwerksverkleidung mit Lufteinlass und Auspuff, Rotormast
-    flaeche(p, rund(84.5, 2.5, 5, 12, 1), verlauf(84, 0, 90, 0, {{0, STAHL_DUNKEL}, {0.5, STAHL_HELL}, {1, STAHL_DUNKEL}}), 0.5);
-    flaeche(p, rund(66, 10, 44, 15, 6), verlauf(0, 10, 0, 25, {{0, QColor(120, 128, 138)}, {0.5, QColor(74, 80, 90)}, {1, QColor(40, 44, 52)}}));
-    flaeche(p, rund(97, 13, 9, 6, 2.5), QColor(18, 20, 24), 0.4);
-    flaeche(p, rund(66, 14.5, 5, 4.5, 1.5), QColor(30, 26, 24), 0.4);
-    // Rumpf
-    QPainterPath rumpf;
-    rumpf.moveTo(60, 25);
-    rumpf.cubicTo(64, 13, 100, 11, 118, 14.5);
-    rumpf.cubicTo(137, 18, 147, 28, 145, 36);
-    rumpf.cubicTo(143, 44, 122, 48, 96, 48);
-    rumpf.lineTo(74, 46.5);
-    rumpf.cubicTo(65, 45, 59, 37, 60, 25);
-    flaeche(p, rumpf, verlauf(0, 12, 0, 48, {{0, ROT_HELL}, {0.35, ROT}, {0.8, ROT_DUNKEL}, {1, QColor(70, 12, 14)}}), 0.8);
-    p.save();
-    p.setClipPath(rumpf, Qt::IntersectClip);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(250, 250, 250, 235));
-    p.drawRect(QRectF(58, 35.5, 92, 4.2)); // weißer Bauchstreifen
-    p.setBrush(QColor(255, 255, 255, 60));
-    p.drawEllipse(QRectF(64, 9, 70, 9));   // Glanz auf dem Rücken
-    p.restore();
-    // Kanzel aus Glas mit Pilot
-    QPainterPath kanzel;
-    kanzel.moveTo(103, 15.5);
-    kanzel.cubicTo(124, 14, 141, 22, 144, 33);
-    kanzel.lineTo(119, 34);
-    kanzel.lineTo(103, 31);
-    kanzel.closeSubpath();
-    glas(p, kanzel, QRectF(103, 14, 41, 20));
-    p.save();
-    p.setClipPath(kanzel, Qt::IntersectClip);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(20, 24, 30, 200));
-    p.drawEllipse(QRectF(116, 20, 7.5, 7.5));           // Helm
-    p.drawPath(vieleck({{114, 34}, {116, 27}, {124, 27}, {127, 34}}));
-    p.setBrush(QColor(255, 255, 255, 150));
-    p.drawEllipse(QRectF(121, 22, 2.2, 2.6));           // Visier-Glanz
-    p.restore();
-    p.setPen(stift(RAND, 0.6));
-    p.drawLine(QPointF(119, 34), QPointF(117, 15));     // Kanzelstrebe
-    // Seitenfenster und Schiebetür
-    glas(p, rund(84, 18, 15, 12, 2.5), QRectF(84, 18, 15, 12));
-    p.setPen(stift(mitAlpha(RAND, 120), 0.45));
-    p.setBrush(Qt::NoBrush);
-    p.drawPath(rund(81.5, 16.5, 20, 29, 2));
-    // Kufen
-    p.setPen(stift(RAND, 2.6));
-    p.drawLine(QPointF(84, 46.5), QPointF(80, 53.5));
-    p.drawLine(QPointF(113, 46.5), QPointF(117, 53.5));
-    QPainterPath kufe;
-    kufe.moveTo(66, 54);
-    kufe.lineTo(128, 54);
-    kufe.quadTo(133, 54, 135.5, 50);
-    p.setBrush(Qt::NoBrush);
-    p.drawPath(kufe);
-    p.setPen(stift(STAHL_HELL, 1.3));
-    p.drawLine(QPointF(84, 46.5), QPointF(80, 53.5));
-    p.drawLine(QPointF(113, 46.5), QPointF(117, 53.5));
-    p.drawPath(kufe);
-    // Lastgeschirr unter dem Bauch
-    flaeche(p, rund(88.5, 46.5, 7, 3.2, 1), QColor(40, 44, 52), 0.5);
-    // Schnee auf Ausleger und Rücken
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(255, 255, 255, 215));
-    p.drawPath(rund(20, 23.2, 40, 1.8, 0.9));
-    p.drawPath(rund(70, 9.2, 12, 1.9, 0.9));
-}
-
-// Rotor von der Seite: durchscheinende Scheibe, Blätter als verwischte Striche
+// Hauptrotor: Blattkreis schräg von oben gesehen (wie die Fahrzeuge), Blätter verwischt
 void heliRotor(QPainter &p, int bild) {
-    const double mx = 88, my = 7, rx = 86, ry = 5.2;
+    const double mx = 88, my = 16, rx = 86, ry = 86 * std::sin(KAMERA_NEIGUNG);
     p.setPen(Qt::NoPen);
     QRadialGradient g(mx, my, rx);
-    g.setColorAt(0, QColor(120, 128, 140, 80));
-    g.setColorAt(0.8, QColor(120, 128, 140, 56));
+    g.setColorAt(0, QColor(120, 128, 140, 70));
+    g.setColorAt(0.75, QColor(120, 128, 140, 52));
+    g.setColorAt(0.97, QColor(150, 158, 170, 70));
     g.setColorAt(1, QColor(120, 128, 140, 0));
+    p.save();
+    p.translate(mx, my);
+    p.scale(1, ry / rx);
+    p.translate(-mx, -my);
     p.setBrush(g);
-    p.drawEllipse(QRectF(mx - rx, my - ry, 2 * rx, 2 * ry));
+    p.drawEllipse(QPointF(mx, my), rx, rx);
+    // vier Blätter, jedes als Fächer aus blasser werdenden Strichen (Bewegungsunschärfe)
     for (int blatt = 0; blatt < 4; ++blatt) {
-        for (int wisch = -3; wisch <= 3; ++wisch) {
-            const double w = (bild * 30 + blatt * 90 + wisch * 5) * PI / 180;
-            const int a = wisch == 0 ? 150 : 80 - std::abs(wisch) * 20;
-            p.setPen(stift(QColor(34, 38, 46, a), wisch == 0 ? 1.5 : 2.0));
-            p.drawLine(QPointF(mx, my), QPointF(mx + std::cos(w) * rx * 0.985, my + std::sin(w) * ry * 0.985));
-            // heller Glanz auf dem Blatt: auch vor dunklem Hintergrund zu sehen
-            p.setPen(stift(QColor(226, 232, 240, a / 2), 0.7));
-            p.drawLine(QPointF(mx, my - 0.5), QPointF(mx + std::cos(w) * rx * 0.985, my - 0.5 + std::sin(w) * ry * 0.985));
+        for (int wisch = -5; wisch <= 5; ++wisch) {
+            const double w = (bild * 22.5 + blatt * 90 + wisch * 3.2) * PI / 180;
+            const int a = wisch == 0 ? 165 : std::max(12, 92 - std::abs(wisch) * 17);
+            p.setPen(stift(QColor(34, 38, 46, a), wisch == 0 ? 2.6 : 3.4));
+            p.drawLine(QPointF(mx, my), QPointF(mx + std::cos(w) * rx * 0.985, my + std::sin(w) * rx * 0.985));
+            p.setPen(stift(QColor(230, 236, 244, a / 3), 1.0));
+            p.drawLine(QPointF(mx + std::cos(w + 0.02) * 8, my + std::sin(w + 0.02) * 8), QPointF(mx + std::cos(w + 0.02) * rx * 0.97, my + std::sin(w + 0.02) * rx * 0.97));
         }
-        // gelbe Blattspitze
-        const double w = (bild * 30 + blatt * 90) * PI / 180;
-        p.setPen(stift(QColor(250, 200, 40, 170), 1.5));
-        p.drawLine(QPointF(mx + std::cos(w) * rx * 0.9, my + std::sin(w) * ry * 0.9), QPointF(mx + std::cos(w) * rx * 0.985, my + std::sin(w) * ry * 0.985));
+        const double w = (bild * 22.5 + blatt * 90) * PI / 180;
+        p.setPen(stift(QColor(250, 200, 40, 190), 2.8));   // gelbe Blattspitze
+        p.drawLine(QPointF(mx + std::cos(w) * rx * 0.9, my + std::sin(w) * rx * 0.9), QPointF(mx + std::cos(w) * rx * 0.985, my + std::sin(w) * rx * 0.985));
     }
-    flaeche(p, rund(mx - 4, my - 2.2, 8, 4.4, 2), QColor(48, 52, 60), 0.5);
-}
-
-void heckrotor(QPainter &p, int bild) {
-    const double m = 13, r = 12;
-    p.setPen(Qt::NoPen);
-    QRadialGradient g(m, m, r);
-    g.setColorAt(0, QColor(70, 76, 86, 60));
-    g.setColorAt(0.85, QColor(70, 76, 86, 50));
-    g.setColorAt(1, QColor(70, 76, 86, 0));
-    p.setBrush(g);
-    p.drawEllipse(QRectF(m - r, m - r, 2 * r, 2 * r));
-    for (int blatt = 0; blatt < 2; ++blatt)
-        for (int wisch = -3; wisch <= 3; ++wisch) {
-            const double w = (bild * 60 + blatt * 180 + wisch * 9) * PI / 180;
-            p.setPen(stift(QColor(34, 38, 46, wisch == 0 ? 150 : 75 - std::abs(wisch) * 18), 1.6));
-            p.drawLine(QPointF(m, m), QPointF(m + std::cos(w) * (r - 0.8), m + std::sin(w) * (r - 0.8)));
-        }
-    flaeche(p, rund(m - 1.6, m - 1.6, 3.2, 3.2, 1.6), QColor(60, 64, 72), 0.4);
+    p.restore();
 }
 
 void haken(QPainter &p) {
@@ -246,119 +157,6 @@ void schatten(QPainter &p) {
 }
 
 // ---- Pistenraupe / Bulldozer (Schild rechts) ----
-void raupeUnterwagen(QPainter &p) {
-    // dunkles Band, auf dem die Kettenglieder laufen (füllt die Lücken zwischen den Gliedern)
-    QPainterPath band;
-    band.moveTo(12, 0.9);
-    band.lineTo(57, 1.9);
-    band.arcTo(QRectF(57 - 7.6, 9.4 - 7.6, 15.2, 15.2), 90, -180);
-    band.lineTo(12, 16.9);
-    band.arcTo(QRectF(12 - 8, 8.8 - 8, 16, 16), 270, -180);
-    p.setPen(stift(QColor(20, 22, 26), 2.6));
-    p.setBrush(QColor(30, 33, 39));
-    p.drawPath(band);
-    // Laufwerksträger mit Schrauben
-    flaeche(p, rund(17, 5, 36, 7, 2), verlauf(0, 5, 0, 12, {{0, QColor(96, 103, 114)}, {1, QColor(50, 55, 63)}}), 0.5);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(170, 178, 188));
-    for (double x = 21; x < 52; x += 7) p.drawEllipse(QPointF(x, 8.5), 0.8, 0.8);
-    p.setBrush(mitAlpha(GELB, 255));
-    p.drawPath(rund(24, 2.6, 22, 2.2, 1)); // Kettenschutz in Wagenfarbe
-}
-
-void kettenglied(QPainter &p) {
-    flaeche(p, rund(0.3, 0.4, 4.6, 2.1, 0.6), verlauf(0, 0, 0, 2.6, {{0, QColor(128, 136, 148)}, {1, QColor(58, 63, 72)}}), 0.45);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(22, 24, 28));
-    p.drawRect(QRectF(1.7, 2.2, 1.8, 0.8)); // Steg greift in den Schnee
-}
-
-void rolle(QPainter &p, double d, int loecher, bool zaehne) {
-    const double m = d / 2, r = m - 0.7;
-    if (zaehne) {
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(44, 48, 56));
-        for (int i = 0; i < 9; ++i) {
-            const double w = i * 2 * PI / 9;
-            p.drawPath(vieleck({{m + std::cos(w - 0.2) * (r - 0.6), m + std::sin(w - 0.2) * (r - 0.6)},
-                                {m + std::cos(w) * (r + 0.7), m + std::sin(w) * (r + 0.7)},
-                                {m + std::cos(w + 0.2) * (r - 0.6), m + std::sin(w + 0.2) * (r - 0.6)}}));
-        }
-    }
-    QRadialGradient g(m - r * 0.3, m - r * 0.35, r * 1.3);
-    g.setColorAt(0, QColor(150, 158, 170));
-    g.setColorAt(1, QColor(52, 57, 66));
-    p.setPen(stift(RAND, 0.5));
-    p.setBrush(g);
-    p.drawEllipse(QPointF(m, m), r - (zaehne ? 0.5 : 0), r - (zaehne ? 0.5 : 0));
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(24, 26, 31));
-    for (int i = 0; i < loecher; ++i) {
-        const double w = i * 2 * PI / loecher + 0.4;
-        p.drawEllipse(QPointF(m + std::cos(w) * r * 0.55, m + std::sin(w) * r * 0.55), r * 0.17, r * 0.17);
-    }
-    p.setBrush(mitAlpha(GELB, 255));
-    p.drawEllipse(QPointF(m, m), r * 0.26, r * 0.26);
-    // eine helle Marke, damit man die Drehung sieht
-    p.setBrush(QColor(235, 240, 246));
-    p.drawEllipse(QPointF(m + r * 0.78, m), r * 0.1 + 0.25, r * 0.1 + 0.25);
-}
-
-void raupeAufbau(QPainter &p) {
-    // Heckgewicht und Tank
-    flaeche(p, rund(2.5, 21, 8, 13, 1.5), verlauf(0, 21, 0, 34, {{0, GELB}, {1, GELB_DUNKEL}}));
-    p.setPen(Qt::NoPen);
-    for (int i = 0; i < 3; ++i) { // Warnschraffur am Heck
-        p.setBrush(QColor(26, 28, 32));
-        p.drawPath(vieleck({{3.2, 24.0 + i * 3.4}, {5.6, 24.0 + i * 3.4}, {3.2, 26.4 + i * 3.4}}));
-    }
-    // Motorhaube mit Kühlergrill, Lüftungsschlitzen und Glanzkante
-    QPainterPath haube = vieleck({{31, 17}, {54, 18}, {58, 22}, {58, 34}, {31, 34}});
-    flaeche(p, haube, verlauf(0, 17, 0, 34, {{0, GELB_HELL}, {0.3, GELB}, {1, GELB_DUNKEL}}));
-    flaeche(p, rund(54.8, 22.5, 2.8, 10.5, 0.6), QColor(34, 36, 42), 0.4);
-    p.setPen(stift(QColor(60, 44, 10, 170), 0.55));
-    for (double x = 37; x < 52; x += 2.6) p.drawLine(QPointF(x, 22.5), QPointF(x, 29.5));
-    p.setPen(stift(QColor(255, 244, 190, 210), 0.7));
-    p.drawLine(QPointF(32.5, 18.2), QPointF(53.2, 19));
-    // Auspuff mit Regenklappe, Luftfilter
-    flaeche(p, rund(39.6, 5, 2.8, 13, 1), verlauf(39.6, 0, 42.4, 0, {{0, QColor(150, 156, 166)}, {0.5, QColor(92, 98, 108)}, {1, QColor(40, 43, 50)}}), 0.5);
-    p.setPen(stift(RAND, 0.9));
-    p.drawLine(QPointF(39, 4.8), QPointF(43.4, 3.6));
-    flaeche(p, rund(46, 13.2, 4.5, 4.6, 1.2), verlauf(0, 13, 0, 18, {{0, QColor(96, 102, 112)}, {1, QColor(44, 48, 55)}}), 0.5);
-    // Kabine: Rückwand, Innenraum (dunkel), Dach mit Überstand
-    flaeche(p, rund(8, 5, 24, 29, 1.6), verlauf(0, 5, 0, 34, {{0, GELB_HELL}, {0.4, GELB}, {1, GELB_DUNKEL}}));
-    flaeche(p, rund(10.2, 7, 19.6, 14, 1.2), verlauf(0, 7, 0, 21, {{0, QColor(52, 66, 84)}, {1, QColor(20, 26, 36)}}), 0.5);
-    flaeche(p, rund(17.5, 15, 6, 6.5, 1.2), QColor(14, 16, 20), 0);   // Sitzlehne
-    flaeche(p, rund(5.5, 2.8, 29.5, 3.4, 1.4), verlauf(0, 2.8, 0, 6.2, {{0, QColor(250, 250, 250)}, {1, QColor(176, 184, 194)}}));
-    // Öse für den Lasthaken, Sockel der Rundumleuchte
-    p.setPen(stift(RAND, 2.0));
-    p.setBrush(Qt::NoBrush);
-    p.drawEllipse(QPointF(30, 1.6), 1.5, 1.5);
-    p.setPen(stift(STAHL_HELL, 0.9));
-    p.drawEllipse(QPointF(30, 1.6), 1.5, 1.5);
-    flaeche(p, rund(12, 1.6, 4, 1.6, 0.4), QColor(40, 43, 50), 0.4);
-    flaeche(p, rund(12.4, -0.9 + 0.6, 3.2, 2.4, 1.1), verlauf(0, 0, 0, 2, {{0, QColor(255, 190, 90)}, {1, QColor(226, 110, 20)}}), 0.4);
-}
-
-// vordere Kabinenschicht: Scheibe mit Reflex, Holme, Tür mit Griff (verdeckt den sitzenden Fahrer bis zur Brust)
-void raupeKabine(QPainter &p) {
-    glas(p, rund(2.2, 3, 19.6, 14, 1.2), QRectF(2.2, 3, 19.6, 14), 105);
-    p.setPen(stift(GELB_DUNKEL, 1.1));
-    p.drawLine(QPointF(12.4, 3), QPointF(12.4, 17));                 // Mittelholm
-    flaeche(p, rund(0.6, 17, 22.8, 13, 1.2), verlauf(0, 17, 0, 30, {{0, GELB}, {1, GELB_DUNKEL}}), 0.6);
-    p.setPen(stift(mitAlpha(RAND, 150), 0.5));
-    p.setBrush(Qt::NoBrush);
-    p.drawPath(rund(3, 18.5, 12, 10.5, 0.8));                         // Türfuge
-    p.setPen(stift(QColor(30, 32, 38), 1.0));
-    p.drawLine(QPointF(11, 21), QPointF(13.6, 21));                   // Griff
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(26, 28, 32));
-    p.drawPath(rund(16.6, 20.5, 5, 5, 0.8));                          // Typenschild
-    p.setBrush(GELB_HELL);
-    p.drawPath(vieleck({{17.4, 24.6}, {19.1, 21.4}, {20.8, 24.6}}));
-}
-
-// Fahrer (schaut nach rechts): Warnjacke mit Reflexstreifen, Helm, Bart
 void fahrer(QPainter &p) {
     QPainterPath jacke;
     jacke.moveTo(2, 18);
@@ -405,36 +203,6 @@ void arm(QPainter &p) {
     p.drawLine(QPointF(1.4, 10.3), QPointF(3.6, 10.3));
 }
 
-void raupeSchild(QPainter &p) {
-    // Schubarm und Hydraulikzylinder
-    flaeche(p, vieleck({{0.6, 18.3}, {14.6, 21}, {14.6, 24.2}, {0.6, 21.7}}), verlauf(0, 18, 0, 24, {{0, GELB}, {1, GELB_DUNKEL}}), 0.6);
-    p.setPen(stift(RAND, 2.2));
-    p.drawLine(QPointF(3.6, 12.6), QPointF(14, 18.6));
-    p.setPen(stift(STAHL_HELL, 1.1));
-    p.drawLine(QPointF(3.6, 12.6), QPointF(14, 18.6));
-    p.setPen(stift(QColor(60, 64, 72), 1.9));
-    p.drawLine(QPointF(3.6, 12.6), QPointF(8, 15.1));
-    flaeche(p, rund(0.4, 18.4, 3.4, 3.4, 1.7), STAHL_DUNKEL, 0.5);
-    // gewölbtes Schild: hinten Wagenfarbe, vorn blanker Stahl
-    QPainterPath ruecken;
-    ruecken.moveTo(14.4, 1.2);
-    ruecken.quadTo(10.6, 14, 15.6, 27);
-    ruecken.lineTo(18.4, 27);
-    ruecken.quadTo(13.6, 14, 17.2, 1.2);
-    ruecken.closeSubpath();
-    flaeche(p, ruecken, verlauf(11, 0, 18, 0, {{0, GELB_DUNKEL}, {1, GELB}}), 0.6);
-    QPainterPath blatt;
-    blatt.moveTo(17.2, 1.2);
-    blatt.quadTo(13.6, 14, 18.4, 27);
-    blatt.lineTo(21.2, 27);
-    blatt.quadTo(16.8, 14, 19.6, 1.2);
-    blatt.closeSubpath();
-    flaeche(p, blatt, verlauf(0, 1, 0, 27, {{0, STAHL_HELL}, {0.55, STAHL}, {1, STAHL_DUNKEL}}), 0.6);
-    p.setPen(stift(QColor(255, 255, 255, 190), 0.6));
-    p.drawLine(QPointF(18.6, 3), QPointF(17.6, 10));
-    flaeche(p, rund(15.2, 26, 6.4, 1.8, 0.5), QColor(36, 39, 45), 0.4);  // Schürfleiste
-}
-
 void schneeBuckel(QPainter &p, double w, double h, unsigned saat) {
     QPainterPath b;
     b.moveTo(0.6, h);
@@ -472,91 +240,6 @@ void klecks(QPainter &p) {
 }
 
 // ---- kleiner Pflug für Taskleiste und Boden (Kommunalfahrzeug, Schild rechts) ----
-void pflugRumpf(QPainter &p) {
-    // Überrollbügel mit Öse und Leuchtensockel
-    p.setBrush(Qt::NoBrush);
-    QPainterPath buegel;
-    buegel.moveTo(9, 20);
-    buegel.lineTo(9, 5);
-    buegel.quadTo(9, 2.6, 12, 2.6);
-    buegel.lineTo(24, 2.6);
-    p.setPen(stift(RAND, 2.5));
-    p.drawPath(buegel);
-    p.setPen(stift(QColor(70, 76, 86), 1.4));
-    p.drawPath(buegel);
-    p.setPen(stift(RAND, 1.8));
-    p.drawEllipse(QPointF(22, 1.5), 1.2, 1.2);
-    p.setPen(stift(STAHL_HELL, 0.8));
-    p.drawEllipse(QPointF(22, 1.5), 1.2, 1.2);
-    flaeche(p, rund(9.6, 0.2, 2.8, 2.6, 1.1), verlauf(0, 0, 0, 2.8, {{0, QColor(255, 190, 90)}, {1, QColor(226, 110, 20)}}), 0.4);
-    // Sitz
-    flaeche(p, rund(10.5, 11, 4, 9, 1.5), QColor(30, 32, 38), 0.5);
-    flaeche(p, rund(11, 17.5, 10, 3, 1.2), QColor(40, 43, 50), 0.5);
-    // Rumpf mit Haube, Kotflügeln und Scheinwerfer
-    QPainterPath rumpf;
-    rumpf.moveTo(5, 24.5);
-    rumpf.lineTo(5.5, 19.5);
-    rumpf.quadTo(11, 18.6, 22, 19);
-    rumpf.lineTo(23.5, 12.2);
-    rumpf.quadTo(31, 11, 38.5, 13.5);
-    rumpf.lineTo(40, 24.5);
-    rumpf.closeSubpath();
-    flaeche(p, rumpf, verlauf(0, 11, 0, 25, {{0, ORANGE_HELL}, {0.4, ORANGE}, {1, ORANGE_DUNKEL}}), 0.7);
-    p.setPen(stift(QColor(255, 226, 190, 200), 0.6));
-    p.drawLine(QPointF(25, 12.9), QPointF(37.4, 14));
-    flaeche(p, rund(37.2, 15.2, 2.6, 2.6, 1.2), QColor(255, 248, 200), 0.4);
-    flaeche(p, rund(36.6, 19, 3.6, 4.6, 0.6), QColor(34, 36, 42), 0.4);
-    p.setPen(stift(QColor(90, 36, 6, 170), 0.5));
-    for (double x = 27; x < 35; x += 2.4) p.drawLine(QPointF(x, 16), QPointF(x, 21));
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(250, 250, 250));
-    p.drawRect(QRectF(7, 21.4, 14, 1.2));          // Reflexstreifen
-    // Lenksäule
-    p.setPen(stift(RAND, 1.5));
-    p.drawLine(QPointF(24.5, 13), QPointF(21.5, 8.6));
-    p.drawLine(QPointF(19.6, 9.6), QPointF(23, 7.4));
-}
-
-void rad(QPainter &p) {
-    const double m = 6, r = 5.6;
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(20, 21, 25));
-    p.drawEllipse(QPointF(m, m), r, r);
-    p.setPen(stift(QColor(58, 60, 68), 0.7));
-    for (int i = 0; i < 12; ++i) { // Stollen
-        const double w = i * 2 * PI / 12;
-        p.drawLine(QPointF(m + std::cos(w) * (r - 1.5), m + std::sin(w) * (r - 1.5)), QPointF(m + std::cos(w + 0.12) * (r - 0.2), m + std::sin(w + 0.12) * (r - 0.2)));
-    }
-    QRadialGradient g(m - 1, m - 1, 3.4);
-    g.setColorAt(0, QColor(236, 240, 246));
-    g.setColorAt(1, QColor(120, 128, 140));
-    p.setPen(stift(RAND, 0.4));
-    p.setBrush(g);
-    p.drawEllipse(QPointF(m, m), 2.9, 2.9);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(40, 43, 50));
-    for (int i = 0; i < 3; ++i) {
-        const double w = i * 2 * PI / 3;
-        p.drawEllipse(QPointF(m + std::cos(w) * 1.6, m + std::sin(w) * 1.6), 0.5, 0.5);
-    }
-    p.setBrush(ORANGE);
-    p.drawEllipse(QPointF(m + 1.2, m + 1.0), 0.45, 0.45); // Ventilkappe: zeigt die Drehung
-}
-
-void pflugSchild(QPainter &p) {
-    flaeche(p, vieleck({{0.4, 10.6}, {7.4, 12}, {7.4, 14.4}, {0.4, 13.2}}), verlauf(0, 10, 0, 15, {{0, QColor(84, 90, 100)}, {1, QColor(40, 43, 50)}}), 0.5);
-    QPainterPath blatt;
-    blatt.moveTo(7.6, 1);
-    blatt.quadTo(5, 9, 8.2, 17);
-    blatt.lineTo(11.2, 17);
-    blatt.quadTo(8, 9, 10.2, 1);
-    blatt.closeSubpath();
-    flaeche(p, blatt, verlauf(0, 1, 0, 17, {{0, QColor(255, 196, 120)}, {0.5, ORANGE}, {1, ORANGE_DUNKEL}}), 0.6);
-    p.setPen(stift(QColor(255, 255, 255, 170), 0.5));
-    p.drawLine(QPointF(9.4, 2.4), QPointF(8.7, 7));
-    flaeche(p, rund(7.6, 16.2, 4, 1.5, 0.4), QColor(36, 39, 45), 0.3);
-}
-
 void wolke(QPainter &p, const QColor &innen, const QColor &aussen) {
     QRadialGradient g(8, 8, 8);
     g.setColorAt(0, innen);
@@ -618,115 +301,25 @@ void blase(QPainter &p, const QString &text, double w, double h) {
 
 // ---- 3D-Ansichten fürs Wenden ----
 // Seitenbild als Textur: genau die Malerei der Seitenansicht, damit die Ansicht bei Gier 0 dem gewohnten Bild gleicht
-QImage seitenbild(int bild, double skala) {
-    static const QSizeF groessen[SeitenbildAnzahl] = {{60, 34}, {70, 18}, {150, 58}, {44, 28}, {12, 12}};
-    const QSizeF g = groessen[bild];
-    QImage img(int(std::ceil(g.width() * skala)), int(std::ceil(g.height() * skala)), QImage::Format_ARGB32_Premultiplied);
-    img.fill(Qt::transparent);
-    QPainter p(&img);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.scale(skala, skala);
-    auto bei = [&p](double x, double y, auto malen) { p.save(); p.translate(x, y); malen(); p.restore(); };
-    switch (bild) {
-    case BildRaupeAufbau:
-        raupeAufbau(p);
-        bei(13, 8, [&] { fahrer(p); });
-        bei(8, 4, [&] { raupeKabine(p); });
-        break;
-    case BildRaupeKette:
-        raupeUnterwagen(p);
-        bei(4.5, 1.5, [&] { rolle(p, 15, 5, true); });
-        bei(50, 2.5, [&] { rolle(p, 14, 4, false); });
-        for (double x : {-13.0, -5.5, 2.0, 9.5}) bei(x + 31, 9.4, [&] { rolle(p, 8, 0, false); });
-        break;
-    case BildHeli: heliRumpf(p); break;
-    case BildPflug: pflugRumpf(p); break;
-    case BildRad: rad(p); break;
-    }
-    return img;
-}
-
-QColor abgetoent(QColor c, double hell) {
-    if (hell <= 1) return QColor(int(c.red() * hell), int(c.green() * hell), int(c.blue() * hell), c.alpha());
-    const double w = std::min(1.0, (hell - 1) * 0.9);
-    return QColor(int(c.red() + (255 - c.red()) * w), int(c.green() + (255 - c.green()) * w), int(c.blue() + (255 - c.blue()) * w), c.alpha());
-}
-
-// malt das Modell im Gierwinkel; der Maler steht in Einheiten mit dem Modellursprung im Nullpunkt
-void modellMalen(QPainter &p, const Modell &m, double gier, const std::vector<QImage> &texturen, double texturSkala) {
-    for (const Sichtflaeche &v : ansicht(m, gier)) {
-        const Flaeche &f = *v.quelle;
-        QPolygonF vieleck;
-        for (const P2 &e : v.ecken) vieleck << QPointF(e.x, e.y);
-        QColor grund = QColor::fromRgba(f.farbe);
-        bool bemalt = false;
-        if (f.textur >= 0 && f.ecken.size() >= 3) {
-            // Seitenbild liegt in der x-y-Ebene: Bildpunkt (u, v) = (x + tu, tv - y). Je Fläche ist die Abbildung
-            // Bild → Leinwand affin; steht die Fläche fast quer zur Bildebene, taugt sie nicht (dann einfarbig).
-            const size_t n = f.ecken.size(), i1 = std::max<size_t>(1, n / 3), i2 = std::max<size_t>(2, 2 * n / 3);
-            const P3 &a = f.ecken[0], &b = f.ecken[i1], &c = f.ecken[i2];
-            const double u0 = a.x + f.tu, v0 = f.tv - a.y, du1 = b.x - a.x, dv1 = -(b.y - a.y), du2 = c.x - a.x, dv2 = -(c.y - a.y);
-            const double det = du1 * dv2 - du2 * dv1;
-            const double nz = std::abs(normale(f).z);
-            const QImage &bild = texturen[size_t(f.textur)];
-            if (nz > 0.3 && std::abs(det) > 1e-6) {
-                const QPointF A = vieleck[0], B = vieleck[int(i1)], C = vieleck[int(i2)];
-                const double xu = ((B.x() - A.x()) * dv2 - (C.x() - A.x()) * dv1) / det, xv = ((C.x() - A.x()) * du1 - (B.x() - A.x()) * du2) / det;
-                const double yu = ((B.y() - A.y()) * dv2 - (C.y() - A.y()) * dv1) / det, yv = ((C.y() - A.y()) * du1 - (B.y() - A.y()) * du2) / det;
-                QBrush pinsel(bild);
-                pinsel.setTransform(QTransform(xu / texturSkala, yu / texturSkala, xv / texturSkala, yv / texturSkala,
-                                               A.x() - xu * u0 - xv * v0, A.y() - yu * u0 - yv * v0));
-                p.setPen(QPen(pinsel, 0.35));
-                p.setBrush(pinsel);
-                p.drawPolygon(vieleck);
-                // Licht: abgewandte Flächen dunkler, dem Licht zugewandte heller
-                p.setPen(Qt::NoPen);
-                p.setBrush(v.hell < 1 ? QColor(10, 14, 24, int(std::min(1.0, (1 - v.hell) * 1.1) * 255)) : QColor(255, 255, 255, int(std::min(0.5, (v.hell - 1) * 0.7) * 255)));
-                p.drawPolygon(vieleck);
-                bemalt = true;
-            } else {
-                // Farbe des Seitenbilds an dieser Stelle übernehmen (z. B. Rot des Rumpfs, Blau der Kanzel)
-                P3 mitte;
-                for (const P3 &e : f.ecken) { mitte.x += e.x / f.ecken.size(); mitte.y += e.y / f.ecken.size(); }
-                const QPoint q(int((mitte.x + f.tu) * texturSkala), int((f.tv - mitte.y) * texturSkala));
-                if (bild.rect().contains(q) && bild.pixelColor(q).alpha() > 220) grund = bild.pixelColor(q);
-            }
-        }
-        if (bemalt) continue;
-        const QColor farbe = grund.alpha() < 255 ? grund : abgetoent(grund, v.hell);
-        p.setPen(grund.alpha() < 255 ? QPen(Qt::NoPen) : QPen(farbe.darker(106), 0.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        p.setBrush(farbe);
-        p.drawPolygon(vieleck);
-    }
-}
-
 struct Vorlage {
     Teil teil;
     float w, h, px, py;
 };
 const Vorlage VORLAGEN[] = {
-    {Teil::HeliRumpf, 150, 58, 92, 47},
-    {Teil::HeliRotor0, 176, 14, 88, 7}, {Teil::HeliRotor1, 176, 14, 88, 7}, {Teil::HeliRotor2, 176, 14, 88, 7},
-    {Teil::Heckrotor0, 26, 26, 13, 13}, {Teil::Heckrotor1, 26, 26, 13, 13}, {Teil::Heckrotor2, 26, 26, 13, 13},
+    {Teil::HeliRotor0, 176, 32, 88, 16}, {Teil::HeliRotor1, 176, 32, 88, 16}, {Teil::HeliRotor2, 176, 32, 88, 16}, {Teil::HeliRotor3, 176, 32, 88, 16},
     {Teil::LichtRot, 16, 16, 8, 8}, {Teil::LichtGruen, 16, 16, 8, 8}, {Teil::LichtWeiss, 16, 16, 8, 8}, {Teil::LichtOrange, 16, 16, 8, 8},
     {Teil::Haken, 8, 12, 4, 1}, {Teil::Seil, 4, 4, 2, 2}, {Teil::Schatten, 64, 12, 32, 6},
-    {Teil::RaupeUnterwagen, 70, 18, 35, 18}, {Teil::Kettenglied, 5.2f, 3, 2.6f, 1.5f}, {Teil::Laufrolle, 8, 8, 4, 4},
-    {Teil::Antriebsrad, 15, 15, 7.5f, 7.5f}, {Teil::Leitrad, 14, 14, 7, 7}, {Teil::RaupeAufbau, 60, 34, 30, 34},
-    {Teil::RaupeGlas, 24, 30, 0, 0}, {Teil::Fahrer, 14, 18, 7, 18}, {Teil::Arm, 5, 12, 2.5f, 1.5f}, {Teil::RaupeSchild, 22, 28, 2, 20},
+    {Teil::Fahrer, 14, 18, 7, 18}, {Teil::Arm, 5, 12, 2.5f, 1.5f},
     {Teil::SchneeDach, 30, 8, 15, 8}, {Teil::SchneeHaube, 24, 6, 12, 6}, {Teil::Klecks, 16, 16, 8, 8},
-    {Teil::PflugRumpf, 44, 28, 22, 28}, {Teil::Rad, 12, 12, 6, 6}, {Teil::PflugSchild, 12, 18, 1, 12},
     {Teil::Rauch, 16, 16, 8, 8}, {Teil::Staub, 16, 16, 8, 8}, {Teil::Ball, 36, 36, 18, 18},
 };
 
 void malen(QPainter &p, Teil t) {
     switch (t) {
-    case Teil::HeliRumpf: heliRumpf(p); break;
     case Teil::HeliRotor0: heliRotor(p, 0); break;
     case Teil::HeliRotor1: heliRotor(p, 1); break;
     case Teil::HeliRotor2: heliRotor(p, 2); break;
-    case Teil::Heckrotor0: heckrotor(p, 0); break;
-    case Teil::Heckrotor1: heckrotor(p, 1); break;
-    case Teil::Heckrotor2: heckrotor(p, 2); break;
+    case Teil::HeliRotor3: heliRotor(p, 3); break;
     case Teil::LichtRot: leuchtpunkt(p, 16, QColor(255, 40, 30)); break;
     case Teil::LichtGruen: leuchtpunkt(p, 16, QColor(40, 240, 90)); break;
     case Teil::LichtWeiss: leuchtpunkt(p, 16, QColor(235, 244, 255)); break;
@@ -734,22 +327,11 @@ void malen(QPainter &p, Teil t) {
     case Teil::Haken: haken(p); break;
     case Teil::Seil: seil(p); break;
     case Teil::Schatten: schatten(p); break;
-    case Teil::RaupeUnterwagen: raupeUnterwagen(p); break;
-    case Teil::Kettenglied: kettenglied(p); break;
-    case Teil::Laufrolle: rolle(p, 8, 0, false); break;
-    case Teil::Antriebsrad: rolle(p, 15, 5, true); break;
-    case Teil::Leitrad: rolle(p, 14, 4, false); break;
-    case Teil::RaupeAufbau: raupeAufbau(p); break;
-    case Teil::RaupeGlas: raupeKabine(p); break;
     case Teil::Fahrer: fahrer(p); break;
     case Teil::Arm: arm(p); break;
-    case Teil::RaupeSchild: raupeSchild(p); break;
     case Teil::SchneeDach: schneeBuckel(p, 30, 8, 7); break;
     case Teil::SchneeHaube: schneeBuckel(p, 24, 6, 21); break;
     case Teil::Klecks: klecks(p); break;
-    case Teil::PflugRumpf: pflugRumpf(p); break;
-    case Teil::Rad: rad(p); break;
-    case Teil::PflugSchild: pflugSchild(p); break;
     case Teil::Rauch: wolke(p, QColor(120, 120, 126, 190), QColor(86, 86, 92, 150)); break;
     case Teil::Staub: wolke(p, QColor(255, 255, 255, 235), QColor(236, 243, 252, 190)); break;
     case Teil::Ball: ball(p); break;
@@ -759,33 +341,44 @@ void malen(QPainter &p, Teil t) {
 } // namespace
 
 FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
-    struct Auftrag { float w, h, px, py; double skala; int teil; QString text; const Modell *modell = nullptr; double gier = 0; };
+    struct Auftrag { float w = 0, h = 0, px = 0, py = 0; double skala = 1; int art = 0; QString text; const Modell *modell = nullptr; double gier = 0; };
     std::vector<Auftrag> auftraege;
     auftraege.resize(size_t(teilAnzahl()));
-    for (const Vorlage &v : VORLAGEN) auftraege[size_t(v.teil)] = {v.w, v.h, v.px, v.py, dpr * groesse, int(v.teil), QString()};
+    for (const Vorlage &v : VORLAGEN) auftraege[size_t(v.teil)] = {v.w, v.h, v.px, v.py, dpr * groesse, 1, QString(), nullptr, 0};
     const QFontMetricsF masse(blasenSchrift());
     for (int i = 0; i < spruchAnzahl(); ++i) {
         const QString text = QString::fromUtf8(spruchText(i));
         const float w = float(std::ceil(masse.horizontalAdvance(text)) + 22);
-        auftraege[size_t(int(Teil::Blase0) + i)] = {w, 31, 3, 30.2f, dpr * blasenSkala(groesse), int(Teil::Blase0), text};
+        auftraege[size_t(int(Teil::Blase0) + i)] = {w, 31, 3, 30.2f, dpr * blasenSkala(groesse), 2, text, nullptr, 0};
     }
-    // 3D-Ansichten fürs Wenden: je Winkelstufe ein Bild (Raupe und Pflug in zwei Phasen). Bei sehr großen
-    // Fahrzeugen etwas gröber gerastert – sie sind nur kurz und in Bewegung zu sehen.
+    // 3D-Ansichten: jede Schicht jedes Fahrzeugs je Winkelstufe. Bei sehr großen Fahrzeugen etwas gröber
+    // gerastert (höchstens 3 px je Einheit), damit der Atlas nicht ausufert.
     const double skala3d = std::min(dpr * groesse, 3.0);
-    const Modell modelle[5] = {raupenModell(0), raupenModell(1), pflugModell(0), pflugModell(1), heliModell()};
-    std::vector<QImage> texturen;
-    for (int b = 0; b < SeitenbildAnzahl; ++b) texturen.push_back(seitenbild(b, skala3d));
-    for (int stufe = 0; stufe < WINKELSTUFEN; ++stufe) {
-        const double gier = stufenWinkel(stufe);
-        for (int phase = 0; phase < 2; ++phase) {
-            auftraege[size_t(int(Teil::Raupe3D) + stufe * 2 + phase)] = {RAHMEN_RAUPE.w, RAHMEN_RAUPE.h, RAHMEN_RAUPE.px, RAHMEN_RAUPE.py, skala3d,
-                                                                         int(Teil::Raupe3D), QString(), &modelle[phase], gier};
-            auftraege[size_t(int(Teil::Pflug3D) + stufe * 2 + phase)] = {RAHMEN_PFLUG.w, RAHMEN_PFLUG.h, RAHMEN_PFLUG.px, RAHMEN_PFLUG.py, skala3d,
-                                                                         int(Teil::Pflug3D), QString(), &modelle[2 + phase], gier};
+    std::vector<Modell> modelle;
+    modelle.reserve(40);
+    auto schicht = [&](Teil basis, int je, int nummer, Modell modell, const Rahmen &r, bool nurSeiten = false) {
+        modelle.push_back(std::move(modell));
+        const Modell *m = &modelle.back();
+        if (nurSeiten) {
+            for (int k = 0; k < 2; ++k) auftraege[size_t(int(basis) + k)] = {r.w, r.h, r.px, r.py, skala3d, 3, QString(), m, k * PI};
+            return;
         }
-        auftraege[size_t(int(Teil::Heli3D) + stufe)] = {RAHMEN_HELI.w, RAHMEN_HELI.h, RAHMEN_HELI.px, RAHMEN_HELI.py, skala3d, int(Teil::Heli3D),
-                                                        QString(), &modelle[4], gier};
+        for (int stufe = 0; stufe < WINKELSTUFEN; ++stufe)
+            auftraege[size_t(int(basis) + stufe * je + nummer)] = {r.w, r.h, r.px, r.py, skala3d, 3, QString(), m, stufenWinkel(stufe)};
+    };
+    schicht(Teil::RaupeKoerper, 1, 0, raupeKoerper(true), RAHMEN_RAUPE);
+    schicht(Teil::RaupeLeer, 1, 0, raupeKoerper(false), RAHMEN_RAUPE, true);
+    for (int ph = 0; ph < KETTENPHASEN; ++ph) {
+        schicht(Teil::RaupeKetteR, KETTENPHASEN, ph, raupeKette(1, ph), RAHMEN_KETTE);
+        schicht(Teil::RaupeKetteL, KETTENPHASEN, ph, raupeKette(-1, ph), RAHMEN_KETTE);
     }
+    schicht(Teil::RaupeSchild, 1, 0, raupeSchild(), RAHMEN_RSCHILD);
+    schicht(Teil::PflugKoerper, 1, 0, pflugKoerper(true), RAHMEN_PFLUG);
+    schicht(Teil::PflugLeer, 1, 0, pflugKoerper(false), RAHMEN_PFLUG, true);
+    for (int ph = 0; ph < RADPHASEN; ++ph) schicht(Teil::PflugRad, RADPHASEN, ph, pflugRad(ph), RAHMEN_RAD);
+    schicht(Teil::PflugSchild, 1, 0, pflugSchild(), RAHMEN_PSCHILD);
+    schicht(Teil::HeliKoerper, 1, 0, heliKoerper(), RAHMEN_HELI);
+
     // einfache Regalpackung
     const int rand = 2, maxBreite = skala3d > 2 ? 4096 : 2048;
     FahrzeugAtlas a;
@@ -800,37 +393,66 @@ FahrzeugAtlas fahrzeugAtlasErzeugen(double dpr, double groesse) {
         zeile = std::max(zeile, h);
         breite = std::max(breite, x);
     }
-    QImage bild(breite, y + zeile + rand, QImage::Format_ARGB32_Premultiplied);
-    bild.fill(Qt::transparent);
-    QPainter p(&bild);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setRenderHint(QPainter::TextAntialiasing);
-    for (size_t i = 0; i < auftraege.size(); ++i) {
-        const Auftrag &t = auftraege[i];
-        const FahrzeugFeld &f = a.felder[i];
-        p.save();
-        p.setClipRect(QRect(f.x, f.y, f.w, f.h));
-        p.translate(f.x, f.y);
-        p.scale(f.w / double(t.w), f.h / double(t.h));
-        if (t.modell) {
-            p.translate(t.px, t.py);
-            modellMalen(p, *t.modell, t.gier, texturen, skala3d);
-        } else if (t.teil == int(Teil::Blase0)) blase(p, t.text, t.w, t.h);
-        else malen(p, Teil(t.teil));
-        p.restore();
+    // gemalte Teile (Rotor, Lichter, Schnee, Sprechblasen …)
+    QImage gemalt(breite, y + zeile + rand, QImage::Format_ARGB32_Premultiplied);
+    gemalt.fill(Qt::transparent);
+    {
+        QPainter p(&gemalt);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::TextAntialiasing);
+        for (size_t i = 0; i < auftraege.size(); ++i) {
+            const Auftrag &t = auftraege[i];
+            if (t.art != 1 && t.art != 2) continue;
+            const FahrzeugFeld &f = a.felder[i];
+            p.save();
+            p.setClipRect(QRect(f.x, f.y, f.w, f.h));
+            p.translate(f.x, f.y);
+            p.scale(f.w / double(t.w), f.h / double(t.h));
+            if (t.art == 2) blase(p, t.text, t.w, t.h);
+            else malen(p, Teil(i));
+            p.restore();
+        }
     }
-    p.end();
-    a.bild = bild.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+    a.bild = gemalt.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+    // 3D-Ansichten auf mehreren Kernen rastern und in den Atlas kopieren
+    std::vector<size_t> ansichten;
+    for (size_t i = 0; i < auftraege.size(); ++i)
+        if (auftraege[i].art == 3) ansichten.push_back(i);
+    const int abtastung = skala3d <= 2.2 ? 3 : 2;
+    std::atomic<size_t> naechste{0};
+    uchar *ziel = a.bild.bits();
+    const qsizetype zeilenBytes = a.bild.bytesPerLine();
+    auto arbeiten = [&] {
+        for (size_t k; (k = naechste.fetch_add(1)) < ansichten.size();) {
+            const Auftrag &t = auftraege[ansichten[k]];
+            const FahrzeugFeld &f = a.felder[ansichten[k]];
+            const Ansichtsbild b = rendern(*t.modell, t.gier, f.w / double(t.w), f.w, f.h, t.px * f.w / double(t.w), t.py * f.h / double(t.h), abtastung);
+            for (int zl = 0; zl < f.h; ++zl) std::memcpy(ziel + (f.y + zl) * zeilenBytes + f.x * 4, &b.rgba[size_t(zl) * f.w * 4], size_t(f.w) * 4);
+        }
+    };
+    const unsigned kerne = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 8u);
+    std::vector<std::thread> helfer;
+    for (unsigned i = 1; i < kerne; ++i) helfer.emplace_back(arbeiten);
+    arbeiten();
+    for (std::thread &t : helfer) t.join();
     return a;
 }
 
-const FahrzeugAtlas &fahrzeugAtlasFuer(double dpr, double groesse) {
-    static std::map<std::pair<int, int>, FahrzeugAtlas> lager;
+// Der Atlas wird im Hintergrund gemalt (dauert einen Moment): bis er fertig ist, gibt es nullptr.
+const FahrzeugAtlas *fahrzeugAtlasFuer(double dpr, double groesse) {
+    struct Eintrag { std::future<FahrzeugAtlas> zukunft; std::unique_ptr<FahrzeugAtlas> fertig; };
+    static std::map<std::pair<int, int>, Eintrag> lager;
     const std::pair<int, int> schluessel(int(std::lround(dpr * 100)), int(std::lround(groesse * 100)));
     auto it = lager.find(schluessel);
     if (it == lager.end()) {
-        if (lager.size() > 6) lager.clear(); // Größe am Regler verstellt: alte Bilder nicht ewig aufheben
-        it = lager.emplace(schluessel, fahrzeugAtlasErzeugen(dpr, groesse)).first;
+        // Größe am Regler verstellt: fertige alte Bilder nicht ewig aufheben
+        if (lager.size() > 5)
+            for (auto alt = lager.begin(); alt != lager.end();) alt = alt->second.fertig ? lager.erase(alt) : std::next(alt);
+        it = lager.emplace(schluessel, Eintrag{}).first;
+        it->second.zukunft = std::async(std::launch::async, [dpr, groesse] { return fahrzeugAtlasErzeugen(dpr, groesse); });
     }
-    return it->second;
+    Eintrag &e = it->second;
+    if (!e.fertig && e.zukunft.valid() && e.zukunft.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+        e.fertig = std::make_unique<FahrzeugAtlas>(e.zukunft.get());
+    return e.fertig.get();
 }

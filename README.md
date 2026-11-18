@@ -128,7 +128,7 @@ Ablauf eines Einsatzes (Zustandsautomat in `src/raeumdienst.cpp`, vom Zeichnen g
 3. **Aufsetzen und Ausklinken:** Das Fahrzeug federt ein, der Schnee darunter wird zur Seite
    gedrückt. Der Hubschrauber zieht den Haken ein und wartet seitlich.
 4. **Räumen:** Schild senken, bis zur Kante schieben, zurücksetzen (mit Rückfahrwarner), wenden
-   (siehe „Wenden“), andere Seite. Vor dem Schild türmt sich der Wulst; was über die Fensterkante ragt, fällt als
+   (siehe „Fahrzeuge und Wenden“), andere Seite. Vor dem Schild türmt sich der Wulst; was über die Fensterkante ragt, fällt als
    Brocken hinunter und landet auf dem Fenster darunter oder dem Boden. Ist der Wulst voll,
    rutscht der Überschuss am Schild vorbei und fällt vorn über die Kante. Liegt danach noch
    merklich Schnee, gibt es bis zu zwei weitere Durchgänge.
@@ -142,27 +142,41 @@ Ablauf eines Einsatzes (Zustandsautomat in `src/raeumdienst.cpp`, vom Zeichnen g
 - Die Schneemenge bleibt erhalten: Was geräumt wird, fällt nach unten. Nur am Bildschirmboden
   ist der Schnee weg („vom Bildschirmrand geschoben“).
 
-### Wenden
+### Fahrzeuge und Wenden
 
-Das Fahrzeug klappt nicht um, sondern dreht wie ein Kettenfahrzeug auf der Stelle: Schild hoch,
-dann 180° um die Hochachse in 1,5 bis 2,5 s (je nach Fahrzeuggröße, weich an- und auslaufend).
-Zu sehen sind echte Zwischenansichten – Seite, schräg, Front (Schild in voller Breite) bzw. Heck
-(Rücklichter, Auspuff), schräg, andere Seite; die Länge verkürzt sich dabei. Der Drehsinn wechselt
-von Einsatz zu Einsatz (einmal über die Front-, einmal über die Heckansicht). Dabei laufen die
-Kettenglieder um, der Motor arbeitet (mehr Rauch, mit Ton lauter), das Fahrzeug ruckt beim Anfahren
-und Anhalten und die Ketten wirbeln Schnee auf. Würde es beim Drehen über die Kante des befahrbaren
-Abschnitts ragen, rangiert es vorher ein Stück zur Mitte. Ein Schneeballtreffer mitten in der
-Drehung zählt, der Fahrer beschwert sich aber erst danach. Der kleine Pflug dreht genauso, der
-Hubschrauber giert beim Richtungswechsel über die Front- bzw. Heckansicht.
+Raupe, Pflug und Hubschrauber sind 3D-Modelle (`src/fahrzeugmodell.cpp`): Quader mit gerundeten Kanten,
+Zylinder, Drehkörper, Schalen und Prismen. Alle Ansichten – auch die gewohnte Seitenansicht – stammen aus
+demselben Modell, es gibt keinen Wechsel zwischen „Seitenbild“ und „Drehbild“ mehr.
 
-Technik: `src/ansicht3d.{h,cpp}` (Parallelprojektion mit Gierwinkel, Blick leicht von oben,
-weltfestes Licht von oben links, Sichtbarkeit und Tiefenordnung) und `src/fahrzeugmodell.{h,cpp}`
-(Raupe, Pflug und Hubschrauber aus Quadern, Prismen und Schalen). Die Seitenflächen tragen die
-gemalten Seitenbilder als Textur, deshalb gleicht die Ansicht bei 0° dem gewohnten Bild.
-`fahrzeugbild.cpp` malt je Fahrzeug 24 Ansichten (15°-Schritte, Raupe und Pflug in zwei
-Kettenphasen) einmal in den Atlas. Zum Begutachten: `build/szenenprobe` schreibt
-`ansichten_*.png`, `wende_*.png`, `heli_giert_*.png` und `pflug_wende_*.png`; live hilft
-`qdbus6 org.schneefall / org.schneefall.Zeitlupe 0.12` (1 = wieder normal).
+- **Raupe (Kettendozer):** Wanne, abgeschrägte Haube mit Lüftungsschlitzen, Kühler, Scheinwerfer, Kabine mit
+  Holmen, Scheiben, Spiegeln, Türgriff und Handlauf, Fahrer mit Helm und Warnjacke hinter Glas, Auspuff mit
+  Regenklappe, Luftfilter, Gegengewicht mit Warnschraffur und Rücklichtern, Rundumleuchte. Ketten mit
+  Trieb-, Leit-, Lauf- und Stützrollen; die Glieder laufen in sechs Phasen je Glied sichtbar in Fahrtrichtung,
+  beim Drehen auf der Stelle gegenläufig. Schild mit blanker Arbeitsfläche, Schneidkante, Schubrahmen und
+  Hydraulikzylindern; es hebt und senkt sich.
+- **Kleiner Pflug:** ein Radfahrzeug (Kommunalschlepper mit Fahrerhaus, Pritsche mit Streuer, Schneeschild
+  mit Warnfahnen). Die Räder haben Profil und Felgen und drehen sich mit dem Weg. Er dreht **nicht** auf
+  der Stelle, sondern wendet wie ein Auto in Zügen: Bogen vor, umlenken, Bogen zurück (mit Rückfahrwarner),
+  Bogen vor – drei Züge, bei wenig Platz fünf oder sieben. Die Vorderräder schlagen sichtbar ein.
+- **Hubschrauber:** runder Rumpf, Glaskanzel mit Pilot, Seitenfenster und Türfuge, Triebwerksverkleidung mit
+  Lufteinlass und Abgasrohr, Heckausleger mit Kennung, Leitwerk, Höhenflosse mit Endscheiben, Heckrotor,
+  Kufen. Der Hauptrotor ist in jeder Gierlage ein Blattkreis mit verwischten Blättern und kippt beim
+  Beschleunigen etwas weiter als der Rumpf. Beim Richtungswechsel giert er über Front bzw. Heck.
+- **Raupe wendet** auf der Stelle: Schild hoch, 180° in 1,5 bis 2,5 s (je nach Größe, weich an- und
+  auslaufend), Motor unter Last, Ruck beim Anfahren und Anhalten, die Ketten wirbeln Schnee auf. Der Drehsinn
+  wechselt von Einsatz zu Einsatz (einmal über die Front-, einmal über die Heckansicht). Reicht der Platz
+  nicht, rangiert sie vorher zur Mitte. Ein Schneeballtreffer mitten in der Wende zählt, der Fahrer
+  beschwert sich aber erst danach.
+
+Technik: `src/ansicht3d.{h,cpp}` rastert die Modelle ohne Qt mit Tiefenpuffer und Überabtastung: weiches,
+weltfestes Licht von oben links (dreht nicht mit), Glanz je Werkstoff (Lack, Metall, Gummi, Glas),
+durchscheinende Scheiben, Muster (Kettenglieder, Reifenprofil, Kühler, Warnschraffur, Kennung), Schmutz
+unten, Schnee auf waagerechten Flächen, Umgebungsverdeckung in Ecken und eine dunkle Außenkante. Jedes
+Fahrzeug besteht aus Schichten (Raupe: Körper, zwei Ketten, Schild; Pflug: Körper, vier Räder, Schild), die
+je 15° Gierwinkel einmal in den Atlas gemalt und beim Zeichnen nach Tiefe sortiert zusammengesetzt werden.
+Der Atlas entsteht im Hintergrund auf mehreren Kernen. Zum Begutachten: `build/szenenprobe <ordner>`
+schreibt `ansichten_*.png` (zwölf Gierwinkel je Fahrzeug), `wende_*.png`, `pflug_wende_*.png` und
+`heli_giert_*.png`; live hilft `qdbus6 org.schneefall / org.schneefall.Zeitlupe 0.12` (1 = wieder normal).
 
 ### Schneebälle
 
@@ -183,15 +197,8 @@ das, „Schnee anfassbar“ abschalten.
 
 ## Aussehen
 
-- **Räumdienst:** Hubschrauber (Glaskanzel mit Reflex und Pilot, verwischte Rotorscheibe,
-  Heckrotor, Kufen, Positionslichter und Blitzer, Schatten auf dem Schnee), Pistenraupe
-  (umlaufende Kettenglieder und drehende Rollen passend zum Tempo, Schild am Schubarm, Kabine mit
-  Fahrer, Rundumleuchte, Auspuffrauch je nach Last, Schnee auf Dach und Haube, Federung) und der
-  kleine Pflug sind mehrteilige Vektormodelle. `src/fahrzeugbild.cpp` malt die Einzelteile einmal
-  je Monitor-Skalierung und Fahrzeuggröße in einen Atlas (scharf bei 1,5×), `src/raeumszene.cpp`
-  setzt sie in jedem Bild zusammen. Zum Begutachten ohne Bildschirm: `make szenenprobe`, dann
-  `build/szenenprobe <ordner> [dpr] [größe]`.
-
+- **Räumdienst:** siehe „Fahrzeuge und Wenden“. `src/fahrzeugbild.cpp` baut den Atlas je
+  Monitor-Skalierung und Fahrzeuggröße, `src/raeumszene.cpp` setzt die Schichten in jedem Bild zusammen.
 - **Fallende Flocken:** Dendriten, Sternplättchen und Plättchen, prozedural erzeugt (16 Formen,
   jede Flocke dazu mit eigener Drehung, Größe und eigenem Taumeln). Weißer Kern, bläulich
   durchscheinende Kante, Glanz auf den Eisflächen. Die Größe gibt die Tiefe: kleine Flocken
@@ -221,10 +228,10 @@ das, „Schnee anfassbar“ abschalten.
 - `src/raeumdienst.{h,cpp}`: Räumdienst und Schneebälle ohne GUI (Einsatz-Zustandsautomat,
   Warteschlange, Seilpendel, Hubschrauber, Fahrzeug, Wulst, Bälle, Treffer und Streik,
   Eingabeflächen, Klangereignisse).
-- `src/ansicht3d.{h,cpp}`, `src/fahrzeugmodell.{h,cpp}`: 3D-Ansichten fürs Wenden (ohne Qt).
+- `src/ansicht3d.{h,cpp}`, `src/fahrzeugmodell.{h,cpp}`: 3D-Modelle der Fahrzeuge und ihr Rasterer (ohne Qt).
 - `src/raeumszene.{h,cpp}`: setzt aus dem Zustand das Bild zusammen (Liste von Einzelteilen mit
   Lage, Drehung, Maßstab; Wulst als Decke). Ohne Qt.
-- `src/fahrzeugbild.{h,cpp}`: malt den Fahrzeug-Atlas mit QPainter.
+- `src/fahrzeugbild.{h,cpp}`: baut den Fahrzeug-Atlas (3D-Ansichten, dazu Rotor, Lichter, Sprechblasen mit QPainter).
 - `src/overlay.{h,cpp}`: eine durchsichtige Layer-Shell-Ebene (Overlay) je Monitor.
   Sie hat keine Tastatur; die Eingaberegion ist leer oder umfasst nur anfassbaren Schnee und
   Fahrzeuge, alle anderen Klicks gehen durch.

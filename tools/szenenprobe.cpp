@@ -28,7 +28,13 @@ static void deckeMalen(QPainter &p, const Decke &d) {
 }
 
 static void bild(const QString &datei, const Simulation &sim, const Raeumdienst &rd, double zeit, double dpr, QRectF ausschnitt) {
-    const FahrzeugAtlas &a = fahrzeugAtlasFuer(dpr, rd.einstellungen().fahrzeugGroesse);
+    static double atlasDpr = 0, atlasMass = 0;
+    static FahrzeugAtlas a;
+    if (atlasDpr != dpr || atlasMass != rd.einstellungen().fahrzeugGroesse) {
+        atlasDpr = dpr;
+        atlasMass = rd.einstellungen().fahrzeugGroesse;
+        a = fahrzeugAtlasErzeugen(dpr, atlasMass);
+    }
     QImage img(int(ausschnitt.width() * dpr), int(ausschnitt.height() * dpr), QImage::Format_ARGB32_Premultiplied);
     QPainter p(&img);
     p.setRenderHint(QPainter::Antialiasing);
@@ -79,7 +85,8 @@ int main(int argc, char **argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
     const QString ordner = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QStringLiteral(".");
-    const double dpr = argc > 2 ? atof(argv[2]) : 2.0, groesse = argc > 3 ? atof(argv[3]) : 1.0;
+    // Zahlen unabhängig von der Sprache des Systems lesen (Dezimalpunkt)
+    const double dpr = argc > 2 ? QString::fromLatin1(argv[2]).toDouble() : 2.0, groesse = argc > 3 ? QString::fromLatin1(argv[3]).toDouble() : 1.0;
     {
         const FahrzeugAtlas a = fahrzeugAtlasErzeugen(dpr * 2, groesse);
         QImage auf(a.bild.size(), QImage::Format_ARGB32_Premultiplied);
@@ -88,21 +95,37 @@ int main(int argc, char **argv) {
         p.drawImage(0, 0, a.bild);
         p.end();
         auf.save(ordner + "/atlas.png");
-        // die 3D-Ansichten einzeln, groß: alle zwei Winkelstufen
-        for (int basis : {int(Teil::Raupe3D), int(Teil::Pflug3D), int(Teil::Heli3D)}) {
-            const int je = basis == int(Teil::Heli3D) ? 1 : 2;
-            const FahrzeugFeld &f0 = a.felder[size_t(basis)];
-            QImage streifen(f0.w * 6, f0.h * 2, QImage::Format_ARGB32_Premultiplied);
+        std::printf("Atlas %dx%d (%.1f MB)\n", a.bild.width(), a.bild.height(), a.bild.width() * a.bild.height() * 4 / 1048576.0);
+    }
+    {
+        // die Ansichten groß und zusammengesetzt: zwölf Gierwinkel je Fahrzeug
+        const double g2 = 4;
+        const FahrzeugAtlas a = fahrzeugAtlasErzeugen(g2, 1.0);
+        for (int art = 0; art < 3; ++art) {
+            const int bw = art == 2 ? 210 : art == 0 ? 110 : 80, bh = art == 2 ? 100 : art == 0 ? 76 : 56;
+            QImage streifen(int(bw * 6 * g2), int(bh * 2 * g2), QImage::Format_ARGB32_Premultiplied);
             streifen.fill(QColor(90, 120, 160));
             QPainter q(&streifen);
+            q.setRenderHint(QPainter::SmoothPixmapTransform);
+            q.scale(g2, g2);
             for (int i = 0; i < 12; ++i) {
-                const FahrzeugFeld &f = a.felder[size_t(basis + i * 2 * je)];
-                q.drawImage(QPoint((i % 6) * f0.w, (i / 6) * f0.h), a.bild, QRect(f.x, f.y, f.w, f.h));
+                Szene sz;
+                szeneAnsicht(art, i * 2 * 3.14159265359 / 12, (i % 6) * bw + bw / 2.0, (i / 6) * bh + bh - (art == 2 ? 22 : 8), i * 0.37, sz);
+                for (const Zeichenteil &z : sz.teile) {
+                    const FahrzeugFeld &f = a.felder[z.teil];
+                    q.save();
+                    q.translate(z.x, z.y);
+                    q.rotate(z.winkel * 180 / 3.14159265);
+                    q.scale(z.sx, z.sy);
+                    q.translate(-f.px, -f.py);
+                    q.setOpacity(z.alpha);
+                    q.drawImage(QRectF(0, 0, f.bw, f.bh), a.bild, QRectF(f.x, f.y, f.w, f.h));
+                    q.restore();
+                }
             }
             q.end();
-            streifen.save(ordner + QStringLiteral("/ansichten_%1.png").arg(basis == int(Teil::Raupe3D) ? "raupe" : basis == int(Teil::Pflug3D) ? "pflug" : "heli"));
+            streifen.save(ordner + QStringLiteral("/ansichten_%1.png").arg(art == 0 ? "raupe" : art == 1 ? "pflug" : "heli"));
         }
-        std::printf("Atlas %dx%d\n", a.bild.width(), a.bild.height());
     }
     Einstellungen e;
     e.wind = 0;
@@ -164,7 +187,7 @@ int main(int argc, char **argv) {
     // Wende: zwölf Bilder über die Drehung
     bis([&] { return E.fz.phase == FahrPhase::Wenden && E.fz.dreht; });
     for (int i = 0; i < 12 && E.fz.phase == FahrPhase::Wenden; ++i) {
-        bild(ordner + QStringLiteral("/wende_%1.png").arg(i + 1, 2, 10, QLatin1Char('0')), sim, rd, zeit, dpr, QRectF(E.fz.x - 90, 420 - 90, 180, 110));
+        bild(ordner + QStringLiteral("/wende_%1.png").arg(i + 1, 2, 10, QLatin1Char('0')), sim, rd, zeit, dpr, QRectF(E.fz.x - 80, 420 - 80, 160, 100));
         laufen(wendeDauer(groesse) / 11);
     }
     // Hubschrauber giert beim Anflug zum Abholen
@@ -187,10 +210,12 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 3; ++i) { rd.werfen(P.fz.x, P.fz.y - 12, 0, 0, 90); laufen(0.1); }
     laufen(0.9);
     bild(ordner + "/13_pflug_streik.png", sim, rd, zeit, dpr, QRectF(P.fz.x - 180, 610, 420, 190));
+    // der Radpflug wendet in Zügen: vor, zurück, vor
     bis([&] { return P.fz.phase == FahrPhase::Wenden && P.fz.dreht; });
-    for (int i = 0; i < 8 && P.fz.phase == FahrPhase::Wenden; ++i) {
-        bild(ordner + QStringLiteral("/pflug_wende_%1.png").arg(i + 1), sim, rd, zeit, dpr, QRectF(P.fz.x - 60, 800 - 70, 120, 80));
-        laufen(wendeDauer(groesse) / 7);
+    const double px0 = P.fz.x;
+    for (int i = 0; i < 14 && P.fz.phase == FahrPhase::Wenden; ++i) {
+        bild(ordner + QStringLiteral("/pflug_wende_%1.png").arg(i + 1, 2, 10, QLatin1Char('0')), sim, rd, zeit, dpr, QRectF(px0 - 70, 800 - 70, 160, 84));
+        laufen(0.34);
     }
     return 0;
 }
