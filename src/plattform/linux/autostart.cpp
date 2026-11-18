@@ -14,19 +14,20 @@ QString autostartPfad() {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/autostart/schneefall.desktop");
 }
 
-// Wert für Exec= nach der Desktop-Entry-Spezifikation: der Pfad als ein Argument in "…"; darin " ` $ und Backslash mit einem
-// Backslash maskiert (Quoting-Ebene), danach jeder Backslash verdoppelt (String-Ebene, wird vor dem Quoting ausgewertet), % → %%
-// (Feldcodes). Steuerzeichen (Zeilenumbruch würde neue Schlüssel einschleusen) → kein Wert.
+// Wert für Exec= nach der Desktop-Entry-Spezifikation: der Pfad als ein Argument in "…"; darin " ` $ mit einem
+// Backslash maskiert (Quoting-Ebene), danach jeder Backslash verdoppelt (String-Ebene, wird vor dem Quoting
+// ausgewertet). Abgelehnt (kein Wert): Steuerzeichen (Zeilenumbruch würde neue Schlüssel einschleusen), „=“, und –
+// laut Praxistest mit gio launch und systemd-xdg-autostart-generator (startet Plasmas Autostart) – „%“ und Backslash,
+// die diese Starter nicht zuverlässig zurückübersetzen.
 std::optional<QString> execWert(const QString &programm) {
     if (programm.isEmpty()) return std::nullopt;
     QString arg;
     for (const QChar c : programm) {
-        if (c.category() == QChar::Other_Control) return std::nullopt;
-        if (c == QLatin1Char('"') || c == QLatin1Char('`') || c == QLatin1Char('$') || c == QLatin1Char('\\')) arg += QLatin1Char('\\');
+        if (c.category() == QChar::Other_Control || c == QLatin1Char('=') || c == QLatin1Char('%') || c == QLatin1Char('\\'))
+            return std::nullopt;
+        if (c == QLatin1Char('"') || c == QLatin1Char('`') || c == QLatin1Char('$')) arg += QStringLiteral("\\\\");
         arg += c;
     }
-    arg.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
-    arg.replace(QLatin1Char('%'), QStringLiteral("%%"));
     return QLatin1Char('"') + arg + QLatin1Char('"');
 }
 } // namespace

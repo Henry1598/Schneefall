@@ -9,8 +9,16 @@
 #include <QLocalSocket>
 #include <QLockFile>
 #include <QPointer>
+#include <QSysInfo>
 #include <QStandardPaths>
 #include <QTimer>
+#include <algorithm>
+
+#ifdef Q_OS_UNIX
+#include <cerrno>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #ifdef Q_OS_WIN
 #include <algorithm>
@@ -131,10 +139,29 @@ bool instanzAntwortet(const QString &name) {
 
 QString terminalText(const QString &text) {
     QString t = text;
-    for (QChar &c : t)
-        if (c.category() == QChar::Other_Control && c != QLatin1Char('\n') && c != QLatin1Char('\t')) c = QLatin1Char('?');
+    for (QChar &c : t) {
+        if (c == QLatin1Char('\n') || c == QLatin1Char('\t')) continue;
+        // Steuerzeichen, Format-/Bidi-Steuerung (U+202E, U+2066 …), Zeilen- und Absatztrenner
+        const QChar::Category k = c.category();
+        if (k == QChar::Other_Control || k == QChar::Other_Format || k == QChar::Separator_Line || k == QChar::Separator_Paragraph)
+            c = QLatin1Char('?');
+    }
     return t;
 }
+
+#ifdef Q_OS_UNIX
+QString privaterOrdner(const QString &basis) {
+    const QString ordner = basis + QStringLiteral("/schneefall-") + QString::number(::getuid());
+    const QByteArray pfad = QFile::encodeName(ordner);
+    if (::mkdir(pfad.constData(), 0700) != 0 && errno != EEXIST) return {};
+    struct stat st {};
+    if (::lstat(pfad.constData(), &st) != 0) return {};
+    // kein Link, wirklich ein Ordner, uns gehörend und nur für uns zugänglich – sonst könnte ein anderer
+    // Benutzer ihn vorab angelegt haben
+    if (!S_ISDIR(st.st_mode) || st.st_uid != ::getuid() || (st.st_mode & 077) != 0) return {};
+    return ordner;
+}
+#endif
 
 struct Steuerkanal::Impl {
     QLockFile sperre;
@@ -153,14 +180,16 @@ QString Steuerkanal::standardName() {
     // (der Benutzername ist nicht eindeutig, z. B. lokales Konto und Domänenkonto gleichen Namens)
     DWORD sitzung = 0;
     ProcessIdToSessionId(GetCurrentProcessId(), &sitzung);
-    QString sid = eigeneSid();
-    if (sid.isEmpty()) sid = qEnvironmentVariable("USERNAME", QStringLiteral("unbekannt"));
+    const QString sid = eigeneSid();
+    if (sid.isEmpty()) return QString(); // kein Rückfall auf den (nicht eindeutigen) Benutzernamen: anmelden() meldet Fehler
     return QStringLiteral("schneefall-%1-%2").arg(sid).arg(quint32(sitzung));
 #else
     // Laufzeitordner des Benutzers (/run/user/<uid>, nur für ihn zugänglich), nicht das gemeinsame /tmp
     QString ordner = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
-    if (ordner.isEmpty()) ordner = QDir::homePath();
-    return ordner + QStringLiteral("/schneefall.sock");
+    if (ordner.isEmpty()) ordner = privaterOrdner(QDir::tempPath()); // eigener 0700-Ordner unter /tmp
+    if (!ordner.isEmpty()) return ordner + QStringLiteral("/schneefall.sock");
+    // zuletzt das Home-Verzeichnis – je Rechner, falls es (NFS) mehrere Rechner teilen
+    return QDir::homePath() + QStringLiteral("/.schneefall-") + QSysInfo::machineHostName() + QStringLiteral(".sock");
 #endif
 }
 
@@ -177,6 +206,10 @@ QString Steuerkanal::sperrPfad(const QString &name) {
 Steuerkanal::Anmeldung Steuerkanal::anmelden() {
     if (m_impl) return Anmeldung::Ok;
     m_fehler.clear();
+    if (m_name.isEmpty()) {
+        m_fehler = QStringLiteral("kein Name für den Steuerkanal (Benutzer nicht ermittelbar)");
+        return Anmeldung::Fehler;
+    }
     auto impl = std::make_unique<Impl>(sperrPfad(m_name));
     // Sperre: nur verwaist, wenn der haltende Prozess nicht mehr läuft (kein Ablauf nach Zeit – eine laufende
     // Instanz hält sie beliebig lange)
@@ -245,13 +278,18 @@ Steuerkanal::Anmeldung Steuerkanal::anmelden() {
 }
 
 Antwort Steuerkanal::senden(const QString &befehl, const QStringList &argumente, const QString &name, int ms) {
+    if (name.isEmpty()) return {};
+    // eine Frist für den ganzen Aufruf (ein tröpfelnder Server hält den Client nicht fest)
+    const QDeadlineTimer frist(ms);
+    auto rest = [&frist] { return int(std::max<qint64>(0, frist.remainingTime())); };
     QLocalSocket s;
-    if (!verbinden(s, name, ms)) return {};
+    if (!verbinden(s, name, rest())) return {};
     s.write(anfrageText(befehl, argumente));
-    if (!s.waitForBytesWritten(ms)) return {};
+    if (!s.waitForBytesWritten(rest())) return {};
     QByteArray zeile;
     while (!zeile.endsWith('\n')) {
-        if (!s.bytesAvailable() && !s.waitForReadyRead(ms)) break;
+        if (frist.hasExpired()) return {};
+        if (!s.bytesAvailable() && !s.waitForReadyRead(rest())) break;
         zeile += s.read(MAX_ANTWORT + 1 - zeile.size());
         if (zeile.size() > MAX_ANTWORT) return {}; // zu groß: verwerfen
     }

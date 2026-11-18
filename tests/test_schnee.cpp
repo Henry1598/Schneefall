@@ -82,6 +82,7 @@ private slots:
     void fenstermodusUndNeueSchluessel();
     void schnittstellenFuerRaeumdienst();
     void unsinnigeFenstermasseSprengenNichtDenSpeicher();
+    void spaltenUeberAlleDeckenSindBegrenzt();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -1100,6 +1101,29 @@ void TestSchnee::unsinnigeFenstermasseSprengenNichtDenSpeicher() {
     s.setFenster({fenster("a", 100, 300, 1e18, 300, 1)});
     for (const Decke &d : s.decken()) QVERIFY2(d.hoehe.size() <= 65536, d.id.c_str());
     laufen(s, 0.5);
+}
+
+// Nachprüfung R4: 1000 Fenster × 100000 px Breite wären ~33 Mio Spalten – Gesamtbudget über alle Decken
+void TestSchnee::spaltenUeberAlleDeckenSindBegrenzt() {
+    Simulation s(ruhig()); // spaltenBreite 4 → 25000 Spalten je Fenster
+    s.setBildschirme({{0, 0, 1000, 800}});
+    std::vector<Fenster> viele;
+    for (int i = 0; i < 1000; ++i) viele.push_back(fenster(("f" + std::to_string(i)).c_str(), 0, 100 + i % 500, 100000, 50, i));
+    s.setFenster(viele);
+    size_t summe = 0;
+    for (const Decke &d : s.decken()) summe += d.hoehe.size();
+    QVERIFY2(summe <= 500000, qPrintable(QString::number(summe)));
+    QVERIFY(s.decken().size() >= 10); // die ersten bekommen trotzdem eine Decke
+    // wachsen bestehende Decken über das Budget, verlieren die überzähligen ihre Decke
+    std::vector<Fenster> klein;
+    for (int i = 0; i < 1000; ++i) klein.push_back(fenster(("g" + std::to_string(i)).c_str(), 0, 100 + i % 500, 400, 50, i));
+    s.setFenster(klein);
+    for (Fenster &f : klein) f.r.w = 100000;
+    s.setFenster(klein);
+    summe = 0;
+    for (const Decke &d : s.decken()) summe += d.hoehe.size();
+    QVERIFY2(summe <= 500000, qPrintable(QString::number(summe)));
+    laufen(s, 0.2);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

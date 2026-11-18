@@ -35,8 +35,15 @@ struct Antwort {
 // führt einen Befehl im laufenden Programm aus (GUI-Thread); unbekannter Befehl oder falsche Argumente → Unbekannt
 using Befehlsziel = std::function<Antwort(const QString &befehl, const QStringList &argumente)>;
 
-// Text fürs Terminal: Steuerzeichen außer Zeilenumbruch und Tabulator (ESC, BEL, CR, DEL, C1 …) werden zu „?“
+// Text fürs Terminal: Steuerzeichen außer Zeilenumbruch und Tabulator (ESC, BEL, CR, DEL, C1 …), Format-/Bidi-Zeichen
+// (U+202E, U+2066 …) sowie Zeilen-/Absatztrenner (U+2028/2029) werden zu „?“
 QString terminalText(const QString &text);
+
+#ifdef Q_OS_UNIX
+// eigener Ordner <basis>/schneefall-<uid> mit Rechten 0700 (wird angelegt); leer, wenn er nicht sicher ist
+// (kein Ordner, symbolischer Link, anderer Besitzer oder für Gruppe/andere offen)
+QString privaterOrdner(const QString &basis);
+#endif
 
 class Steuerkanal {
 public:
@@ -53,9 +60,11 @@ public:
     QString name() const { return m_name; }
     // Sperrdatei zum Namen (Linux: <socket>.lock, Windows: %LOCALAPPDATA%\Schneefall\<name>.lock)
     static QString sperrPfad(const QString &name);
-    // Name je Benutzer (Linux: $XDG_RUNTIME_DIR/schneefall.sock, Windows: schneefall-<Benutzer-SID>-<Sitzung>)
+    // Name je Benutzer. Linux: $XDG_RUNTIME_DIR/schneefall.sock, ohne Laufzeitordner /tmp/schneefall-<uid>/schneefall.sock
+    // (eigener 0700-Ordner), sonst ~/.schneefall-<Rechner>.sock. Windows: schneefall-<Benutzer-SID>-<Sitzung>, leer
+    // (→ anmelden() meldet Fehler), wenn die SID nicht ermittelbar ist.
     static QString standardName();
-    // Client: Befehl senden und auf die Antwort warten (blockiert höchstens ms). NichtErreicht, wenn keine Instanz läuft.
+    // Client: Befehl senden und auf die Antwort warten (blockiert insgesamt höchstens ms). NichtErreicht, wenn keine Instanz läuft.
     static Antwort senden(const QString &befehl, const QStringList &argumente = {}, const QString &name = standardName(), int ms = 3000);
 
 private:

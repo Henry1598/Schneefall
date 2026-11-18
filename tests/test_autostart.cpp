@@ -19,9 +19,10 @@ private slots:
         QVERIFY(!plattform::autostartAktiv());
     }
     void sonderzeichenWerdenMaskiert() {
-        // Leerzeichen, ", $, \, `, % – erst Quoting-Ebene (\" \$ \\ \`), dann String-Ebene (\ → \\), % → %%
-        QVERIFY(plattform::autostartSetzen(true, QStringLiteral("/home/a b/x\"y$z\\w`q%1")));
-        QCOMPARE(execZeile(), QStringLiteral("Exec=\"/home/a b/x\\\\\"y\\\\$z\\\\\\\\w\\\\`q%%1\""));
+        // Leerzeichen, ", $, ` – erst Quoting-Ebene (\" \$ \`), dann String-Ebene (\ → \\).
+        // Praxistest: so starten gio launch und systemd-xdg-autostart-generator (Plasma) den richtigen Pfad.
+        QVERIFY(plattform::autostartSetzen(true, QStringLiteral("/home/a b/x\"y$z`q")));
+        QCOMPARE(execZeile(), QStringLiteral("Exec=\"/home/a b/x\\\\\"y\\\\$z\\\\`q\""));
     }
     void steuerzeichenWerdenAbgelehnt() {
         plattform::autostartSetzen(false, QString());
@@ -29,6 +30,12 @@ private slots:
         QVERIFY(!plattform::autostartAktiv()); // keine Datei angelegt
         QVERIFY(!plattform::autostartSetzen(true, QStringLiteral("/tmp/x\ty")));
         QVERIFY(!plattform::autostartSetzen(true, QString()));
+        QVERIFY(!plattform::autostartAktiv());
+        // „=“, „%“ und Backslash im Pfad (Nachprüfung R6): abgelehnt – „%“ starten weder gio noch der
+        // systemd-Generator richtig, einen Backslash der systemd-Generator nicht
+        QVERIFY(!plattform::autostartSetzen(true, QStringLiteral("/opt/a=b/schneefall")));
+        QVERIFY(!plattform::autostartSetzen(true, QStringLiteral("/opt/a%1/schneefall")));
+        QVERIFY(!plattform::autostartSetzen(true, QStringLiteral("/opt/a\\b/schneefall")));
         QVERIFY(!plattform::autostartAktiv());
     }
 

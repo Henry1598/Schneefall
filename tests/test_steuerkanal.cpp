@@ -4,7 +4,9 @@
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QElapsedTimer>
+#include <QLocalServer>
 #include <QLocalSocket>
+#include <QTimer>
 #include <QLockFile>
 #include <QProcess>
 #include <QThread>
@@ -172,6 +174,63 @@ private slots:
         const QString roh = QStringLiteral("a\x1b[2Jb\x07" "c\n\td\x7f") + QChar(0x9b) + QStringLiteral("e\r");
         QCOMPARE(plattform::terminalText(roh), QStringLiteral("a?[2Jb?c\n\td??e?"));
         QCOMPARE(plattform::terminalText(QStringLiteral("Schnee ❄ ok\n")), QStringLiteral("Schnee ❄ ok\n"));
+        // Nachprüfung R6: Bidi-Steuerung (U+202E, U+2066), Zeilen-/Absatztrenner (U+2028, U+2029)
+        const QString bidi = QStringLiteral("a") + QChar(0x202e) + QStringLiteral("b") + QChar(0x2066) + QStringLiteral("c") + QChar(0x2028) +
+                             QStringLiteral("d") + QChar(0x2029) + QStringLiteral("e");
+        QCOMPARE(plattform::terminalText(bidi), QStringLiteral("a?b?c?d?e"));
+    }
+    // Nachprüfung R6: die Frist gilt für den ganzen Aufruf, nicht je Lesevorgang (Server tröpfelt Bytes)
+    void tropfenderServerHaeltDenClientNichtFest() {
+        QThread thread;
+        QLocalServer server;
+        QTimer tropfen;
+        QLocalSocket *verbunden = nullptr;
+        QVERIFY(server.listen(name()));
+        server.moveToThread(&thread);
+        tropfen.moveToThread(&thread);
+        QObject::connect(&server, &QLocalServer::newConnection, &server, [&] { verbunden = server.nextPendingConnection(); });
+        QObject::connect(&tropfen, &QTimer::timeout, &server, [&] { if (verbunden) { verbunden->write("x"); verbunden->flush(); } });
+        thread.start();
+        QMetaObject::invokeMethod(&tropfen, [&] { tropfen.start(100); }, Qt::BlockingQueuedConnection);
+        QElapsedTimer uhr;
+        uhr.start();
+        const Antwort a = Steuerkanal::senden(QStringLiteral("Status"), {}, name(), 800);
+        const qint64 dauer = uhr.elapsed();
+        QMetaObject::invokeMethod(&server, [&] { tropfen.stop(); delete verbunden; server.close(); server.moveToThread(qApp->thread()); tropfen.moveToThread(qApp->thread()); }, Qt::BlockingQueuedConnection);
+        thread.quit();
+        thread.wait();
+        QCOMPARE(a.ergebnis, Antwort::Ergebnis::NichtErreicht);
+        QVERIFY2(dauer < 1500, qPrintable(QString::number(dauer)));
+    }
+    // Windows ohne eigene SID (Nachprüfung R6) bzw. allgemein: ohne Namen kein Kanal – Fehler, nicht „läuft schon“
+    void ohneNamenFehler() {
+        Steuerkanal k([](const QString &, const QStringList &) { return Antwort::ok(); }, QString());
+        QCOMPARE(k.anmelden(), Steuerkanal::Anmeldung::Fehler);
+        QCOMPARE(Steuerkanal::senden(QStringLiteral("Status"), {}, QString(), 300).ergebnis, Antwort::Ergebnis::NichtErreicht);
+    }
+    // Nachprüfung R5: ohne Laufzeitordner ein eigener 0700-Ordner unter /tmp, nur wenn er wirklich uns gehört
+    void privaterOrdnerNurWennSicher() {
+#ifndef Q_OS_UNIX
+        QSKIP("nur Unix");
+#else
+        const QString basis = m_dir->path();
+        const QString o = plattform::privaterOrdner(basis);
+        QVERIFY(!o.isEmpty());
+        QVERIFY(o.startsWith(basis));
+        QCOMPARE(QFileInfo(o).permissions() & (QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther),
+                 QFile::Permissions());
+        QCOMPARE(plattform::privaterOrdner(basis), o); // zweiter Aufruf: derselbe Ordner
+        // für andere offen: nicht verwenden
+        QVERIFY(QFile::setPermissions(o, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther));
+        QVERIFY(plattform::privaterOrdner(basis).isEmpty());
+        // symbolischer Link an seiner Stelle: nicht verwenden
+        const QString basis2 = m_dir->filePath(QStringLiteral("zwei"));
+        QVERIFY(QDir().mkpath(basis2 + QStringLiteral("/ziel")));
+        const QString erwartet = QFileInfo(plattform::privaterOrdner(basis2)).fileName();
+        QVERIFY(QDir(plattform::privaterOrdner(basis2)).removeRecursively());
+        QVERIFY(QFile::link(basis2 + QStringLiteral("/ziel"), basis2 + QLatin1Char('/') + erwartet));
+        QVERIFY(plattform::privaterOrdner(basis2).isEmpty());
+#endif
     }
 
     // ---- Sicherheitsprüfung M2/N5: Einzelinstanz über eine Sperrdatei ----

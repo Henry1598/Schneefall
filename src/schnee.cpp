@@ -12,6 +12,8 @@ namespace {
 // Spalten einer Decke: mindestens 1, höchstens MAX_SPALTEN – die Fensterbreite kommt von außen, eine unsinnige
 // Breite (1e18, unendlich, NaN) darf keinen riesigen Speicher anfordern
 constexpr double MAX_SPALTEN = 65536;
+// Spalten über alle Decken zusammen (viele riesige Fenster von außen); weitere Fenster tragen dann keine Decke
+constexpr size_t MAX_SPALTEN_GESAMT = 500000;
 size_t spaltenFuer(double breite, double spaltenBreite) {
     const double n = std::floor(breite / spaltenBreite);
     if (!(n >= 1)) return 1; // auch NaN
@@ -162,17 +164,22 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
     };
     // am oberen Monitorrand (maximiert) oder im Vollbild: keine Decke, sonst blitzt oben ein Streifen hervor
     auto traegt = [this](const Fenster *w) { return w && !w->minimiert && !w->vollbild && w->r.w >= 1 && !ohneDecke(*w); };
+    // Spaltenbudget über alle Decken (Boden und Taskleisten zuerst)
+    size_t budget = MAX_SPALTEN_GESAMT;
+    for (const Decke &d : m_decken)
+        if (d.boden) budget -= std::min(budget, d.hoehe.size());
     // bestehende Decken mitnehmen (Schnee fährt mit dem Fenster) oder bei verschwundenem Fenster abgehen lassen
     for (Decke &d : m_decken) {
         if (d.boden) continue;
         const Fenster *w = finde(d.id);
-        if (!traegt(w)) {
+        const size_t n = traegt(w) ? spaltenFuer(w->r.w, d.spaltenBreite) : 0;
+        if (!traegt(w) || n > budget) {
             verschwinden(d);
             d.hoehe.clear();
             continue;
         }
+        budget -= n;
         const size_t alt = d.hoehe.size();
-        const size_t n = spaltenFuer(w->r.w, d.spaltenBreite);
         const bool rechtsFest = std::abs(w->r.x - d.x) > 0.5 && std::abs(w->r.rechts() - (d.x + d.fensterBreite)) < 0.5;
         if (n != alt && rechtsFest) {
             // Größe an der linken Kante geändert: rechte Kante bleibt, links Spalten weg oder dazu
@@ -200,6 +207,9 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
     // neue Decken
     for (const Fenster &w : m_fenster) {
         if (!traegt(&w) || decke(w.id)) continue;
+        const size_t n = spaltenFuer(w.r.w, m_e.spaltenBreite);
+        if (n > budget) continue;
+        budget -= n;
         Decke d;
         d.id = w.id;
         d.schluessel = schluesselVon(d.id);
@@ -210,7 +220,6 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
         d.geboren = m_zeit;
         d.tLetzt = zeitpunkt;
         d.spaltenBreite = m_e.spaltenBreite;
-        const size_t n = spaltenFuer(w.r.w, m_e.spaltenBreite);
         d.hoehe.assign(n, 0.f);
         d.sichtbar.assign(n, 1);
         m_decken.push_back(std::move(d));

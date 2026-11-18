@@ -47,22 +47,29 @@ qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # dasselbe
 ### Einzelinstanz und Sicherheit der Befehlswege
 
 - Nur eine Instanz je Benutzer: Sie hält die Sperrdatei `$XDG_RUNTIME_DIR/schneefall.sock.lock`
+  (ohne Laufzeitordner: eigener 0700-Ordner `/tmp/schneefall-<uid>/` mit Besitzerprüfung, zuletzt
+  `~/.schneefall-<Rechner>.sock`, damit sich Rechner mit gemeinsamem NFS-Home nicht in die Quere kommen)
   (Windows: `%LOCALAPPDATA%\Schneefall\<Pipe-Name>.lock`). Nach einem Absturz wird die Sperre übernommen,
   sobald der alte Prozess nicht mehr lebt; nur wer sie hält, ersetzt einen verwaisten Socket. Lässt sich
   der Steuerkanal nicht öffnen, meldet der Start einen Fehler (statt „läuft schon“).
 - Steuerkanal: Socket nur für den eigenen Benutzer, je Verbindung ein Befehl, höchstens 2 s und
-  16 Verbindungen gleichzeitig; Anfragen bis 64 KiB, Antworten bis 4 MiB. Zahlen müssen endlich sein
+  16 Verbindungen gleichzeitig; Anfragen bis 64 KiB, Antworten bis 4 MiB; der Client wartet insgesamt
+  höchstens 3 s. Zahlen müssen endlich sein
   (`nan`/`inf` → „unbekannter Befehl“); Würfe werden auf ±5000 px um die Bildschirme und 2600 px/s
   begrenzt, höchstens 64 Bälle fliegen gleichzeitig, jeder höchstens 20 s.
-- Ausgaben von `--status`, `--fensterliste` usw. erscheinen ohne Steuerzeichen (außer Zeilenumbruch/Tab).
+- Ausgaben von `--status`, `--fensterliste` usw. erscheinen ohne Steuerzeichen (außer Zeilenumbruch/Tab),
+  ohne Bidi-/Formatzeichen (z. B. U+202E) und ohne Zeilen-/Absatztrenner.
 - D-Bus `org.schneefall` liegt im Sitzungsbus. **Jeder Prozess der Sitzung** kann ihn aufrufen – und den
   Namen auch vorab belegen, bevor Schneefall startet. Dann gilt Schneefall als „läuft schon“, und das
   KWin-Skript schickt seine Fensterliste an den fremden Prozess. Das ist kein Schutz gegen Programme, die
   ohnehin unter dem eigenen Benutzer laufen; die Fensterliste aus `Fenster(json)` wird deshalb streng
   geprüft (höchstens 1 MiB, 1000 Fenster, id bis 128 Zeichen ohne Steuerzeichen, endliche Zahlen,
-  Lage ±100000 px, Größe bis 100000 px).
-- Autostart: Der Programmpfad steht nach der Desktop-Entry-Spezifikation gequotet in `Exec=`; Pfade mit
-  Steuerzeichen werden abgelehnt (Hinweis im Steuerfenster).
+  Lage ±100000 px, Größe bis 100000 px). Der Kern legt über alle Decken zusammen höchstens 500 000 Spalten
+  an; weitere Fenster tragen dann keinen Schnee.
+- Autostart: Der Programmpfad steht nach der Desktop-Entry-Spezifikation gequotet in `Exec=` (Leerzeichen,
+  `"`, `$`, `` ` `` geprüft mit `gio launch` und `systemd-xdg-autostart-generator`); Pfade mit Steuerzeichen,
+  `=`, `%` oder Backslash werden abgelehnt (Hinweis im Steuerfenster), weil diese Starter sie nicht
+  zuverlässig zurückübersetzen.
 
 ## Steuerfenster
 
