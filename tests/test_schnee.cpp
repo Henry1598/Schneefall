@@ -34,6 +34,7 @@ void laufen(Simulation &s, double sekunden) {
 class TestSchnee : public QObject {
     Q_OBJECT
 private slots:
+    void flockenfreieFlaechenJeFenstermodus();
     void flockeBleibtAufFensterkanteLiegen();
     void verdeckteKanteNimmtKeinenSchneeAuf();
     void deckeIstBegrenztUndRutschtAmRandAb();
@@ -1040,6 +1041,49 @@ void TestSchnee::schnittstellenFuerRaeumdienst() {
     // Profil: Spalten, Höhen und Lage in Weltkoordinaten
     const Decke *d = s.decke("a");
     QVERIFY(d && d->x == 100 && d->y == 300 && d->spaltenBreite == 4 && d->hoehe.size() == 100);
+}
+
+// Flächen, in denen keine Flocke zu sehen sein darf (pixelgenau im Shader ausgeschnitten): Henry sah an
+// Vollbild- und maximierten Fenstern Flockenränder hervorblitzen, weil nur der Mittelpunkt geprüft wurde.
+void TestSchnee::flockenfreieFlaechenJeFenstermodus() {
+    Einstellungen e = ruhig();
+    e.modus = Fenstermodus::Fest;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}, {1000, 200, 800, 600}});
+    Fenster maximiert = fenster("max", 0, 0, 1000, 760, 1);            // Oberkante am oberen Rand von Monitor 1
+    Fenster vollbild = fenster("voll", 1000, 200, 800, 600, 2);        // füllt Monitor 2 (dessen Oberkante bei 200 liegt)
+    vollbild.vollbild = true;
+    Fenster normal = fenster("normal", 200, 300, 400, 300, 3);
+    Fenster mini = fenster("mini", 0, 0, 1000, 760, 4);
+    mini.minimiert = true;
+    Fenster leiste = fenster("leiste", 0, 760, 1000, 40, 5);
+    leiste.dock = true;
+    s.setFenster({maximiert, vollbild, normal, mini, leiste});
+    auto hat = [&](double x, double y, double w, double h) {
+        for (const Rechteck &r : s.flockenfreieFlaechen()) if (r.x == x && r.y == y && r.w == w && r.h == h) return true;
+        return false;
+    };
+    // fest: maximiert und Vollbild, nicht das normale Fenster (dort landen Flocken auf der Decke), nichts Minimiertes
+    QCOMPARE(s.flockenfreieFlaechen().size(), size_t(2));
+    QVERIFY(hat(0, 0, 1000, 760));
+    QVERIFY(hat(1000, 200, 800, 600));
+    // eine Flocke, deren Mittelpunkt knapp über der Oberkante liegt, gilt nach dem Mittelpunkt als sichtbar –
+    // ihr Bild (bis 32 px Radius) ragt aber in die freie Fläche: genau das schneidet der Shader weg
+    Flocke f = flocke(500, -3);
+    f.groesse = 9;
+    QVERIFY(s.flockeZeichnen(f));
+    bool ragtHinein = false;
+    for (const Rechteck &r : s.flockenfreieFlaechen()) ragtHinein |= f.x >= r.x && f.x < r.rechts() && f.y + 20 >= r.y && f.y - 20 < r.unten();
+    QVERIFY(ragtHinein);
+    // dahinter: alle Fenster außer der Taskleiste; davor: keine
+    e.modus = Fenstermodus::Dahinter;
+    s.setEinstellungen(e);
+    QCOMPARE(s.flockenfreieFlaechen().size(), size_t(3));
+    QVERIFY(hat(200, 300, 400, 300));
+    QVERIFY(!hat(0, 760, 1000, 40));
+    e.modus = Fenstermodus::Davor;
+    s.setEinstellungen(e);
+    QVERIFY(s.flockenfreieFlaechen().empty());
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

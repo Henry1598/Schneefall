@@ -207,6 +207,14 @@ Schollen ab – mal früher, mal später. Die Schollen drehen sich im Fallen, zi
 Bröckchen und schlagen mit einer Staubwolke auf; dort bildet sich ein Haufen. Die Schneemenge bleibt dabei
 erhalten.
 
+### Keine Flocken über maximierten und Vollbild-Fenstern
+
+Im Modus „fest“ tragen Fenster am oberen Monitorrand und Vollbildfenster keinen Schnee; Flocken fallen dort
+unsichtbar hindurch. Damit auch kein Flockenrand hervorblitzt (eine Flocke, deren Mittelpunkt knapp über der
+Fensterkante oder auf dem Monitor darüber liegt, ragt mit ihrem bis zu 64 px großen Bild hinein), schneidet
+der Flocken-Shader diese Fensterflächen pixelgenau aus (`Simulation::flockenfreieFlaechen()`, bis zu acht
+Rechtecke je Monitor). Im Modus „dahinter“ gilt das für alle Fenster außer der Taskleiste.
+
 ### Was geräumt wird
 
 Geräumt wird nur, was man sieht – das gilt für die automatische Buchung und für „Jetzt räumen“:

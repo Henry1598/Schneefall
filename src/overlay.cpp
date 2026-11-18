@@ -87,6 +87,24 @@ void main() {
     gl_FragColor = texture2D(atlas, v.xy) * v.z; // Atlas ist vormultipliziert
 }
 )";
+// Fallende Flocken: wie FLOCKEN, aber in bis zu acht Rechtecken (Gerätepixel, Ursprung unten links) wird nichts
+// gezeichnet – pixelgenau, damit am Rand eines maximierten oder Vollbild-Fensters kein Flockenrand hervorblitzt
+const char *FLOCKEN_FREI = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+varying vec3 v;
+uniform sampler2D atlas;
+uniform vec4 frei[8];   // x0, y0, x1, y1
+uniform int freiZahl;
+void main() {
+    for (int i = 0; i < 8; ++i) {
+        if (i >= freiZahl) break;
+        if (gl_FragCoord.x >= frei[i].x && gl_FragCoord.x < frei[i].z && gl_FragCoord.y >= frei[i].y && gl_FragCoord.y < frei[i].w) discard;
+    }
+    gl_FragColor = texture2D(atlas, v.xy) * v.z; // Atlas ist vormultipliziert
+}
+)";
 const char *DECKEN = R"(
 #ifdef GL_ES
 precision highp float;
@@ -160,7 +178,7 @@ Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realist
     m_uhr.start();
     m_naechstes.setSingleShot(true);
     m_naechstes.setTimerType(Qt::PreciseTimer);
-    connect(&m_naechstes, &QTimer::timeout, this, [this] { requestUpdate(); });
+    connect(&m_naechstes, &QTimer::timeout, this, [this] { if (isExposed()) requestUpdate(); });
     connect(this, &QOpenGLWindow::frameSwapped, this, &Overlay::naechstesBild);
     connect(bildschirm, &QScreen::refreshRateChanged, this, [this] { teilerBerechnen(); });
     teilerBerechnen();
@@ -190,7 +208,7 @@ void Overlay::teilerBerechnen() {
 // sich nicht an); wird ein Bild zu spät gezeichnet, richtet ein Frame-Callback-Bild es neu aus.
 void Overlay::naechstesBild() {
     m_tauschNs += qint64((uhrSekunden() - m_zeichnenEnde) * 1e9);
-    if (!isVisible()) return;
+    if (!isVisible() || !isExposed()) return;
     if (m_teiler <= 1 || !m_rasterGueltig) {
         m_perCallback = true;
         requestUpdate();
@@ -258,7 +276,7 @@ void Overlay::initializeGL() {
     initializeOpenGLFunctions();
     m_flockenProg = programm(FLOCKEN);
     m_deckenProg = programm(DECKEN);
-    m_fortProg = programm(FLOCKEN, FORT);
+    m_fortProg = programm(FLOCKEN_FREI, FORT);
     // Instanzen, wenn der Kontext sie kann (sonst vier Ecken je Flocke)
     {
         QOpenGLContext *k = context();
@@ -266,7 +284,7 @@ void Overlay::initializeGL() {
         m_instanzen = k->isOpenGLES() ? v.first >= 3 : (v >= qMakePair(3, 3) || k->hasExtension("GL_ARB_instanced_arrays"));
         if (qEnvironmentVariableIsSet("SCHNEEFALL_OHNE_INSTANZEN")) m_instanzen = false;
         if (m_instanzen) {
-            m_instProg = programm(FLOCKEN, INST);
+            m_instProg = programm(FLOCKEN_FREI, INST);
             if (!m_instProg->isLinked()) m_instanzen = false;
             static const float ecken[8] = {-1, -1, 1, -1, -1, 1, 1, 1};
             m_eckenVbo.create();
@@ -407,6 +425,15 @@ void Overlay::eingabeSetzen(const std::vector<Rechteck> &flaechen) {
     }
 }
 
+// Nach Pause oder Vollbild wird die Ebene neu angelegt. Bis der Compositor sie bestätigt hat (configure), darf
+// kein Bild gezeichnet werden: ein noch ausstehender Bildwunsch aus der Zeit davor hängte sonst zu früh einen
+// Puffer an – KWin beendet das Programm dann mit einem Protokollfehler. Das erste Bild kommt mit dem Freilegen.
+bool Overlay::event(QEvent *e) {
+    if (e->type() == QEvent::UpdateRequest && !isExposed()) return true;
+    if (e->type() == QEvent::Hide) m_naechstes.stop();
+    return QOpenGLWindow::event(e);
+}
+
 void Overlay::mousePressEvent(QMouseEvent *e) {
     if (e->button() != Qt::LeftButton || !mausziel) return;
     m_gedrueckt = true;
@@ -487,8 +514,35 @@ void Overlay::flockenBauen(float bx, float by, float bw, float bh) {
     }
 }
 
+// Flockenfreie Flächen dieses Monitors in Gerätepixeln (höchstens acht, die größten zuerst)
+int flockenfreiFuer(const std::vector<Rechteck> &flaechen, float bx, float by, float bw, float bh, double dpr, float aus[8][4]) {
+    std::vector<Rechteck> hier;
+    for (const Rechteck &r : flaechen) {
+        const double x0 = std::max<double>(r.x, bx), x1 = std::min<double>(r.rechts(), bx + bw), y0 = std::max<double>(r.y, by), y1 = std::min<double>(r.unten(), by + bh);
+        if (x1 > x0 && y1 > y0) hier.push_back({x0, y0, x1 - x0, y1 - y0});
+    }
+    std::sort(hier.begin(), hier.end(), [](const Rechteck &a, const Rechteck &b) { return a.w * a.h > b.w * b.h; });
+    const int n = int(std::min<size_t>(8, hier.size()));
+    for (int i = 0; i < n; ++i) {
+        const Rechteck &r = hier[size_t(i)];
+        // nach außen gerundet: lieber ein Pixel zu viel freihalten als einen Flockenrand zeigen
+        aus[i][0] = float(std::floor((r.x - bx) * dpr));
+        aus[i][2] = float(std::ceil((r.rechts() - bx) * dpr));
+        aus[i][1] = float(std::floor((by + bh - r.unten()) * dpr));
+        aus[i][3] = float(std::ceil((by + bh - r.y) * dpr));
+    }
+    return n;
+}
+
 void Overlay::flockenZeichnen(float bx, float by, float bw, float bh, float h) {
     if (m_flockenZahl == 0) return;
+    float frei[8][4];
+    const int freiZahl = flockenfreiFuer(m_sim->flockenfreieFlaechen(), bx, by, bw, bh, devicePixelRatio(), frei);
+    for (QOpenGLShaderProgram *p : {m_instanzen ? m_instProg : m_fortProg}) {
+        p->bind();
+        p->setUniformValue("freiZahl", freiZahl);
+        if (freiZahl) p->setUniformValueArray("frei", &frei[0][0], freiZahl, 4);
+    }
     if (m_instanzen) {
         QOpenGLExtraFunctions *f = context()->extraFunctions();
         m_instProg->bind();

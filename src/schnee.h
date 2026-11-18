@@ -171,6 +171,11 @@ public:
     const std::vector<Fenster> &fenster() const { return m_fenster; }
     // Oberkante am oberen Rand seines Monitors (maximiert): auch der Räumdienst fährt dort nicht
     bool amOberenRand(const Fenster &w) const;
+    bool durchlaessig(const Fenster &w) const;           // fest: Schnee fällt davor, statt anzustoßen
+    // Flächen, in denen keine fallende Flocke zu sehen sein darf – auch nicht der Rand ihres Bildes, wenn ihr
+    // Mittelpunkt knapp außerhalb liegt. Fest: Fenster am oberen Monitorrand und Vollbild (dort gibt es keine
+    // Schneedecke, auf der eine Flocke landen könnte); dahinter: alle Fenster außer der Taskleiste; davor: keine.
+    std::vector<Rechteck> flockenfreieFlaechen() const;
     double maxHoeheVon(const Decke &d) const { return maxFuer(d); }
 
 private:
@@ -185,7 +190,6 @@ private:
     const Fenster *fensterBei(double x, double y) const; // oberstes Fenster an dieser Stelle (fest)
     bool imSchatten(double x, double y) const;           // in oder senkrecht unter einem Fenster (fest)
     bool ohneDecke(const Fenster &w) const;              // Vollbild oder (fest) am oberen Rand: trägt keinen Schnee
-    bool durchlaessig(const Fenster &w) const;           // fest: Schnee fällt davor, statt anzustoßen
     void festKollision(Flocke &f, double x0, double y0, bool &weg);
     double maxFuer(const Decke &d) const { return d.boden || d.dock ? m_e.bodenMax : m_e.maxHoehe; }
     void sichtbarkeitBerechnen();

@@ -19,6 +19,10 @@
 #include "raeumszene.h"
 #include "schnee.h"
 
+// Flockenfreie Flächen (global logisch) auf den Monitor (bx, by, bw, bh) zugeschnitten, in Gerätepixeln mit Ursprung
+// unten links wie gl_FragCoord: je Fläche x0, y0, x1, y1. Gibt die Anzahl zurück (höchstens acht).
+int flockenfreiFuer(const std::vector<schnee::Rechteck> &flaechen, float bx, float by, float bw, float bh, double dpr, float aus[8][4]);
+
 class Overlay : public QOpenGLWindow, protected QOpenGLFunctions {
 public:
     // realistisch zeigt auf die Einstellung „Flockendetail“ (wird in jedem Bild gelesen)
@@ -49,6 +53,7 @@ public:
 protected:
     void initializeGL() override;
     void paintGL() override;
+    bool event(QEvent *e) override;
     void mousePressEvent(QMouseEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;
     void mouseReleaseEvent(QMouseEvent *e) override;

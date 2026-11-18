@@ -8,6 +8,7 @@
 #include <QTemporaryDir>
 #include "app.h"
 #include "steuerfenster.h"
+#include "overlay.h"
 
 class TestSteuerfenster : public QObject {
     Q_OBJECT
@@ -142,6 +143,31 @@ private slots:
                 && t.contains("taskleiste_raeumen=false\n") && t.contains("schnee_anfassbar=false\n") && t.contains("lautstaerke=70\n") && t.contains("sprueche_max_stufe=5\n")
                 && t.contains("bildrate=30\n");
         }(), 3000);
+    }
+    // Flockenfreie Flächen für den Shader: je Monitor zugeschnitten, in Gerätepixeln, Ursprung unten links
+    void flockenfreieFlaechenInGeraetepixeln() {
+        using schnee::Rechteck;
+        float f[8][4];
+        // Henrys 5K-Monitor: 3413×1440 logisch bei (1080, 1440), Skalierung 1,5
+        const float bx = 1080, by = 1440, bw = 3413, bh = 1440;
+        // maximiertes Fenster über der Taskleiste (56 px hoch)
+        QCOMPARE(flockenfreiFuer({{1080, 1440, 3413, 1384}}, bx, by, bw, bh, 1.5, f), 1);
+        QCOMPARE(f[0][0], 0.f);
+        QCOMPARE(f[0][2], 5120.f);          // 3413 × 1,5 = 5119,5 → nach außen gerundet
+        QCOMPARE(f[0][1], 84.f);            // unten bleiben 56 × 1,5 Pixel frei
+        QCOMPARE(f[0][3], 2160.f);          // bis zur Oberkante des Bildes (1440 × 1,5)
+        // Fenster auf einem anderen Monitor zählt nicht, ein überstehendes wird abgeschnitten
+        QCOMPARE(flockenfreiFuer({{0, 1100, 1080, 664}}, bx, by, bw, bh, 1.5, f), 0);
+        QCOMPARE(flockenfreiFuer({{900, 1300, 400, 300}}, bx, by, bw, bh, 1.0, f), 1);
+        QCOMPARE(f[0][0], 0.f);
+        QCOMPARE(f[0][2], 220.f);
+        QCOMPARE(f[0][3], 1440.f);
+        QCOMPARE(f[0][1], 1280.f);
+        // mehr als acht: die größten zuerst, der Rest entfällt
+        std::vector<Rechteck> viele;
+        for (int i = 0; i < 12; ++i) viele.push_back({1100.0 + i * 50, 1500, 40.0 + i * 10, 100});
+        QCOMPARE(flockenfreiFuer(viele, bx, by, bw, bh, 1.0, f), 8);
+        QCOMPARE(f[0][2] - f[0][0], 150.f);
     }
     void dateiAenderungKommtImFensterAn() {
         App app;

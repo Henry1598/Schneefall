@@ -523,6 +523,16 @@ bool Simulation::ohneDecke(const Fenster &w) const {
     return m_e.modus == Fenstermodus::Fest && !w.dock && !w.minimiert && amOberenRand(w);
 }
 
+std::vector<Rechteck> Simulation::flockenfreieFlaechen() const {
+    std::vector<Rechteck> r;
+    if (m_e.modus == Fenstermodus::Davor) return r;
+    for (const Fenster &w : m_fenster) {
+        if (w.minimiert || w.r.w < 1 || w.r.h < 1) continue;
+        if (m_e.modus == Fenstermodus::Fest ? durchlaessig(w) : !w.dock) r.push_back(w.r);
+    }
+    return r;
+}
+
 bool Simulation::durchlaessig(const Fenster &w) const { return m_e.modus == Fenstermodus::Fest && ohneDecke(w); }
 
 // fest: liegt der Punkt in einem Fenster oder darunter (senkrecht über ihm ein Fenster auf demselben Monitor)?
