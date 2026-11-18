@@ -135,3 +135,13 @@ rm -r ~/Schneefall                                                     # Quellen
   und Schattenrand (CSD) kann der Schnee leicht über der sichtbaren Kante liegen.
 - Vollbild wird am aktiven Fenster erkannt. Ein Vollbildfenster auf einem anderen
   Monitor, das nicht aktiv ist, pausiert den Schnee nicht.
+
+## Geräusche (Teil C)
+
+Alle Geräusche (Hubschrauber, Dieselmotor, Rückfahrwarner, Schnee-Rutsch, Plumps, Schneeball-Wurf/-Treffer, Murren) werden
+zur Laufzeit synthetisiert, es gibt keine Audiodateien. Standard: aus (`ton=aus`, `lautstaerke=50` in `schneefall.conf`);
+Schalter „Geräusche“ und Regler „Lautstärke“ im Steuerfenster. Ist der Ton aus oder lange still, wird das Audiogerät geschlossen.
+
+- `src/klang.{h,cpp}`: Klasse `Klang` mit `ereignis()`, `dauerklang()`, `dauerklangStopp()`.
+- `make klangprobe`, dann `build/klangprobe` (spielt alles kurz ab), `--wav datei.wav`, `--wav-ordner ordner` (offline rendern), `--cpu` (Last messen).
+- Tests: `make test-klang`.

@@ -10,6 +10,8 @@ struct Programmeinstellungen {
     bool an = true;                 // Schnee sichtbar (Pause = false)
     bool vollbildPausieren = true;  // bei aktivem Vollbildfenster ausblenden
     bool realistisch = true;        // Flockendetail: true = Schneekristalle mit Tiefenwirkung, false = einfache weiche Punkte
+    bool ton = false;               // Geräusche (Standard aus)
+    int lautstaerke = 50;           // 0 … 100
 };
 // Wertet den Dateiinhalt aus; unbekannte Schlüssel/kaputte Werte werden ignoriert.
 Programmeinstellungen einstellungenAusText(const std::string &text);

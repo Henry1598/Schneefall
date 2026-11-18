@@ -92,6 +92,8 @@ void App::laden() {
     if (!m_beobachter.files().contains(konfigPfad()) && QFile::exists(konfigPfad())) m_beobachter.addPath(konfigPfad());
     m_sim.setEinstellungen(m_einst.sim);
     m_takt.setInterval(std::max(1, 1000 / m_einst.fps));
+    m_klang.setzeLautstaerke(m_einst.lautstaerke / 100.0);
+    m_klang.setzeAn(m_einst.ton);
     if (m_anAktion) m_anAktion->setChecked(m_einst.an);
     if (m_steuer) m_steuer->ausEinstellungen();
     sichtbarkeitPruefen();
@@ -187,6 +189,11 @@ void App::bildschirmeMelden() {
     // feste Reihenfolge (links oben zuerst), damit "boden:<i>" stabil bleibt
     std::sort(b.begin(), b.end(), [](const Rechteck &a, const Rechteck &c) { return a.x != c.x ? a.x < c.x : a.y < c.y; });
     m_sim.setBildschirme(b);
+    if (!b.empty()) {
+        double l = b.front().x, r = l;
+        for (const Rechteck &q : b) { l = std::min(l, q.x); r = std::max(r, q.rechts()); }
+        m_klang.setzeWeltbreite(l, r);
+    }
 }
 
 void App::sichtbarkeitPruefen() {

@@ -23,7 +23,7 @@ private slots:
         auto *f = findChild();
         QVERIFY(f);
         const auto slider = f->findChildren<QSlider *>();
-        QCOMPARE(slider.size(), 5);
+        QCOMPARE(slider.size(), 6); // 5 Regler + Lautstärke
         // jeden Regler einmal ganz durchziehen
         for (QSlider *s : slider)
             for (int v = s->minimum(); v <= s->maximum(); v += std::max(1, (s->maximum() - s->minimum()) / 7))

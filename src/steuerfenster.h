@@ -24,6 +24,9 @@ private:
     QCheckBox *m_vollbild;
     QCheckBox *m_vorFenstern;
     QCheckBox *m_autostart;
+    QCheckBox *m_ton;
+    QSlider *m_laut;
+    QLabel *m_lautWert;
     QComboBox *m_detail; // Flockendetail: 0 = einfach, 1 = realistisch
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
     QString m_einheiten[5];

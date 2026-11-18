@@ -64,6 +64,19 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
                                         "Einfach: alle Flocken als weiche Punkte."));
     g->addWidget(new QLabel(QStringLiteral("Flockendetail"), this), 5, 0);
     g->addWidget(m_detail, 5, 1, 1, 2);
+    m_ton = new QCheckBox(QStringLiteral("Geräusche"), this);
+    m_ton->setToolTip(QStringLiteral("Hubschrauber, Motoren, Schneebälle … als selbst erzeugte Geräusche (Standard: aus)."));
+    m_laut = new QSlider(Qt::Horizontal, this);
+    m_laut->setRange(0, 100);
+    m_laut->setMinimumWidth(220);
+    m_lautWert = new QLabel(this);
+    m_lautWert->setMinimumWidth(70);
+    m_lautWert->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    g->addWidget(m_ton, 6, 0);
+    g->addWidget(m_laut, 6, 1);
+    g->addWidget(m_lautWert, 6, 2);
+    connect(m_ton, &QCheckBox::toggled, this, [this] { uebernehmen(); });
+    connect(m_laut, &QSlider::valueChanged, this, [this] { uebernehmen(); });
     haupt->addLayout(g);
 
     auto *abschuetteln = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-clear-all")), QStringLiteral("Schnee abschütteln"), this);
@@ -122,6 +135,8 @@ void Steuerfenster::ausEinstellungen() {
     m_vorFenstern->setChecked(p.sim.vorFenstern);
     m_detail->setCurrentIndex(p.realistisch ? 1 : 0);
     m_autostart->setChecked(QFile::exists(autostartPfad()));
+    m_ton->setChecked(p.ton);
+    m_laut->setValue(p.lautstaerke);
     auto setze = [](Regler &r, double wert) { r.slider->setValue(int(std::lround(wert / r.faktor))); };
     setze(m_menge, p.sim.menge);
     setze(m_wind, p.sim.wind);
@@ -140,19 +155,22 @@ void Steuerfenster::uebernehmen() {
         if (i == 1) t = (w < 0 ? QStringLiteral("← ") : w > 0 ? QStringLiteral("→ ") : QString()) + QString::number(std::abs(w)) + m_einheiten[i];
         alle[i]->wert->setText(t);
     }
+    m_lautWert->setText(QString::number(m_laut->value()) + QStringLiteral(" %"));
     if (m_setzt) return;
     Programmeinstellungen p = m_app->einstellungen();
     p.an = m_an->isChecked();
     p.vollbildPausieren = m_vollbild->isChecked();
     p.sim.vorFenstern = m_vorFenstern->isChecked();
     p.realistisch = m_detail->currentIndex() == 1;
+    p.ton = m_ton->isChecked();
+    p.lautstaerke = m_laut->value();
     p.sim.menge = m_menge.slider->value() * m_menge.faktor;
     p.sim.wind = m_wind.slider->value() * m_wind.faktor;
     p.sim.groesse = m_groesse.slider->value() * m_groesse.faktor;
     p.sim.maxHoehe = m_hoehe.slider->value() * m_hoehe.faktor;
     p.sim.fallGeschw = m_fall.slider->value() * m_fall.faktor;
     const Programmeinstellungen &alt = m_app->einstellungen();
-    if (p.an == alt.an && p.realistisch == alt.realistisch && p.vollbildPausieren == alt.vollbildPausieren && p.sim.vorFenstern == alt.sim.vorFenstern && p.sim.menge == alt.sim.menge && p.sim.wind == alt.sim.wind
+    if (p.ton == alt.ton && p.lautstaerke == alt.lautstaerke && p.an == alt.an && p.realistisch == alt.realistisch && p.vollbildPausieren == alt.vollbildPausieren && p.sim.vorFenstern == alt.sim.vorFenstern && p.sim.menge == alt.sim.menge && p.sim.wind == alt.sim.wind
         && p.sim.groesse == alt.sim.groesse && p.sim.maxHoehe == alt.sim.maxHoehe && p.sim.fallGeschw == alt.sim.fallGeschw)
         return;
     m_app->einstellungenAendern(p);

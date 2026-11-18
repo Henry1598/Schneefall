@@ -1,6 +1,7 @@
 #include "einstellungen.h"
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <sstream>
 
 namespace schnee {
@@ -62,6 +63,8 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "an") wahrheit(w, p.an);
         else if (k == "vor_fenstern") wahrheit(w, p.sim.vorFenstern);
         else if (k == "vollbild_pausieren") wahrheit(w, p.vollbildPausieren);
+        else if (k == "ton") wahrheit(w, p.ton);
+        else if (k == "lautstaerke") { double v = p.lautstaerke; setzen(v, w, 0.0, 100.0); p.lautstaerke = int(std::lround(v)); }
         else if (k == "flockendetail") {
             std::transform(w.begin(), w.end(), w.begin(), [](unsigned char c) { return char(std::tolower(c)); });
             if (w == "realistisch") p.realistisch = true;
@@ -93,7 +96,11 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "# bei aktivem Vollbildfenster (Spiele, Videos) pausieren\n"
       << "vollbild_pausieren=" << (p.vollbildPausieren ? "true" : "false") << "\n"
       << "# Flockendetail: realistisch (Schneekristalle, nahe Flocken groß) oder einfach (weiche Punkte)\n"
-      << "flockendetail=" << (p.realistisch ? "realistisch" : "einfach") << "\n";
+      << "flockendetail=" << (p.realistisch ? "realistisch" : "einfach") << "\n"
+      << "# Geräusche (Hubschrauber, Motor, …) an (true) oder aus (false)\n"
+      << "ton=" << (p.ton ? "true" : "false") << "\n"
+      << "# Lautstärke der Geräusche (0 … 100)\n"
+      << "lautstaerke=" << p.lautstaerke << "\n";
     return o.str();
 }
 
