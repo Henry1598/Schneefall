@@ -1,0 +1,8 @@
+#!/bin/bash
+# Schneefall an/aus: läuft es, wird es beendet, sonst gestartet.
+PROG="$HOME/Schneefall/build/schneefall"
+if busctl --user status org.schneefall >/dev/null 2>&1; then
+    exec "$PROG" --beenden
+else
+    setsid -f "$PROG" >/dev/null 2>&1 </dev/null
+fi

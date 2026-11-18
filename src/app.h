@@ -38,7 +38,7 @@ public Q_SLOTS:
     Q_SCRIPTABLE void Umschalten();          // Schnee an/aus (Programm läuft weiter)
     Q_SCRIPTABLE void Abschuetteln();
     Q_SCRIPTABLE QString Status();
-    Q_SCRIPTABLE QString Fensterliste() const { return m_letzteListe; } // Diagnose
+    Q_SCRIPTABLE QString Fensterliste(); // Diagnose: zuletzt vom KWin-Skript empfangene Liste
 
 private:
     void bildschirmHinzu(QScreen *s);

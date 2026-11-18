@@ -54,4 +54,9 @@ kwin-skript:
 clean:
 	rm -rf $(B)
 
-.PHONY: all test kwin-skript clean
+.PHONY: all test kwin-skript install clean
+
+# Befehl schneefall-umschalten und Desktop-Starter für den aktuellen Benutzer
+install: all
+	install -Dm755 skripte/schneefall-umschalten $(HOME)/.local/bin/schneefall-umschalten
+	install -Dm644 skripte/schneefall.desktop $(HOME)/.local/share/applications/schneefall.desktop

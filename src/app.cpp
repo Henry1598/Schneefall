@@ -278,3 +278,5 @@ QString App::Status() {
         .arg(m_laeuft).arg(m_einst.an).arg(m_vollbild).arg(m_sim.flocken().size()).arg(m_fenster.size())
         .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(b.join(QLatin1Char('\n')));
 }
+
+QString App::Fensterliste() { return m_letzteListe; }

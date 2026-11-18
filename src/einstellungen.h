@@ -6,7 +6,7 @@
 namespace schnee {
 struct Programmeinstellungen {
     Einstellungen sim;
-    int fps = 60;
+    int fps = 30;  // 60 kostet etwa doppelt so viel CPU (schneefall + KWin)
     bool an = true;                 // Schnee sichtbar (Pause = false)
     bool vollbildPausieren = true;  // bei aktivem Vollbildfenster ausblenden
 };

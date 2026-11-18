@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Schneefall
+GenericName=Schnee auf dem Bildschirm
+Comment=Schnee fällt über alle Fenster und bleibt auf den Oberkanten liegen (an/aus)
+Exec=/home/henry/.local/bin/schneefall-umschalten
+Icon=weather-snow
+Terminal=false
+Categories=Utility;Amusement;
+Keywords=Schnee;Winter;snow;
+StartupNotify=false
