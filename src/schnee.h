@@ -99,6 +99,8 @@ private:
     std::vector<Decke> m_decken;
     std::vector<Flocke> m_flocken;
     double m_erzeugRest = 0;
+    struct Strecke { double x0, y0, x1, y1; int seite; }; // seite: 0 oben, -1 links, +1 rechts
+    std::vector<Strecke> m_raender;  // Ränder, an denen neue Flocken hereinkommen
 };
 
 } // namespace schnee

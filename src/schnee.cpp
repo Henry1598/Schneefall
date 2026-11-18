@@ -37,7 +37,88 @@ void Simulation::setBildschirme(const std::vector<Rechteck> &b) {
     nachSichtbarkeitZerfallen();
 }
 
-void Simulation::bodenAufbauen() {}
+void Simulation::bodenAufbauen() {
+    m_raender.clear();
+    const double sb = m_e.spaltenBreite;
+    for (size_t i = 0; i < m_bildschirme.size(); ++i) {
+        const Rechteck &b = m_bildschirme[i];
+        Decke d;
+        d.id = "boden:" + std::to_string(i);
+        d.boden = true;
+        d.x = b.x;
+        d.y = b.unten();
+        d.spaltenBreite = sb;
+        size_t n = std::max<size_t>(1, size_t(std::floor(b.w / sb)));
+        d.hoehe.assign(n, 0.f);
+        d.sichtbar.assign(n, 1);
+        m_decken.push_back(std::move(d));
+        // freie Ränder (kein Nachbarmonitor dahinter) in 8-px-Stücken sammeln
+        const double stueck = 8;
+        for (double x = b.x; x < b.rechts(); x += stueck) {
+            double x1 = std::min(x + stueck, b.rechts());
+            if (!aufBildschirm((x + x1) / 2, b.y - 1)) {
+                if (!m_raender.empty() && m_raender.back().seite == 0 && m_raender.back().x1 == x && m_raender.back().y0 == b.y)
+                    m_raender.back().x1 = x1;
+                else
+                    m_raender.push_back({x, b.y, x1, b.y, 0});
+            }
+        }
+        for (int seite : {-1, 1}) {
+            double sx = seite < 0 ? b.x : b.rechts();
+            for (double y = b.y; y < b.unten(); y += stueck) {
+                double y1 = std::min(y + stueck, b.unten());
+                double px = seite < 0 ? sx - 1 : sx + 1;
+                if (!aufBildschirm(px, (y + y1) / 2)) {
+                    if (!m_raender.empty() && m_raender.back().seite == seite && m_raender.back().y1 == y && m_raender.back().x0 == sx)
+                        m_raender.back().y1 = y1;
+                    else
+                        m_raender.push_back({sx, y, sx, y1, seite});
+                }
+            }
+        }
+    }
+}
+
+void Simulation::erzeugen(double dt) {
+    std::uniform_real_distribution<double> u(0, 1);
+    const double dichte = m_e.menge / 10000.0; // Flocken je px²
+    double rate = 0;                            // Flocken je Sekunde
+    std::vector<double> anteil;
+    for (const Strecke &r : m_raender) {
+        double laenge = r.seite == 0 ? r.x1 - r.x0 : r.y1 - r.y0;
+        double fluss = 0;
+        if (r.seite == 0) fluss = m_e.fallGeschw;
+        else if (r.seite * m_e.wind < 0) fluss = std::abs(m_e.wind); // Wind weht von dieser Seite herein
+        anteil.push_back(dichte * fluss * laenge);
+        rate += anteil.back();
+    }
+    if (rate <= 0) return;
+    m_erzeugRest += rate * dt;
+    int anzahl = int(m_erzeugRest);
+    m_erzeugRest -= anzahl;
+    anzahl = std::min(anzahl, 200);
+    for (int k = 0; k < anzahl; ++k) {
+        double wahl = u(m_rng) * rate;
+        size_t i = 0;
+        while (i + 1 < anteil.size() && wahl > anteil[i]) { wahl -= anteil[i]; ++i; }
+        const Strecke &r = m_raender[i];
+        Flocke f = neueFlocke(0, 0);
+        if (r.seite == 0) {
+            f.x = r.x0 + u(m_rng) * (r.x1 - r.x0);
+            f.y = r.y0 - f.groesse;
+        } else {
+            f.x = r.x0 - r.seite * f.groesse;
+            f.y = r.y0 + u(m_rng) * (r.y1 - r.y0);
+        }
+        m_flocken.push_back(f);
+    }
+}
+
+int Simulation::zielAnzahl() const {
+    double flaeche = 0;
+    for (const Rechteck &b : m_bildschirme) flaeche += b.w * b.h;
+    return int(flaeche * m_e.menge / 10000.0);
+}
 
 void Simulation::setFenster(const std::vector<Fenster> &f) {
     m_fenster = f;
@@ -110,7 +191,7 @@ void Simulation::sichtbarkeitBerechnen() {
         for (size_t s = 0; s < d.hoehe.size(); ++s) {
             double cx = d.x + (s + 0.5) * d.spaltenBreite;
             bool sicht = m_bildschirme.empty() || aufBildschirm(cx, d.y - 1);
-            if (d.boden) sicht = m_bildschirme.empty() || aufBildschirm(cx, d.y - 1);
+            if (d.boden) sicht = sicht && !aufBildschirm(cx, d.y + 1); // darunter geht ein Monitor weiter
             for (const Fenster &w : m_fenster) {
                 if (!sicht) break;
                 if (&w == eigen || w.minimiert || w.stapel <= stapel) continue;
@@ -204,12 +285,14 @@ bool Simulation::aufBildschirm(double x, double y) const {
     return false;
 }
 
-void Simulation::schritt(double dt, bool) {
+void Simulation::schritt(double dt, bool erzeugenAn) {
+    if (erzeugenAn) erzeugen(dt);
     std::vector<Flocke> bleiben;
     bleiben.reserve(m_flocken.size());
     for (Flocke f : m_flocken) {
         double y0 = f.y;
-        f.x += f.vx * dt;
+        f.phase += dt * 1.7;
+        f.x += (f.vx + std::cos(f.phase) * f.groesse * 2.5) * dt;
         f.y += f.vy * dt;
         // erste getroffene Decke suchen
         Decke *treffer = nullptr;
@@ -221,7 +304,8 @@ void Simulation::schritt(double dt, bool) {
             size_t s = size_t(rel);
             if (s >= d.hoehe.size() || !d.sichtbar[s]) continue;
             double oben = d.y - d.hoehe[s];
-            if (y0 <= oben && f.y >= oben && oben < trefferOben) {
+            // y0 <= d.y: auch Flocken, in die die Decke hineingewachsen ist, bleiben liegen
+            if (y0 <= d.y && f.y >= oben && oben < trefferOben) {
                 treffer = &d; trefferSpalte = s; trefferOben = oben;
             }
         }
@@ -229,10 +313,20 @@ void Simulation::schritt(double dt, bool) {
             ablegen(*treffer, trefferSpalte, ablageFuer(f.groesse));
             continue;
         }
+        // nur auf Monitorflächen (oder knapp über/neben dem Rand beim Hereinkommen)
+        double rand = f.groesse + 2;
+        if (!aufBildschirm(f.x, f.y) && !aufBildschirm(f.x, f.y + rand) && !aufBildschirm(f.x + rand, f.y) && !aufBildschirm(f.x - rand, f.y))
+            continue;
         bleiben.push_back(f);
     }
     m_flocken.swap(bleiben);
-    for (Decke &d : m_decken) rutschen(d, dt);
+    for (Decke &d : m_decken) {
+        rutschen(d, dt);
+        if (d.boden && m_e.schmelzen > 0) {
+            for (float &h : d.hoehe)
+                if (h > 0) h = std::max(0.f, h - float(m_e.schmelzen * dt * (0.2 + h / m_e.maxHoehe)));
+        }
+    }
 }
 
 const Decke *Simulation::decke(const std::string &id) const {
@@ -257,6 +351,5 @@ double Simulation::gesamtSchnee(const std::string &id) const {
     return s;
 }
 
-int Simulation::zielAnzahl() const { return 0; }
 
 } // namespace schnee

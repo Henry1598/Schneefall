@@ -17,6 +17,12 @@ Fenster fenster(const char *id, double x, double y, double w, double h, int stap
     Fenster f; f.id = id; f.r = {x, y, w, h}; f.stapel = stapel; return f;
 }
 Flocke flocke(double x, double y) { return Flocke{x, y, 0, 60, 3, 0}; }
+// höchste Deckenhöhe in der Umgebung von x (Flocken schaukeln ein paar px seitlich)
+double hoeheUm(const Simulation &s, const char *id, double x, double radius = 8) {
+    double m = 0;
+    for (double t = x - radius; t <= x + radius; t += 1) m = std::max(m, s.hoeheBei(id, t));
+    return m;
+}
 // lässt die Simulation ohne neue Flocken laufen
 void laufen(Simulation &s, double sekunden) {
     for (double t = 0; t < sekunden; t += 1.0 / 60) s.schritt(1.0 / 60, false);
@@ -32,6 +38,9 @@ private slots:
     void deckeZerfaelltBeiVeraenderung_data();
     void deckeZerfaelltBeiVeraenderung();
     void schmalerWerdenWirftUeberstandAb();
+    void bodenSammeltUndSchmilzt();
+    void flockenNurAufMonitorflaechen();
+    void taskleisteTraegtSchneeStattBoden();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -41,7 +50,7 @@ void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
     s.flockeHinzufuegen(flocke(250, 250));
     laufen(s, 2.0);
     QCOMPARE(int(s.flocken().size()), 0);
-    QVERIFY(s.hoeheBei("a", 250) > 0.5);
+    QVERIFY(hoeheUm(s, "a", 250) > 0.5);
     QCOMPARE(s.gesamtSchnee("a"), 1.0);
 }
 
@@ -53,18 +62,18 @@ void TestSchnee::verdeckteKanteNimmtKeinenSchneeAuf() {
     s.flockeHinzufuegen(flocke(300, 270));   // unterhalb von b's Kante, über a's verdeckter Kante
     s.flockeHinzufuegen(flocke(450, 250));   // über a's sichtbarem Teil
     laufen(s, 6.0);
-    QCOMPARE(s.hoeheBei("a", 300), 0.0);
-    QVERIFY(s.hoeheBei("a", 450) > 0.5);
+    QCOMPARE(hoeheUm(s, "a", 300, 80), 0.0);
+    QVERIFY(hoeheUm(s, "a", 450) > 0.5);
     // die andere Flocke fiel durch, statt auf dem verdeckten Teil liegen zu bleiben
     QCOMPARE(s.gesamtSchnee("a"), 1.0);
     // wird b danach nach unten gestapelt, ist die Kante wieder frei
     s.setFenster({fenster("a", 100, 300, 400, 300, 2), fenster("b", 200, 250, 200, 200, 1)});
     s.flockeHinzufuegen(flocke(300, 200));
     laufen(s, 2.0);
-    QVERIFY(s.hoeheBei("b", 300) > 0.5);   // b's Kante bleibt sichtbar (liegt höher)
+    QVERIFY(hoeheUm(s, "b", 300) > 0.5);   // b's Kante bleibt sichtbar (liegt höher)
     s.flockeHinzufuegen(flocke(450, 280));
     laufen(s, 2.0);
-    QVERIFY(s.hoeheBei("a", 450) > 1.5);
+    QVERIFY(hoeheUm(s, "a", 450) > 1.5);
 }
 
 void TestSchnee::deckeIstBegrenztUndRutschtAmRandAb() {
@@ -139,6 +148,54 @@ void TestSchnee::schmalerWerdenWirftUeberstandAb() {
     QCOMPARE(s.gesamtSchnee("a"), 12.0);   // x = 120 … 285
     QVERIFY(s.flocken().size() >= 7);
     for (const Flocke &f : s.flocken()) QVERIFY(f.x >= 295);
+}
+
+void TestSchnee::bodenSammeltUndSchmilzt() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.flockeHinzufuegen(flocke(500, 700));
+    s.flockeHinzufuegen(flocke(504, 700));
+    laufen(s, 3.0);
+    QCOMPARE(int(s.flocken().size()), 0);
+    QVERIFY(hoeheUm(s, "boden:0", 502) > 0.5);
+    laufen(s, 60.0);
+    QCOMPARE(s.gesamtSchnee("boden:0"), 0.0);
+}
+
+void TestSchnee::flockenNurAufMonitorflaechen() {
+    Einstellungen ohneSchmelzen = ruhig();
+    ohneSchmelzen.schmelzen = 0;
+    Simulation s(ohneSchmelzen);
+    // zwei nebeneinander mit Lücke, und ein dritter direkt unter dem ersten
+    s.setBildschirme({{0, 0, 500, 500}, {600, 0, 500, 800}, {0, 500, 500, 500}});
+    s.flockeHinzufuegen(flocke(550, 100));   // in der Lücke
+    s.schritt(1.0 / 60, false);
+    QCOMPARE(int(s.flocken().size()), 0);
+    // fällt vom oberen in den unteren Monitor und landet erst ganz unten
+    s.flockeHinzufuegen(flocke(250, 450));
+    laufen(s, 15.0);
+    QCOMPARE(s.gesamtSchnee("boden:0"), 0.0);
+    QVERIFY(hoeheUm(s, "boden:2", 250) > 0.5);
+    // keine Flocken entstehen über einem Monitor, der unter einem anderen liegt
+    Einstellungen e = ruhig();
+    e.menge = 50;
+    Simulation t(e);
+    t.setBildschirme({{0, 0, 500, 500}, {0, 500, 500, 500}});
+    t.schritt(0.2, true);
+    QVERIFY(!t.flocken().empty());
+    for (const Flocke &f : t.flocken()) QVERIFY(f.y < 30);
+}
+
+void TestSchnee::taskleisteTraegtSchneeStattBoden() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster leiste = fenster("leiste", 0, 760, 1000, 40, 5);
+    leiste.dock = true;
+    s.setFenster({leiste});
+    s.flockeHinzufuegen(flocke(300, 700));
+    laufen(s, 3.0);
+    QVERIFY(hoeheUm(s, "leiste", 300) > 0.5);
+    QCOMPARE(s.gesamtSchnee("boden:0"), 0.0);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)
