@@ -41,6 +41,11 @@ private slots:
     void bodenSammeltUndSchmilzt();
     void flockenNurAufMonitorflaechen();
     void taskleisteTraegtSchneeStattBoden();
+    void abschuettelnLaesstAlleDeckenFallen();
+    void vollbildPausiertNurWennAktiv();
+    void einstellungenLesen();
+    void einstellungenGrenzenUndFehler();
+    void einstellungenRundreise();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -196,6 +201,98 @@ void TestSchnee::taskleisteTraegtSchneeStattBoden() {
     laufen(s, 3.0);
     QVERIFY(hoeheUm(s, "leiste", 300) > 0.5);
     QCOMPARE(s.gesamtSchnee("boden:0"), 0.0);
+}
+
+void TestSchnee::abschuettelnLaesstAlleDeckenFallen() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    for (int i = 0; i < 10; ++i) s.flockeHinzufuegen(flocke(120 + i * 30, 250));
+    laufen(s, 2.0);
+    QCOMPARE(s.gesamtSchnee("a"), 10.0);
+    s.abschuetteln();
+    QCOMPARE(s.gesamtSchnee("a"), 0.0);
+    QVERIFY(s.flocken().size() >= 8);
+    // die Decke selbst bleibt bestehen und sammelt weiter
+    s.flockeHinzufuegen(flocke(250, 200));
+    s.alleFlockenEntfernen();
+    s.flockeHinzufuegen(flocke(250, 200));
+    laufen(s, 3.0);
+    QVERIFY(s.gesamtSchnee("a") >= 1.0);
+}
+
+void TestSchnee::vollbildPausiertNurWennAktiv() {
+    Fenster spiel = fenster("spiel", 0, 0, 1000, 800, 3);
+    spiel.vollbild = true;
+    Fenster editor = fenster("ed", 10, 10, 300, 300, 2);
+    QVERIFY(!vollbildAktiv({spiel, editor}));     // Vollbild, aber nicht aktiv
+    editor.aktiv = true;
+    QVERIFY(!vollbildAktiv({spiel, editor}));
+    editor.aktiv = false;
+    spiel.aktiv = true;
+    QVERIFY(vollbildAktiv({spiel, editor}));
+    spiel.minimiert = true;
+    QVERIFY(!vollbildAktiv({spiel, editor}));
+}
+
+void TestSchnee::einstellungenLesen() {
+    auto p = einstellungenAusText(
+        "# Kommentar\n"
+        "menge = 2.5\n"
+        "wind=-30\n"
+        "flockengroesse=4\n"
+        "max_deckenhoehe=25\n"
+        "fallgeschwindigkeit=60\n"
+        "fps=30\n"
+        "an=false\n"
+        "vollbild_pausieren=nein\n");
+    QCOMPARE(p.sim.menge, 2.5);
+    QCOMPARE(p.sim.wind, -30.0);
+    QCOMPARE(p.sim.groesse, 4.0);
+    QCOMPARE(p.sim.maxHoehe, 25.0);
+    QCOMPARE(p.sim.fallGeschw, 60.0);
+    QCOMPARE(p.fps, 30);
+    QCOMPARE(p.an, false);
+    QCOMPARE(p.vollbildPausieren, false);
+}
+
+void TestSchnee::einstellungenGrenzenUndFehler() {
+    auto p = einstellungenAusText("menge=1000\nwind=abc\nflockengroesse=-5\nunbekannt=1\nfps=1000\nmax_deckenhoehe=0\n");
+    Programmeinstellungen standard;
+    QCOMPARE(p.sim.menge, 10.0);                 // nach oben begrenzt
+    QCOMPARE(p.sim.wind, standard.sim.wind);     // kaputter Wert -> Standard
+    QCOMPARE(p.sim.groesse, 1.0);                // nach unten begrenzt
+    QCOMPARE(p.fps, 120);
+    QCOMPARE(p.sim.maxHoehe, 2.0);
+    QCOMPARE(p.an, true);
+    QCOMPARE(p.vollbildPausieren, true);
+    // leere Datei = Standardwerte
+    auto leer = einstellungenAusText("");
+    QCOMPARE(leer.sim.menge, standard.sim.menge);
+    QCOMPARE(leer.fps, standard.fps);
+}
+
+void TestSchnee::einstellungenRundreise() {
+    Programmeinstellungen p;
+    p.sim.menge = 0.5;
+    p.sim.wind = 12.25;
+    p.sim.groesse = 5;
+    p.sim.maxHoehe = 30;
+    p.sim.fallGeschw = 70;
+    p.fps = 45;
+    p.an = false;
+    p.vollbildPausieren = false;
+    std::string text = einstellungenAlsText(p);
+    QVERIFY(text.find("# ") != std::string::npos);   // mit Erklärungen für Menschen
+    auto q = einstellungenAusText(text);
+    QCOMPARE(q.sim.menge, 0.5);
+    QCOMPARE(q.sim.wind, 12.25);
+    QCOMPARE(q.sim.groesse, 5.0);
+    QCOMPARE(q.sim.maxHoehe, 30.0);
+    QCOMPARE(q.sim.fallGeschw, 70.0);
+    QCOMPARE(q.fps, 45);
+    QCOMPARE(q.an, false);
+    QCOMPARE(q.vollbildPausieren, false);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

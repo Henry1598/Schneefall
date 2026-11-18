@@ -55,6 +55,9 @@ struct Decke {
     double breite() const { return hoehe.size() * spaltenBreite; }
 };
 
+// true, wenn das aktive Fenster im Vollbild ist (Spiel, Video …)
+bool vollbildAktiv(const std::vector<Fenster> &fenster);
+
 class Simulation {
 public:
     explicit Simulation(Einstellungen e = {}, uint32_t saat = 12345);
@@ -78,6 +81,7 @@ public:
     // Zielanzahl fallender Flocken für die aktuelle Bildschirmfläche
     int zielAnzahl() const;
     void alleFlockenEntfernen() { m_flocken.clear(); }
+    void abschuetteln(); // alle Decken zerfallen in Flocken
 
 private:
     void zerfallen(Decke &d, size_t von, size_t bis); // Spalten [von,bis) in Flocken

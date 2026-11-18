@@ -352,4 +352,14 @@ double Simulation::gesamtSchnee(const std::string &id) const {
 }
 
 
+void Simulation::abschuetteln() {
+    for (Decke &d : m_decken) zerfallen(d, 0, d.hoehe.size());
+}
+
+bool vollbildAktiv(const std::vector<Fenster> &fenster) {
+    for (const Fenster &f : fenster)
+        if (f.aktiv && f.vollbild && !f.minimiert) return true;
+    return false;
+}
+
 } // namespace schnee
