@@ -41,6 +41,14 @@ enum class Redeanlass { Treffer, Streik, BeleidigtAbflug, Gruss, HeliTreffer, He
 // Das Programm hängt hier die 1000 Sprüche an (sprueche.h); ohne Quelle gibt es ein paar eingebaute Sätze.
 using Spruchquelle = std::function<std::string(Redner, Redeanlass, int trefferzahl)>;
 
+// Ereignisse für die Statistik (statistik.h): der Räumdienst legt sie ab, das Programm holt sie je Schritt ab
+struct Statistikereignis {
+    enum Art { EinsatzGestartet, EinsatzAbgeschlossen, EinsatzAbgebrochen, SchneeGeraeumt, BallGeworfen, TrefferFahrzeug,
+               TrefferHeli, BallDaneben, Streik, BeleidigterAbflug, Spruch } art = Spruch;
+    bool pflug = false;   // Einsatz-Ereignisse: kleiner Pflug (Taskleiste/Boden) statt Pistenraupe
+    double menge = 0;     // SchneeGeraeumt: abgeworfene Menge (Summe der Spaltenhöhen wie gesamtSchnee())
+};
+
 struct Sprechblase {
     std::string text;         // leer = keine Blase
     double rest = 0;          // s, bis sie verschwindet
@@ -209,6 +217,8 @@ public:
     std::vector<Rechteck> eingabeRechtecke() const;
 
     std::vector<Klangereignis> klaengeAbholen();
+    // Ereignisse für die Statistik seit dem letzten Abholen
+    std::vector<Statistikereignis> statistikAbholen();
     void klaengeAnhalten(); // Pause: alle Dauerklänge stoppen
     // Schnee, den der Räumdienst gerade trägt (Wulst, Abwurfrest, Kleckse, Bälle)
     double getrageneMenge() const;
@@ -229,6 +239,7 @@ private:
     void streikPruefen(Einsatz &e);
     void pulver(double x, double y, double menge, double tempo, double vx0, double vy0, const std::string &rest);
     void staubWolke(double x, double y, int anzahl, double tempo, double groesse, uint8_t art = 0);
+    void zaehlen(Statistikereignis::Art a, bool pflug = false, double menge = 0) { m_statistik.push_back({a, pflug, menge}); }
     void klang(Geraeusch a, double x, double y, double staerke = 1);
     void dauer(const Einsatz &e, int kanal, Geraeusch a, double x, double y, double last);
     // neue Sprechblase (mit Murren); entprellt = nur, wenn die letzte Blase schon eine Weile steht
@@ -250,6 +261,7 @@ private:
     std::vector<Probe> m_proben;
     std::vector<Staub> m_staub;
     std::vector<Klangereignis> m_klaenge;
+    std::vector<Statistikereignis> m_statistik;
     std::vector<int> m_dauerAn, m_dauerNeu; // laufende Dauerklang-IDs
     double m_pruefRest = 0;
     int m_naechsteNr = 1, m_spruchNr = 0;

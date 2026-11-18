@@ -65,6 +65,9 @@ App::App() {
     m_speicherTimer.setSingleShot(true);
     m_speicherTimer.setInterval(400);
     connect(&m_speicherTimer, &QTimer::timeout, this, &App::speichern);
+    m_statistikTimer.setInterval(30000);
+    connect(&m_statistikTimer, &QTimer::timeout, this, [this] { if (m_statistik.geaendert()) m_statistik.speichern(); });
+    m_statistikTimer.start();
     connect(&m_beobachter, &QFileSystemWatcher::fileChanged, this, [this] {
         // von Hand bearbeitet: neu laden (nach atomarem Ersetzen erneut beobachten)
         QTimer::singleShot(200, this, [this] { laden(); });
@@ -73,6 +76,8 @@ App::App() {
 
 App::~App() {
     if (m_speicherTimer.isActive()) speichern();
+    statistikAbholen();
+    m_statistik.speichern();
     qDeleteAll(m_ebenen);
     delete m_steuer;
     delete m_menu;
@@ -170,7 +175,7 @@ void App::starten() {
 
 void App::trayAufbauen() {
     m_tray = new QSystemTrayIcon(flockenSymbol(), this);
-    m_tray->setToolTip(QStringLiteral("Schneefall"));
+    m_tray->setToolTip(m_statistik.kurzText());
     m_menu = new QMenu;
     m_anAktion = m_menu->addAction(QStringLiteral("Schnee an"));
     m_anAktion->setCheckable(true);
@@ -278,6 +283,7 @@ void App::schritt(double jetzt) {
     t.start();
     m_sim.schritt(dt, true);
     m_raeum.schritt(dt);
+    statistikAbholen();
     if (m_raeum.etwasLos()) szeneBauen(m_raeum, m_sim, m_mausUhr.elapsed() / 1000.0, m_szene);
     else m_szene.leeren();
     klaengeWeitergeben();
@@ -392,7 +398,7 @@ QString App::Status() {
         .arg(m_laeuft).arg(m_einst.an).arg(m_vollbild).arg(m_sim.flocken().size()).arg(m_fenster.size())
         .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(takt + b.join(QLatin1Char('\n')))
         .arg(m_raeum.einsaetze().size()).arg(m_raeum.warteschlange().size()).arg(m_raeum.baelle().size() + (m_raeum.ballInHand() ? 1 : 0))
-        .arg(m_raeum.eingabeRechtecke().size()).arg(einsaetze.isEmpty() ? QString() : QLatin1Char('\n') + einsaetze.join(QLatin1Char('\n')));
+        .arg(m_raeum.eingabeRechtecke().size()).arg((einsaetze.isEmpty() ? QString() : QLatin1Char('\n') + einsaetze.join(QLatin1Char('\n'))) + QLatin1Char('\n') + m_statistik.statusZeile());
 }
 
 QString App::Fensterliste() { return m_letzteListe; }
@@ -402,6 +408,23 @@ QString App::Raeumen() { return QString::fromStdString(m_raeum.jetztRaeumen()); 
 void App::Zeitlupe(double faktor) { m_zeitlupe = std::clamp(faktor, 0.02, 1.0); }
 
 void App::Werfen(double x, double y, double vx, double vy, double menge) { m_raeum.werfen(x, y, vx, vy, menge); }
+
+void App::statistikAbholen() {
+    const std::vector<Statistikereignis> e = m_raeum.statistikAbholen();
+    if (e.empty()) return;
+    m_statistik.verbuchen(e);
+    if (m_tray) {
+        const QString t = m_statistik.kurzText();
+        if (m_tray->toolTip() != t) m_tray->setToolTip(t);
+    }
+}
+
+void App::statistikZuruecksetzen() {
+    m_raeum.statistikAbholen();   // noch nicht verbuchte Ereignisse gehören zur alten Zählung
+    m_statistik.zuruecksetzen();
+    m_statistik.speichern();
+    if (m_tray) m_tray->setToolTip(m_statistik.kurzText());
+}
 
 void App::klaengeWeitergeben() {
     static_assert(int(Geraeusch::Rotor) == int(KlangArt::Rotor) && int(Geraeusch::Murren) == int(KlangArt::Murren)

@@ -20,8 +20,12 @@ private:
     Regler regler(const QString &name, int min, int max, double faktor, const QString &einheit, class QGridLayout *g, int zeile,
                   const QString &tipp = QString());
     void uebernehmen();
+    void statistikAnzeigen();     // Werte der Gruppe „Statistik“ auffrischen (1×/s, solange sichtbar)
+    void statistikZuruecksetzen(); // mit Rückfrage
 
     App *m_app;
+    QLabel *m_stat[12] = {};      // Wertefelder der Gruppe „Statistik“
+    QLabel *m_statSeit = nullptr;
     QCheckBox *m_an;
     QCheckBox *m_vollbild;
     QComboBox *m_modus; // Fenstermodus: 0 = fest, 1 = dahinter, 2 = davor

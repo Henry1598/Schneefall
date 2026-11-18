@@ -3,6 +3,8 @@
 #include <QtTest>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSlider>
 #include <QTemporaryDir>
@@ -145,6 +147,31 @@ private slots:
         }(), 3000);
     }
     // Flockenfreie Flächen für den Shader: je Monitor zugeschnitten, in Gerätepixeln, Ursprung unten links
+    void statistikGruppeZeigtWerteUndSetztNachRueckfrageZurueck() {
+        App app;
+        app.starten();
+        app.Steuerfenster();
+        auto *f = findChild();
+        app.statistik().verbuchen({schnee::Statistikereignis::EinsatzAbgeschlossen, false, 0});
+        for (int i = 0; i < 3; ++i) app.statistik().verbuchen({schnee::Statistikereignis::TrefferFahrzeug, false, 0});
+        app.statistik().verbuchen({schnee::Statistikereignis::BallDaneben, false, 0});
+        f->ausEinstellungen();   // frischt auch die Statistik auf (sonst 1×/s)
+        QCOMPARE(f->findChild<QLabel *>("stat_0")->text(), QString::fromUtf8("1×"));
+        QCOMPARE(f->findChild<QLabel *>("stat_5")->text(), QString("3"));   // Treffer Fahrzeug
+        QCOMPARE(f->findChild<QLabel *>("stat_8")->text(), QString("75 %")); // Trefferquote
+        auto *reset = f->findChild<QPushButton *>("statistik_zuruecksetzen");
+        QVERIFY(reset);
+        // „Nein“: nichts passiert
+        QTimer::singleShot(200, [] { if (auto *m = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) m->button(QMessageBox::No)->click(); });
+        reset->click();
+        QCOMPARE(app.statistik().stand().trefferFahrzeug, qint64(3));
+        // „Ja“: alles null
+        QTimer::singleShot(200, [] { if (auto *m = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) m->button(QMessageBox::Yes)->click(); });
+        reset->click();
+        QCOMPARE(app.statistik().stand().trefferFahrzeug, qint64(0));
+        QCOMPARE(f->findChild<QLabel *>("stat_8")->text(), QString::fromUtf8("–"));
+        QVERIFY(app.Status().contains("\nstatistik=geraeumt:0,"));
+    }
     void flockenfreieFlaechenInGeraetepixeln() {
         using schnee::Rechteck;
         float f[8][4];

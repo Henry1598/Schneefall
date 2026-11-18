@@ -253,6 +253,25 @@ bisher. Folge: Ein Klick genau auf einen Schneestreifen (z. B. die untersten Pix
 Taskleiste, wenn dort Schnee liegt) landet bei Schneefall und nicht im Fenster darunter. Stört
 das, „Schnee anfassbar“ abschalten.
 
+## Statistik
+
+Schneefall zählt mit (Linux und Windows gleich, das Modul `src/statistik.{h,cpp}` ist reines Qt Core):
+
+| Zähler | Wann |
+|---|---|
+| Einsätze gestartet / abgeschlossen / abgebrochen (davon Taskleisten-Pflug) | Abgeschlossen = Fahrzeug regulär abgeholt; abgebrochen = Fenster minimiert/geschlossen/verdeckt oder beleidigter Abflug |
+| Geräumt (Schneemenge) | was das Fahrzeug über die Kante schiebt, in Einheiten wie die Schneehöhe (Tooltip am Wert „Geräumt“) |
+| Schneebälle geworfen, Treffer Fahrzeug, Treffer Hubschrauber, daneben | daneben = Ball landet auf einem Fenster oder verlässt den Bildschirm |
+| Trefferquote | Treffer / (Treffer + daneben) in Prozent; Bälle noch in der Luft zählen nicht |
+| Gestreikt, beleidigte Abflüge, Sprüche gesagt | je Ereignis |
+
+Anzeige: Gruppe „Statistik“ im Steuerfenster (live, einmal je Sekunde), Knopf „Statistik zurücksetzen“
+(mit Rückfrage), Tooltip der Schneeflocke im Systemabschnitt („Schneefall – 12× geräumt, 37 Treffer, 3 Streiks“)
+und eine Zeile `statistik=geraeumt:12,gestartet:…` am Ende von `--status`.
+Gespeichert wird in `~/.config/schneefall-statistik.conf` (neben `schneefall.conf`; unter Windows im
+entsprechenden Konfigurationsordner), höchstens alle 30 s und beim Beenden, atomar. Eine fehlende oder
+kaputte Datei ergibt eine Zählung ab null; die Datei löschen setzt die Statistik ebenfalls zurück.
+
 ## Aussehen
 
 - **Räumdienst:** siehe „Fahrzeuge und Wenden“. `src/fahrzeugbild.cpp` baut den Atlas je
@@ -286,6 +305,8 @@ das, „Schnee anfassbar“ abschalten.
 - `src/raeumdienst.{h,cpp}`: Räumdienst und Schneebälle ohne GUI (Einsatz-Zustandsautomat,
   Warteschlange, Seilpendel, Hubschrauber, Fahrzeug, Wulst, Bälle, Treffer und Streik,
   Eingabeflächen, Klangereignisse).
+- `src/statistik.{h,cpp}`: Zähler und Speicherung der Statistik (nur Qt Core); der Räumdienst legt
+  `Statistikereignis`se ab (`statistikAbholen()`), `App` verbucht sie je Schritt.
 - `src/ansicht3d.{h,cpp}`, `src/fahrzeugmodell.{h,cpp}`: 3D-Modelle der Fahrzeuge und ihr Rasterer (ohne Qt).
 - `src/raeumszene.{h,cpp}`: setzt aus dem Zustand das Bild zusammen (Liste von Einzelteilen mit
   Lage, Drehung, Maßstab; Wulst als Decke). Ohne Qt.
