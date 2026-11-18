@@ -1,4 +1,4 @@
-build/
+build*/
 graphify-out/
 *.o
 bau*/
