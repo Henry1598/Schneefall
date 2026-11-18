@@ -41,8 +41,15 @@ $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
 $(B)/test_schnee: tests/test_schnee.cpp $(B)/test_schnee.moc $(B)/schnee.o $(B)/einstellungen.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_schnee.cpp $(B)/schnee.o $(B)/einstellungen.o -o $@ $(TEST_LIBS)
 
-test: $(B)/test_schnee
+$(B)/test_steuerfenster.moc: tests/test_steuerfenster.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o -o $@ $(QT_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+
+test: $(B)/test_schnee $(B)/test_steuerfenster
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_schnee
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerfenster
 	node tests/test_kwin.js
 
 # KWin-Skript installieren/aktualisieren und in kwinrc einschalten (ohne KWin-Neustart)
