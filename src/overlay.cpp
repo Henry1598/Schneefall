@@ -1,5 +1,4 @@
 #include "overlay.h"
-#include <LayerShellQt/Window>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
@@ -148,9 +147,9 @@ const Atlas &atlasFuer(double dpr) {
 } // namespace
 
 Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realistisch, const Szene *szene, const double *fahrzeugGroesse,
-                 const Taktstand *takt)
-    : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate), m_bildschirm(bildschirm), m_sim(sim), m_realistisch(realistisch), m_szene(szene),
-      m_fahrzeugGroesse(fahrzeugGroesse) {
+                 const Taktstand *takt, std::unique_ptr<plattform::Ebene> ebene)
+    : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate), m_ebene(ebene ? std::move(ebene) : plattform::ebeneErzeugen()), m_bildschirm(bildschirm),
+      m_sim(sim), m_realistisch(realistisch), m_szene(szene), m_fahrzeugGroesse(fahrzeugGroesse) {
     m_takt = takt ? takt : &m_eigenerTakt;
     QSurfaceFormat f = format();
     f.setAlphaBufferSize(8);
@@ -160,25 +159,13 @@ Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realist
     f.setDepthBufferSize(0);
     f.setStencilBufferSize(0);
     setFormat(f);
-    setFlags(Qt::FramelessWindowHint | Qt::WindowTransparentForInput | Qt::WindowDoesNotAcceptFocus);
-    setScreen(bildschirm);
-    setTitle(QStringLiteral("Schneefall-Ebene"));
-
-    auto *ls = LayerShellQt::Window::get(this);
-    ls->setLayer(LayerShellQt::Window::LayerOverlay);
-    ls->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorTop | LayerShellQt::Window::AnchorBottom
-                                                  | LayerShellQt::Window::AnchorLeft | LayerShellQt::Window::AnchorRight));
-    ls->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
-    ls->setExclusiveZone(-1);
-    ls->setScope(QStringLiteral("schneefall"));
-    ls->setWantsToBeOnActiveScreen(false);
-    ls->setScreen(bildschirm);
-    ls->setActivateOnShow(false);
+    // Fensterart, Durchklicken, Stapelplatz: Sache der Plattform (Linux: Layer-Shell)
+    m_ebene->einrichten(*this, bildschirm);
     anBildschirmAnpassen();
     m_uhr.start();
     m_naechstes.setSingleShot(true);
     m_naechstes.setTimerType(Qt::PreciseTimer);
-    connect(&m_naechstes, &QTimer::timeout, this, [this] { if (isExposed()) requestUpdate(); });
+    connect(&m_naechstes, &QTimer::timeout, this, [this] { if (isExposed()) m_ebene->bildAnfordern(*this); });
     connect(this, &QOpenGLWindow::frameSwapped, this, &Overlay::naechstesBild);
     connect(bildschirm, &QScreen::refreshRateChanged, this, [this] { teilerBerechnen(); });
     teilerBerechnen();
@@ -211,7 +198,7 @@ void Overlay::naechstesBild() {
     if (!isVisible() || !isExposed()) return;
     if (m_teiler <= 1 || !m_rasterGueltig) {
         m_perCallback = true;
-        requestUpdate();
+        m_ebene->bildAnfordern(*this);
         return;
     }
     m_naechstes.start(std::max(0, int(std::floor((m_raster - uhrSekunden()) * 1000))));
@@ -252,7 +239,9 @@ Overlay::~Overlay() {
     doneCurrent();
 }
 
-void Overlay::anBildschirmAnpassen() { resize(m_bildschirm->geometry().size()); }
+void Overlay::anBildschirmAnpassen() { m_ebene->anBildschirmAnpassen(*this, m_bildschirm); }
+
+void Overlay::zeigen(bool sichtbar) { m_ebene->zeigen(*this, sichtbar); }
 
 QOpenGLShaderProgram *Overlay::programm(const char *fragment, const char *vertex) {
     auto *p = new QOpenGLShaderProgram;
@@ -407,7 +396,7 @@ void Overlay::haufenSammeln(float bx, float by, float bw, float bh, double dpr, 
 }
 
 // Eingaberegion: nur dort nimmt die Ebene die Maus an. Leer = durchsichtig für Eingaben (wie bisher).
-// Reihenfolge wichtig: erst die Maske setzen, dann die Durchlässigkeit aufheben – nie ist die ganze Fläche „dicht“.
+// Wie die Region gesetzt wird, ist Sache der Plattform (m_ebene).
 void Overlay::eingabeSetzen(const std::vector<Rechteck> &flaechen) {
     const QRect g = m_bildschirm->geometry();
     QRegion region;
@@ -417,12 +406,7 @@ void Overlay::eingabeSetzen(const std::vector<Rechteck> &flaechen) {
     }
     if (region == m_eingabe) return;
     m_eingabe = region;
-    if (region.isEmpty()) {
-        setFlag(Qt::WindowTransparentForInput, true);
-    } else {
-        setMask(region);
-        setFlag(Qt::WindowTransparentForInput, false);
-    }
+    m_ebene->eingabeSetzen(*this, region);
 }
 
 // Nach Pause oder Vollbild wird die Ebene neu angelegt. Bis der Compositor sie bestätigt hat (configure), darf

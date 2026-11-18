@@ -1,22 +1,57 @@
 # Schneefall – Build ohne cmake (pkg-config + moc)
+# Plattformweiche: make PLATTFORM=linux (Standard, KDE Plasma/Wayland) oder make PLATTFORM=windows (MSYS2 UCRT64)
+PLATTFORM ?= linux
 CXX      ?= g++
-MOC      ?= /usr/lib/qt6/moc
 CXXFLAGS ?= -O2 -g -Wall -Wextra
-CXXFLAGS += -std=c++20 -fPIC
-QT_CFLAGS := $(shell pkg-config --cflags Qt6Widgets Qt6Gui Qt6OpenGL Qt6DBus)
-QT_LIBS   := $(shell pkg-config --libs Qt6Widgets Qt6Gui Qt6OpenGL Qt6DBus)
-TEST_CFLAGS := $(shell pkg-config --cflags Qt6Test Qt6Core)
-TEST_LIBS   := $(shell pkg-config --libs Qt6Test Qt6Core)
-MM_CFLAGS := $(shell pkg-config --cflags Qt6Multimedia)
-MM_LIBS   := $(shell pkg-config --libs Qt6Multimedia)
+CXXFLAGS += -std=c++20 -fPIC -Isrc
+
+ifeq ($(PLATTFORM),windows)
+EXE        := .exe
+QT_LIBEXEC := $(shell pkg-config --variable=libexecdir Qt6Core)
+MOC        ?= $(QT_LIBEXEC)/moc
+RCC        ?= $(QT_LIBEXEC)/rcc
+QT_MODULE  := Qt6Widgets Qt6Gui Qt6OpenGL Qt6Network
+# kein LayerShellQt, kein QtDBus; Win32-Bibliotheken für das Windows-Backend (Schritt 3)
+LSQ_CFLAGS :=
+LSQ_LIBS   := -lgdi32 -ldwmapi -luser32 -lshell32 -lopengl32
+PLAT_DATEIEN := fensterquelle ebene systemkanal autostart
+PLAT_MOC   :=
+KWIN_TEST  :=
+else ifeq ($(PLATTFORM),linux)
+EXE        :=
+MOC        ?= /usr/lib/qt6/moc
+RCC        ?= /usr/lib/qt6/rcc
+QT_MODULE  := Qt6Widgets Qt6Gui Qt6OpenGL Qt6DBus Qt6Network
 LSQ_CFLAGS := -I/usr/include/LayerShellQt
 LSQ_LIBS   := -lLayerShellQtInterface
+PLAT_DATEIEN := kwinfensterquelle layerebene dbusdienst autostart
+PLAT_MOC   := moc_dbusdienst
+KWIN_TEST  := test_kwinquelle
+else
+$(error PLATTFORM muss linux oder windows sein)
+endif
+
+QT_CFLAGS := $(shell pkg-config --cflags $(QT_MODULE))
+QT_LIBS   := $(shell pkg-config --libs $(QT_MODULE))
+TEST_CFLAGS := $(shell pkg-config --cflags Qt6Test Qt6Core)
+TEST_LIBS   := $(shell pkg-config --libs Qt6Test Qt6Core)
+NET_CFLAGS := $(shell pkg-config --cflags Qt6Network)
+NET_LIBS   := $(shell pkg-config --libs Qt6Network)
+MM_CFLAGS := $(shell pkg-config --cflags Qt6Multimedia)
+MM_LIBS   := $(shell pkg-config --libs Qt6Multimedia)
 
 B ?= build
 SPRUECHE_O := $(B)/sprueche.o $(B)/qrc_sprueche.o
 RAEUM_O := $(B)/raeumdienst.o $(B)/raeumszene.o $(B)/fahrzeugbild.o $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/blasen.o
+# Plattform-Schicht: Schnittstellen in src/plattform/*.h, plattformneutral pfade/steuerkanal, Backend in src/plattform/$(PLATTFORM)/
+PLAT_H := src/plattform/fensterquelle.h src/plattform/ebene.h src/plattform/steuerkanal.h src/plattform/autostart.h src/plattform/pfade.h \
+          $(wildcard src/plattform/$(PLATTFORM)/*.h)
+PLAT_O := $(B)/pfade.o $(B)/steuerkanal.o $(patsubst %,$(B)/pl_%.o,$(PLAT_DATEIEN) $(PLAT_MOC))
+# alles, was die App (ohne main) braucht
+APP_O := $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o \
+         $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O) $(PLAT_O)
 
-all: $(B)/schneefall
+all: $(B)/schneefall$(EXE)
 
 $(B):
 	mkdir -p $(B)
@@ -45,44 +80,84 @@ $(B)/raeumdienst.o: src/raeumdienst.cpp src/raeumdienst.h src/schnee.h src/ansic
 $(B)/klang.o: src/klang.cpp src/klang.h | $(B)
 	$(CXX) $(CXXFLAGS) $(MM_CFLAGS) -c $< -o $@
 
+$(B)/pfade.o: src/plattform/pfade.cpp src/plattform/pfade.h | $(B)
+	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
+
+$(B)/steuerkanal.o: src/plattform/steuerkanal.cpp src/plattform/steuerkanal.h | $(B)
+	$(CXX) $(CXXFLAGS) $(TEST_CFLAGS) $(NET_CFLAGS) -c $< -o $@
+
+$(B)/pl_%.o: src/plattform/$(PLATTFORM)/%.cpp $(PLAT_H) src/schnee.h | $(B)
+	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -c $< -o $@
+
+$(B)/moc_dbusdienst.cpp: src/plattform/linux/dbusdienst.h | $(B)
+	$(MOC) $< -o $@
+
+$(B)/pl_moc_dbusdienst.o: $(B)/moc_dbusdienst.cpp
+	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
+
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h src/sprueche.h src/blasen.h src/fahrzeugmodell.h | $(B)
-	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -c $< -o $@
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h src/sprueche.h src/blasen.h src/fahrzeugmodell.h $(PLAT_H) | $(B)
+	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
-	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -Isrc -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
-$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O)
+$(B)/schneefall$(EXE): $(B)/main.o $(APP_O)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(QT_LIBS) $(MM_LIBS) $(LSQ_LIBS)
 
 $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_schnee: tests/test_schnee.cpp $(B)/test_schnee.moc $(B)/schnee.o $(B)/einstellungen.o
+$(B)/test_schnee$(EXE): tests/test_schnee.cpp $(B)/test_schnee.moc $(B)/schnee.o $(B)/einstellungen.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_schnee.cpp $(B)/schnee.o $(B)/einstellungen.o -o $@ $(TEST_LIBS)
 
 $(B)/test_bild.moc: tests/test_bild.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_bild: tests/test_bild.cpp $(B)/test_bild.moc src/kristall.h src/deckenform.h src/flockenbild.h $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o
+$(B)/test_bild$(EXE): tests/test_bild.cpp $(B)/test_bild.moc src/kristall.h src/deckenform.h src/flockenbild.h $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_bild.cpp $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
 $(B)/test_bildtakt.moc: tests/test_bildtakt.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_bildtakt: tests/test_bildtakt.cpp $(B)/test_bildtakt.moc src/bildtakt.h src/flockenbild.h $(B)/bildtakt.o $(B)/flockenbild.o $(B)/einstellungen.o $(B)/schnee.o
+$(B)/test_bildtakt$(EXE): tests/test_bildtakt.cpp $(B)/test_bildtakt.moc src/bildtakt.h src/flockenbild.h $(B)/bildtakt.o $(B)/flockenbild.o $(B)/einstellungen.o $(B)/schnee.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_bildtakt.cpp $(B)/bildtakt.o $(B)/flockenbild.o $(B)/einstellungen.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
-test-bildtakt: $(B)/test_bildtakt
+test-bildtakt: $(B)/test_bildtakt$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_bildtakt
 
 $(B)/test_steuerfenster.moc: tests/test_steuerfenster.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+$(B)/test_steuerfenster$(EXE): tests/test_steuerfenster.cpp tests/fakefensterquelle.h $(B)/test_steuerfenster.moc $(APP_O)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_steuerfenster.cpp $(APP_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+
+# ---- Plattform-Schicht ----
+$(B)/test_app.moc: tests/test_app.cpp | $(B)
+	$(MOC) $< -o $@
+
+# App mit nachgebildeter Fensterquelle (unabhängig vom Backend)
+$(B)/test_app$(EXE): tests/test_app.cpp tests/fakefensterquelle.h $(B)/test_app.moc $(APP_O)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_app.cpp $(APP_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+
+$(B)/test_steuerkanal.moc: tests/test_steuerkanal.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_steuerkanal$(EXE): tests/test_steuerkanal.cpp $(B)/test_steuerkanal.moc $(B)/steuerkanal.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(NET_CFLAGS) -I$(B) tests/test_steuerkanal.cpp $(B)/steuerkanal.o -o $@ $(NET_LIBS) $(TEST_LIBS)
+
+$(B)/test_kwinquelle.moc: tests/test_kwinquelle.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_kwinquelle: tests/test_kwinquelle.cpp $(B)/test_kwinquelle.moc $(B)/pl_kwinfensterquelle.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_kwinquelle.cpp $(B)/pl_kwinfensterquelle.o -o $@ $(TEST_LIBS)
+
+test-plattform: $(B)/test_steuerkanal$(EXE) $(B)/test_app$(EXE) $(if $(KWIN_TEST),$(B)/$(KWIN_TEST))
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerkanal$(EXE)
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_app$(EXE)
+	$(if $(KWIN_TEST),QT_QPA_PLATFORM=offscreen ./$(B)/$(KWIN_TEST))
 
 # ---- Räumdienst (Teil B) ----
 $(B)/ansicht3d.o: src/ansicht3d.cpp src/ansicht3d.h | $(B)
@@ -100,30 +175,30 @@ $(B)/raeumszene.o: src/raeumszene.cpp src/raeumszene.h src/raeumdienst.h src/sch
 $(B)/fahrzeugbild.o: src/fahrzeugbild.cpp src/fahrzeugbild.h src/raeumszene.h src/raeumdienst.h src/schnee.h src/ansicht3d.h src/fahrzeugmodell.h | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
-$(B)/szenenprobe: tools/szenenprobe.cpp $(RAEUM_O) $(B)/schnee.o $(SPRUECHE_O)
+$(B)/szenenprobe$(EXE): tools/szenenprobe.cpp $(RAEUM_O) $(B)/schnee.o $(SPRUECHE_O)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) -Isrc tools/szenenprobe.cpp $(RAEUM_O) $(B)/schnee.o $(SPRUECHE_O) -o $@ $(QT_LIBS)
 
-szenenprobe: $(B)/szenenprobe
+szenenprobe: $(B)/szenenprobe$(EXE)
 
 $(B)/test_raeumdienst.moc: tests/test_raeumdienst.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_raeumdienst: tests/test_raeumdienst.cpp $(B)/test_raeumdienst.moc $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o $(SPRUECHE_O)
+$(B)/test_raeumdienst$(EXE): tests/test_raeumdienst.cpp $(B)/test_raeumdienst.moc $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o $(SPRUECHE_O)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_raeumdienst.cpp $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o $(SPRUECHE_O) -o $@ $(TEST_LIBS)
 
 $(B)/test_ansicht.moc: tests/test_ansicht.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_ansicht: tests/test_ansicht.cpp $(B)/test_ansicht.moc $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/raeumszene.o $(B)/raeumdienst.o $(B)/schnee.o
+$(B)/test_ansicht$(EXE): tests/test_ansicht.cpp $(B)/test_ansicht.moc $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/raeumszene.o $(B)/raeumdienst.o $(B)/schnee.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_ansicht.cpp $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/raeumszene.o $(B)/raeumdienst.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
 $(B)/test_blasen.moc: tests/test_blasen.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_blasen: tests/test_blasen.cpp $(B)/test_blasen.moc $(B)/blasen.o
+$(B)/test_blasen$(EXE): tests/test_blasen.cpp $(B)/test_blasen.moc $(B)/blasen.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_blasen.cpp $(B)/blasen.o -o $@ $(QT_LIBS) $(TEST_LIBS)
 
-test-raeumdienst: $(B)/test_raeumdienst $(B)/test_ansicht $(B)/test_blasen
+test-raeumdienst: $(B)/test_raeumdienst$(EXE) $(B)/test_ansicht$(EXE) $(B)/test_blasen$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_ansicht
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_blasen
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_raeumdienst
@@ -132,28 +207,24 @@ test-raeumdienst: $(B)/test_raeumdienst $(B)/test_ansicht $(B)/test_blasen
 $(B)/test_klang.moc: tests/test_klang.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_klang: tests/test_klang.cpp $(B)/test_klang.moc $(B)/klang.o $(B)/einstellungen.o $(B)/schnee.o
+$(B)/test_klang$(EXE): tests/test_klang.cpp $(B)/test_klang.moc $(B)/klang.o $(B)/einstellungen.o $(B)/schnee.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(MM_CFLAGS) -Isrc -I$(B) tests/test_klang.cpp $(B)/klang.o $(B)/einstellungen.o $(B)/schnee.o -o $@ $(TEST_LIBS) $(MM_LIBS)
 
-$(B)/klangprobe: tools/klangprobe.cpp $(B)/klang.o
+$(B)/klangprobe$(EXE): tools/klangprobe.cpp $(B)/klang.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(MM_CFLAGS) -Isrc tools/klangprobe.cpp $(B)/klang.o -o $@ $(MM_LIBS)
 
-klangprobe: $(B)/klangprobe
+klangprobe: $(B)/klangprobe$(EXE)
 
-test-klang: $(B)/test_klang
+test-klang: $(B)/test_klang$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 
-test: $(B)/test_klang $(B)/test_ansicht $(B)/test_blasen $(B)/test_raeumdienst $(B)/test_schnee $(B)/test_bild $(B)/test_bildtakt $(B)/test_steuerfenster $(B)/test_sprueche
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_ansicht
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_blasen
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_raeumdienst
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_schnee
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_bild
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_bildtakt
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerfenster
-	QT_QPA_PLATFORM=offscreen ./$(B)/test_sprueche
+TESTS := test_klang test_ansicht test_blasen test_raeumdienst test_schnee test_bild test_bildtakt test_steuerfenster test_sprueche \
+         test_steuerkanal test_app
+test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(if $(KWIN_TEST),$(B)/$(KWIN_TEST))
+	@set -e; for t in $(TESTS) $(KWIN_TEST); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
+ifeq ($(PLATTFORM),linux)
 	node tests/test_kwin.js
+endif
 
 # KWin-Skript installieren/aktualisieren und in kwinrc einschalten (ohne KWin-Neustart)
 kwin-skript:
@@ -164,7 +235,7 @@ kwin-skript:
 clean:
 	rm -rf $(B)
 
-.PHONY: test-sprueche test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
+.PHONY: test-plattform test-sprueche test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
 
 # Befehl schneefall-umschalten und Desktop-Starter für den aktuellen Benutzer
 install: all
@@ -172,7 +243,6 @@ install: all
 	install -Dm644 skripte/schneefall.desktop $(HOME)/.local/share/applications/schneefall.desktop
 
 # ---- Sprüche (Fahrer und Pilot) ----
-RCC ?= /usr/lib/qt6/rcc
 
 $(B)/sprueche.o: src/sprueche.cpp src/sprueche.h | $(B)
 	$(CXX) $(CXXFLAGS) $(TEST_CFLAGS) -c $< -o $@
@@ -186,8 +256,8 @@ $(B)/qrc_sprueche.o: $(B)/qrc_sprueche.cpp
 $(B)/test_sprueche.moc: tests/test_sprueche.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_sprueche: tests/test_sprueche.cpp $(B)/test_sprueche.moc $(B)/sprueche.o $(B)/qrc_sprueche.o $(B)/einstellungen.o $(B)/schnee.o daten/sprueche.tsv
+$(B)/test_sprueche$(EXE): tests/test_sprueche.cpp $(B)/test_sprueche.moc $(B)/sprueche.o $(B)/qrc_sprueche.o $(B)/einstellungen.o $(B)/schnee.o daten/sprueche.tsv
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -DSPRUECHE_TSV='"$(CURDIR)/daten/sprueche.tsv"' -Isrc -I$(B) tests/test_sprueche.cpp $(B)/sprueche.o $(B)/qrc_sprueche.o $(B)/einstellungen.o $(B)/schnee.o -o $@ $(TEST_LIBS)
 
-test-sprueche: $(B)/test_sprueche
+test-sprueche: $(B)/test_sprueche$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_sprueche

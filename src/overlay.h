@@ -1,4 +1,4 @@
-// Durchsichtige Layer-Shell-Ebene über einem Monitor, zeichnet Flocken und Decken.
+// Durchsichtige Ebene über einem Monitor (Fensterart je Plattform: plattform/ebene.h), zeichnet Flocken und Decken.
 // Flocken sind Sprites aus einem einmal gerasterten Atlas (kristall.h), passend zur
 // Skalierung des Monitors; die Decken bekommen ihre Schattierung im Shader.
 #pragma once
@@ -10,6 +10,7 @@
 #include <QRegion>
 #include <QTimer>
 #include <functional>
+#include <memory>
 #include <vector>
 #include "bildtakt.h"
 #include "deckenform.h"
@@ -18,6 +19,7 @@
 #include "fahrzeugbild.h"
 #include "raeumszene.h"
 #include "schnee.h"
+#include "plattform/ebene.h"
 
 // Flockenfreie Flächen (global logisch) auf den Monitor (bx, by, bw, bh) zugeschnitten, in Gerätepixeln mit Ursprung
 // unten links wie gl_FragCoord: je Fläche x0, y0, x1, y1. Gibt die Anzahl zurück (höchstens acht).
@@ -28,7 +30,10 @@ public:
     // realistisch zeigt auf die Einstellung „Flockendetail“ (wird in jedem Bild gelesen)
     // szene: Räumdienst-Bild (wird von der App je Takt gefüllt); fahrzeugGroesse zeigt auf die Einstellung
     Overlay(QScreen *bildschirm, const schnee::Simulation *sim, const bool *realistisch, const schnee::Szene *szene = nullptr,
-            const double *fahrzeugGroesse = nullptr, const schnee::Taktstand *takt = nullptr);
+            const double *fahrzeugGroesse = nullptr, const schnee::Taktstand *takt = nullptr,
+            std::unique_ptr<plattform::Ebene> ebene = nullptr); // ebene: nullptr = die der Plattform
+    // Sichtbarkeit über die Plattform (Pause, Vollbild)
+    void zeigen(bool sichtbar);
     ~Overlay() override;
     QScreen *bildschirm() const { return m_bildschirm; }
     void anBildschirmAnpassen();
@@ -59,6 +64,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *e) override;
 
 private:
+    std::unique_ptr<plattform::Ebene> m_ebene; // Plattform-Teil: Fensterart, Eingabefläche, Takt
     void naechstesBild();
     void rasterNachfuehren(double jetzt);
     void teilerBerechnen();

@@ -1,5 +1,5 @@
-// Schneefall-Hauptobjekt: Simulation, Ebenen je Monitor, D-Bus-Dienst org.schneefall,
-// Symbol im Systemabschnitt und Steuerfenster.
+// Schneefall-Hauptobjekt: Simulation, Ebenen je Monitor, Steuerkanal (Befehle, Einzelinstanz),
+// Symbol im Systemabschnitt und Steuerfenster. Alles Plattformspezifische steckt in plattform/.
 #pragma once
 #include <QElapsedTimer>
 #include <QFileSystemWatcher>
@@ -7,12 +7,15 @@
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
+#include <memory>
 #include "bildtakt.h"
 #include "einstellungen.h"
 #include "klang.h"
 #include "raeumdienst.h"
 #include "raeumszene.h"
 #include "schnee.h"
+#include "plattform/fensterquelle.h"
+#include "plattform/steuerkanal.h"
 
 class Overlay;
 class QScreen;
@@ -23,12 +26,15 @@ class Steuerfenster;
 
 class App : public QObject {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "org.schneefall")
 public:
-    App();
+    // quelle: woher die Fensterliste kommt; nullptr = die der Plattform (Linux: KWin-Skript über D-Bus)
+    explicit App(std::unique_ptr<plattform::Fensterquelle> quelle = nullptr);
     ~App() override;
-    // registriert den D-Bus-Dienst; false, wenn schon eine Instanz läuft
+    // meldet Steuerkanal und Systemkanal (Linux: D-Bus org.schneefall) an; false, wenn schon eine Instanz läuft
     bool dienstAnmelden();
+    // ein Befehl aus Steuer- oder Systemkanal: Steuerfenster, Beenden, Umschalten, Abschuetteln, Status, Fensterliste,
+    // Raeumen, Werfen x y vx vy menge, Zeitlupe faktor
+    plattform::Antwort befehl(const QString &name, const QStringList &argumente);
     void starten();
 
     const schnee::Programmeinstellungen &einstellungen() const { return m_einst; }
@@ -37,20 +43,20 @@ public:
     Klang &klang() { return m_klang; } // Geräusche (Teil B ruft ereignis()/dauerklang() hier auf)
 
 public Q_SLOTS:
-    Q_SCRIPTABLE void Fenster(const QString &json);
-    Q_SCRIPTABLE void Steuerfenster();
-    Q_SCRIPTABLE void Beenden();
-    Q_SCRIPTABLE void Umschalten();          // Schnee an/aus (Programm läuft weiter)
-    Q_SCRIPTABLE void Abschuetteln();
-    Q_SCRIPTABLE QString Status();
-    Q_SCRIPTABLE QString Fensterliste(); // Diagnose: zuletzt vom KWin-Skript empfangene Liste
-    Q_SCRIPTABLE QString Raeumen();      // „Jetzt räumen“: Einsatz am Fenster mit dem meisten Schnee, gibt dessen ID zurück
+    void Steuerfenster();
+    void Beenden();
+    void Umschalten();          // Schnee an/aus (Programm läuft weiter)
+    void Abschuetteln();
+    QString Status();
+    QString Fensterliste(); // Diagnose: zuletzt von der Fensterquelle empfangene Liste (Rohdaten)
+    QString Raeumen();      // „Jetzt räumen“: Einsatz am Fenster mit dem meisten Schnee, gibt dessen ID zurück
     // wirft einen Schneeball (globale Koordinaten, px/s, Menge bis 220) – zum Spielen und Testen ohne Maus
-    Q_SCRIPTABLE void Werfen(double x, double y, double vx, double vy, double menge);
+    void Werfen(double x, double y, double vx, double vy, double menge);
     // Zeitlupe zum Begutachten schneller Abläufe (z. B. der Wende): 0.2 = fünfmal langsamer, 1 = normal
-    Q_SCRIPTABLE void Zeitlupe(double faktor);
+    void Zeitlupe(double faktor);
 
 private:
+    void fensterSetzen(std::vector<schnee::Fenster> liste); // neue Liste von der Fensterquelle
     void bildschirmHinzu(QScreen *s);
     void bildschirmWeg(QScreen *s);
     void bildschirmeMelden();
@@ -81,7 +87,9 @@ private:
     double m_statusUhr = 0;
     double m_zeitlupe = 1.0;
     std::vector<schnee::Fenster> m_fenster;
-    QString m_letzteListe;
+    std::unique_ptr<plattform::Fensterquelle> m_quelle;
+    std::unique_ptr<plattform::Systemkanal> m_systemkanal;
+    std::unique_ptr<plattform::Steuerkanal> m_steuerkanal;
     QHash<QScreen *, Overlay *> m_ebenen;
     QTimer m_takt;                 // Wächter (alle 100 ms), der eigentliche Takt kommt aus den Ebenen
     QTimer m_speicherTimer;

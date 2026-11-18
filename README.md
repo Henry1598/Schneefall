@@ -38,7 +38,10 @@ Befehle für die Konsole:
 ~/Schneefall/build/schneefall --umschalten  # Schnee an/aus (Programm läuft weiter)
 ~/Schneefall/build/schneefall --raeumen     # „Jetzt räumen“: Einsatz am Fenster mit dem meisten Schnee
 ~/Schneefall/build/schneefall --beenden
-qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # Schneeball: x y vx vy Menge
+~/Schneefall/build/schneefall --abschuetteln
+~/Schneefall/build/schneefall --werfen 2000 500 400 -300 150   # Schneeball: x y vx vy Menge
+~/Schneefall/build/schneefall --zeitlupe 0.2                   # Zeitlupe (1 = normal)
+qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # dasselbe über D-Bus
 ```
 
 ## Steuerfenster
@@ -290,12 +293,23 @@ das, „Schnee anfassbar“ abschalten.
 - `src/raeumszene.{h,cpp}`: setzt aus dem Zustand das Bild zusammen (Liste von Einzelteilen mit
   Lage, Drehung, Maßstab; Wulst als Decke). Ohne Qt.
 - `src/fahrzeugbild.{h,cpp}`: baut den Fahrzeug-Atlas (3D-Ansichten, dazu Rotor, Lichter, Sprechblasen mit QPainter).
-- `src/overlay.{h,cpp}`: eine durchsichtige Layer-Shell-Ebene (Overlay) je Monitor.
+- `src/overlay.{h,cpp}`: eine durchsichtige Ebene (Overlay) je Monitor, plattformneutral gezeichnet;
+  Fensterart, Eingaberegion und Takt kommen aus `plattform::Ebene` (Linux: Layer-Shell).
   Sie hat keine Tastatur; die Eingaberegion ist leer oder umfasst nur anfassbaren Schnee und
   Fahrzeuge, alle anderen Klicks gehen durch.
   Gezeichnet wird mit OpenGL in voller Gerätepixel-Auflösung (scharf bei 1,5×).
 - `src/bildtakt.{h,cpp}`: Bildzeiten-Messung, Teiler für die Obergrenze, gemeinsamer Taktstand (ohne Qt).
-- `src/app.{h,cpp}`: D-Bus-Dienst `org.schneefall` (Sitzungsbus), Monitore, Takt, Systemabschnitt.
+- `src/app.{h,cpp}`: Befehle (`App::befehl`), Monitore, Takt, Systemabschnitt; Fenster kommen aus einer
+  `plattform::Fensterquelle`.
+- `src/plattform/`: Plattform-Schicht (für die Windows-Version). Schnittstellen:
+  - `fensterquelle.h` – Fensterliste (Linux: `linux/kwinfensterquelle` – das KWin-Skript über D-Bus),
+  - `ebene.h` – Overlay-Fenster je Monitor (Linux: `linux/layerebene.cpp` – LayerShellQt),
+  - `steuerkanal.{h,cpp}` – Einzelinstanz und Befehle, plattformneutral über `QLocalServer`
+    (Linux: `$XDG_RUNTIME_DIR/schneefall.sock`, Windows: benannte Pipe je Benutzer); dazu der Systemkanal
+    (Linux: `linux/dbusdienst` – D-Bus `org.schneefall` wie bisher, das KWin-Skript braucht ihn),
+  - `autostart.h` – Linux `.desktop`, Windows Registry `HKCU\…\Run`,
+  - `pfade.{h,cpp}` – Ablage der Einstellungen (Linux `~/.config/schneefall.conf`, Windows `%APPDATA%\Schneefall\`).
+  - `windows/`: Windows-Backend (noch Platzhalter, folgt).
 - `src/steuerfenster.{h,cpp}`: Steuerfenster.
 - `kwin/`: KWin-Skript `schneefall-fenster`. Es meldet bei jeder Änderung (höchstens alle 15 ms,
   auch während des Ziehens, und alle 2 s) alle Fenster mit Position, Stapelplatz, minimiert,
@@ -324,7 +338,8 @@ cmake wird nicht gebraucht, es reicht ein Makefile mit pkg-config.
 
 ```
 cd ~/Schneefall
-~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen
+~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen (PLATTFORM=linux ist Standard; PLATTFORM=windows für MSYS2)
+~/.local/bin/testlauf 3G 300 make test-plattform    # nur Steuerkanal, App mit nachgebildeter Fensterquelle, KWin-Liste
 ~/.local/bin/testlauf 4G 300 make test         # QtTest: Klang, Räumdienst, Kern, Aussehen, Bildtakt, Steuerfenster + Test des KWin-Skripts (node)
 ~/.local/bin/testlauf 3G 300 make test-bildtakt # nur Bildzeiten, Teiler, Fortschreiben der Flocken, Bildrate
 ~/.local/bin/testlauf 4G 300 make test-raeumdienst   # nur Räumdienst, Schneebälle und 3D-Ansicht

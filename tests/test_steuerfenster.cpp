@@ -9,6 +9,8 @@
 #include "app.h"
 #include "steuerfenster.h"
 #include "overlay.h"
+#include "fakefensterquelle.h"
+#include "plattform/autostart.h"
 
 class TestSteuerfenster : public QObject {
     Q_OBJECT
@@ -121,11 +123,15 @@ private slots:
         haken("Schnee an")->click();
         QCOMPARE(app.einstellungen().an, false);
         haken("Schnee an")->click();
-        // Autostart legt genau eine Datei an und entfernt sie wieder
+        // Autostart legt genau einen Eintrag an und entfernt ihn wieder (Linux: eine .desktop-Datei)
         const QString auto_ = m_dir.path() + "/autostart/schneefall.desktop";
         haken("Mit dem System starten")->click();
+        QVERIFY(plattform::autostartAktiv());
+#ifdef Q_OS_LINUX
         QVERIFY(QFile::exists(auto_));
+#endif
         haken("Mit dem System starten")->click();
+        QVERIFY(!plattform::autostartAktiv());
         QVERIFY(!QFile::exists(auto_));
         // Abschütteln-Knopf
         for (QPushButton *b : f->findChildren<QPushButton *>())
@@ -170,14 +176,16 @@ private slots:
         QCOMPARE(f[0][2] - f[0][0], 150.f);
     }
     void dateiAenderungKommtImFensterAn() {
-        App app;
+        auto quelle = std::make_unique<FakeFensterquelle>();
+        FakeFensterquelle *q = quelle.get();
+        App app(std::move(quelle));
         app.starten();   // wie im echten Programm: Datei laden, beobachten, Ebenen, Systemabschnitt
         app.Steuerfenster();
         QFile d(App::konfigPfad());
         QVERIFY(d.open(QIODevice::WriteOnly | QIODevice::Truncate));
         d.write("menge=0.5\nmax_deckenhoehe=40\nflockendetail=einfach\n");
         d.close();
-        app.Fenster("[]"); // irgendein Ereignis; das Nachladen kommt über den Dateibeobachter
+        q->melden({}); // irgendein Ereignis; das Nachladen kommt über den Dateibeobachter
         QTRY_COMPARE_WITH_TIMEOUT(app.einstellungen().sim.maxHoehe, 40.0, 3000);
         QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChildren<QSlider *>()[3]->value(), 40, 3000);
         QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChild<QComboBox *>("flockendetail")->currentIndex(), 0, 3000);

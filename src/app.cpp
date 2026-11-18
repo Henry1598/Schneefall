@@ -2,11 +2,10 @@
 #include "overlay.h"
 #include "steuerfenster.h"
 #include "sprueche.h"
+#include "plattform/pfade.h"
 
 #include <QAction>
 #include <QApplication>
-#include <QDBusConnection>
-#include <QDBusConnectionInterface>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -58,7 +57,7 @@ QString bildzeitenText(double hz, double soll, const Bildzeiten::Bericht &z) {
 }
 } // namespace
 
-App::App() {
+App::App(std::unique_ptr<plattform::Fensterquelle> quelle) : m_quelle(quelle ? std::move(quelle) : plattform::fensterquelleErzeugen()) {
     m_mausUhr.start();
     m_takt.setTimerType(Qt::PreciseTimer);
     connect(&m_takt, &QTimer::timeout, this, &App::takt);
@@ -69,28 +68,59 @@ App::App() {
         // von Hand bearbeitet: neu laden (nach atomarem Ersetzen erneut beobachten)
         QTimer::singleShot(200, this, [this] { laden(); });
     });
+    m_quelle->starten([this](std::vector<schnee::Fenster> liste) { fensterSetzen(std::move(liste)); });
 }
 
 App::~App() {
+    // zuerst die Kanäle schließen: danach kommt kein Befehl mehr an
+    m_steuerkanal.reset();
+    m_systemkanal.reset();
     if (m_speicherTimer.isActive()) speichern();
     qDeleteAll(m_ebenen);
     delete m_steuer;
     delete m_menu;
 }
 
-QString App::konfigPfad() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/schneefall.conf");
-}
+QString App::konfigPfad() { return plattform::konfigPfad(); }
 
 bool App::dienstAnmelden() {
-    auto bus = QDBusConnection::sessionBus();
-    if (!bus.isConnected()) {
-        qWarning("Schneefall: keine D-Bus-Sitzung");
+    auto ziel = [this](const QString &name, const QStringList &argumente) { return befehl(name, argumente); };
+    // Linux: D-Bus org.schneefall (Einzelinstanz wie bisher; das KWin-Skript schickt dorthin die Fensterliste)
+    m_systemkanal = plattform::systemkanalErzeugen(ziel, *m_quelle);
+    if (m_systemkanal && !m_systemkanal->anmelden()) {
+        m_systemkanal.reset();
         return false;
     }
-    if (!bus.registerService(QStringLiteral("org.schneefall"))) return false;
-    bus.registerObject(QStringLiteral("/"), this, QDBusConnection::ExportScriptableSlots);
+    // plattformneutral: lokaler Socket bzw. benannte Pipe
+    m_steuerkanal = std::make_unique<plattform::Steuerkanal>(ziel);
+    if (!m_steuerkanal->anmelden()) {
+        m_steuerkanal.reset();
+        m_systemkanal.reset();
+        return false;
+    }
     return true;
+}
+
+plattform::Antwort App::befehl(const QString &name, const QStringList &argumente) {
+    using plattform::Antwort;
+    // Zahlen-Argumente: alle müssen gültig sein, sonst ist der Befehl unbekannt
+    std::vector<double> z;
+    for (const QString &a : argumente) {
+        bool ok = false;
+        z.push_back(a.toDouble(&ok));
+        if (!ok) return Antwort::unbekannt();
+    }
+    const size_t n = z.size();
+    if (name == QLatin1String("Status") && n == 0) return Antwort::ok(Status());
+    if (name == QLatin1String("Fensterliste") && n == 0) return Antwort::ok(Fensterliste());
+    if (name == QLatin1String("Raeumen") && n == 0) return Antwort::ok(Raeumen());
+    if (name == QLatin1String("Steuerfenster") && n == 0) { Steuerfenster(); return Antwort::ok(); }
+    if (name == QLatin1String("Beenden") && n == 0) { Beenden(); return Antwort::ok(); }
+    if (name == QLatin1String("Umschalten") && n == 0) { Umschalten(); return Antwort::ok(); }
+    if (name == QLatin1String("Abschuetteln") && n == 0) { Abschuetteln(); return Antwort::ok(); }
+    if (name == QLatin1String("Werfen") && n == 5) { Werfen(z[0], z[1], z[2], z[3], z[4]); return Antwort::ok(); }
+    if (name == QLatin1String("Zeitlupe") && n == 1) { Zeitlupe(z[0]); return Antwort::ok(); }
+    return Antwort::unbekannt();
 }
 
 void App::laden() {
@@ -208,7 +238,7 @@ void App::bildschirmHinzu(QScreen *s) {
         bildschirmeMelden();
     });
     bildschirmeMelden();
-    if (m_laeuft) o->show();
+    if (m_laeuft) o->zeigen(true);
 }
 
 void App::bildschirmWeg(QScreen *s) {
@@ -238,11 +268,11 @@ void App::sichtbarkeitPruefen() {
     m_laeuft = soll;
     if (soll) {
         m_taktstand.schrittUhr = uhrSekunden(); // die Pause zählt nicht als Simulationszeit
-        for (Overlay *o : std::as_const(m_ebenen)) o->show();
+        for (Overlay *o : std::as_const(m_ebenen)) o->zeigen(true);
         m_takt.start(100);
     } else {
         m_takt.stop();
-        for (Overlay *o : std::as_const(m_ebenen)) o->hide();
+        for (Overlay *o : std::as_const(m_ebenen)) o->zeigen(false);
         // Pause oder Vollbild: der Einsatz bleibt stehen, die Geräusche verstummen
         m_raeum.klaengeAnhalten();
         klaengeWeitergeben();
@@ -300,25 +330,7 @@ void App::schritt(double jetzt) {
     ++m_rechenBilder;
 }
 
-void App::Fenster(const QString &json) {
-    if (json == m_letzteListe) return; // Puls ohne Änderung
-    m_letzteListe = json;
-    const QJsonArray liste = QJsonDocument::fromJson(json.toUtf8()).array();
-    std::vector<schnee::Fenster> f;
-    f.reserve(size_t(liste.size()));
-    for (const QJsonValue &v : liste) {
-        QJsonObject o = v.toObject();
-        schnee::Fenster w;
-        w.id = o.value(QStringLiteral("id")).toString().toStdString();
-        w.r = {o.value(QStringLiteral("x")).toDouble(), o.value(QStringLiteral("y")).toDouble(),
-               o.value(QStringLiteral("w")).toDouble(), o.value(QStringLiteral("h")).toDouble()};
-        w.stapel = o.value(QStringLiteral("s")).toInt();
-        w.minimiert = o.value(QStringLiteral("min")).toBool();
-        w.vollbild = o.value(QStringLiteral("fs")).toBool();
-        w.aktiv = o.value(QStringLiteral("akt")).toBool();
-        w.dock = o.value(QStringLiteral("dock")).toBool();
-        if (!w.id.empty()) f.push_back(std::move(w));
-    }
+void App::fensterSetzen(std::vector<schnee::Fenster> f) {
     m_fenster = std::move(f);
     // Zeitpunkt in Simulationszeit: daraus misst der Kern, wie schnell und ruckartig ein Fenster gezogen wird
     const double jetzt = uhrSekunden();
@@ -395,7 +407,7 @@ QString App::Status() {
         .arg(m_raeum.eingabeRechtecke().size()).arg(einsaetze.isEmpty() ? QString() : QLatin1Char('\n') + einsaetze.join(QLatin1Char('\n')));
 }
 
-QString App::Fensterliste() { return m_letzteListe; }
+QString App::Fensterliste() { return m_quelle->diagnose(); }
 
 QString App::Raeumen() { return QString::fromStdString(m_raeum.jetztRaeumen()); }
 

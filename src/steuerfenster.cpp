@@ -1,29 +1,23 @@
 #include "steuerfenster.h"
 #include "app.h"
 #include "sprueche.h"
+#include "plattform/autostart.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
-#include <QDir>
 #include <QFile>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
-#include <QSaveFile>
 #include <QSlider>
-#include <QStandardPaths>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
 
 using namespace schnee;
-
-QString Steuerfenster::autostartPfad() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/autostart/schneefall.desktop");
-}
 
 Steuerfenster::Regler Steuerfenster::regler(const QString &name, int min, int max, double faktor, const QString &einheit,
                                             QGridLayout *g, int zeile, const QString &tipp) {
@@ -188,21 +182,7 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     connect(m_bildrate, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
     connect(m_autostart, &QCheckBox::toggled, this, [this](bool an) {
         if (m_setzt) return;
-        const QString pfad = autostartPfad();
-        if (an) {
-            QDir().mkpath(QFileInfo(pfad).absolutePath());
-            QSaveFile d(pfad);
-            if (d.open(QIODevice::WriteOnly)) {
-                d.write(QStringLiteral("[Desktop Entry]\nType=Application\nName=Schneefall\n"
-                                       "Comment=Schnee über allen Fenstern\nExec=%1\nIcon=weather-snow\n"
-                                       "X-KDE-autostart-phase=2\n")
-                            .arg(QCoreApplication::applicationFilePath()).toUtf8());
-                d.commit();
-            }
-        } else {
-            // nur genau diese eine, von Schneefall angelegte Datei entfernen
-            QFile::remove(pfad);
-        }
+        plattform::autostartSetzen(an, QCoreApplication::applicationFilePath());
     });
     ausEinstellungen();
 }
@@ -222,7 +202,7 @@ void Steuerfenster::ausEinstellungen() {
         if (i == 5) m_bildrate->addItem(QStringLiteral("%1 Bilder/s").arg(p.bildrate), p.bildrate);
         m_bildrate->setCurrentIndex(i);
     }
-    m_autostart->setChecked(QFile::exists(autostartPfad()));
+    m_autostart->setChecked(plattform::autostartAktiv());
     m_ton->setChecked(p.ton);
     m_laut->setValue(p.lautstaerke);
     auto setze = [](Regler &r, double wert) { r.slider->setValue(int(std::lround(wert / r.faktor))); };

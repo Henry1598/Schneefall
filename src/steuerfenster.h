@@ -13,7 +13,6 @@ class Steuerfenster : public QWidget {
 public:
     explicit Steuerfenster(App *app);
     void ausEinstellungen(); // Bedienelemente auf den aktuellen Stand bringen
-    static QString autostartPfad();
 
 private:
     struct Regler { QSlider *slider = nullptr; QLabel *wert = nullptr; double faktor = 1; QString einheit; };
