@@ -55,7 +55,7 @@ const char *modusText(Fenstermodus m) {
 bool einstellungenBrauchtErgaenzung(const std::string &text) {
     for (const char *k : {"fenstermodus", "schuetteln_schwelle", "rutsch_ab_minuten", "rutsch_tempo", "wolke_dauer", "wolke_liegen", "boden_max",
                           "ton", "lautstaerke", "raeumdienst", "raeumen_ab", "fahrzeug_groesse", "einsaetze_gleichzeitig", "taskleiste_raeumen",
-                          "treffer_bis_streik", "schnee_anfassbar"})
+                          "treffer_bis_streik", "schnee_anfassbar", "sprueche_max_stufe"})
         if (text.find(std::string("\n") + k + "=") == std::string::npos && text.rfind(std::string(k) + "=", 0) != 0) return true;
     return text.find("vor_fenstern") != std::string::npos;
 }
@@ -101,6 +101,7 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "taskleiste_raeumen") wahrheit(w, p.raeum.taskleiste);
         else if (k == "treffer_bis_streik") { double v = p.raeum.trefferBisStreik; setzen(v, w, 1.0, 10.0); p.raeum.trefferBisStreik = int(std::lround(v)); }
         else if (k == "schnee_anfassbar") wahrheit(w, p.raeum.anfassbar);
+        else if (k == "sprueche_max_stufe") { double v = p.spruecheMaxStufe; setzen(v, w, 1.0, 5.0); p.spruecheMaxStufe = int(std::lround(v)); }
         else if (k == "flockendetail") {
             std::transform(w.begin(), w.end(), w.begin(), [](unsigned char c) { return char(std::tolower(c)); });
             if (w == "realistisch") p.realistisch = true;
@@ -164,7 +165,9 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "# nach so vielen Schneeball-Treffern streikt der Fahrer (1 … 10)\n"
       << "treffer_bis_streik=" << p.raeum.trefferBisStreik << "\n"
       << "# Schnee mit der Maus zu Schneebällen formen; aus = das Overlay nimmt nie Mausklicks an (true/false)\n"
-      << "schnee_anfassbar=" << (p.raeum.anfassbar ? "true" : "false") << "\n";
+      << "schnee_anfassbar=" << (p.raeum.anfassbar ? "true" : "false") << "\n"
+      << "# Ausdrucksweise der Sprüche von Fahrer und Pilot: 1 freundlich, 2 genervt, 3 frech, 4 derb, 5 richtig vulgär (1 … 5)\n"
+      << "sprueche_max_stufe=" << p.spruecheMaxStufe << "\n";
     return o.str();
 }
 

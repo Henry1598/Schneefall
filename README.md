@@ -310,3 +310,10 @@ Schalter „Geräusche“ und Regler „Lautstärke“ im Steuerfenster. Ist der
   Treffer und Murren (Streik). Bei Pause oder Vollbild werden alle Dauerklänge gestoppt.
 - `make klangprobe`, dann `build/klangprobe` (spielt alles kurz ab), `--wav datei.wav`, `--wav-ordner ordner` (offline rendern), `--cpu` (Last messen).
 - Tests: `make test-klang`.
+
+## Sprüche (Fahrer und Hubschrauberpilot)
+
+`daten/sprueche.tsv` enthält über 1000 Sätze (`sprecher<TAB>anlass<TAB>stufe<TAB>text`), von freundlich (Stufe 1) bis richtig vulgär (Stufe 5).
+Das Modul `src/sprueche.{h,cpp}` wählt zufällig ohne Wiederholung der letzten 50 Sätze; die Stufe steigt mit der Trefferzahl und ist durch
+`sprueche_max_stufe` (Steuerfenster: „Ausdrucksweise“, Standard 3 = frech) begrenzt. Stand der Anbindung: siehe `MERGE-SPRUECHE.md`.
+Tests: `make test-sprueche`.

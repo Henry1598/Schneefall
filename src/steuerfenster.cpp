@@ -1,5 +1,6 @@
 #include "steuerfenster.h"
 #include "app.h"
+#include "sprueche.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -134,7 +135,15 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     jetzt->setObjectName(QStringLiteral("jetzt_raeumen"));
     jetzt->setToolTip(QStringLiteral("Startet sofort einen Einsatz am Fenster mit dem meisten Schnee."));
     rg->addWidget(jetzt, 7, 0, 1, 3);
-    rg->setRowStretch(8, 1);
+    rg->addWidget(new QLabel(QStringLiteral("Ausdrucksweise"), this), 8, 0);
+    m_ausdruck = new QComboBox(this);
+    m_ausdruck->setObjectName(QStringLiteral("sprueche_max_stufe"));
+    for (int st = SPRUCH_STUFE_MIN; st <= SPRUCH_STUFE_MAX; ++st) m_ausdruck->addItem(QString::fromUtf8(stufenName(st)));
+    m_ausdruck->setToolTip(QStringLiteral("Wie derb Fahrer und Pilot schimpfen dürfen, wenn sie getroffen werden. "
+                                          "Mit jedem Treffer wird es lauter – höchstens bis zu dieser Stufe."));
+    rg->addWidget(m_ausdruck, 8, 1, 1, 2);
+    connect(m_ausdruck, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
+    rg->setRowStretch(9, 1);
     connect(jetzt, &QPushButton::clicked, m_app, [this] { m_app->Raeumen(); });
     for (QCheckBox *c : {m_raeumAn, m_taskleiste, m_anfassbar}) connect(c, &QCheckBox::toggled, this, [this] { uebernehmen(); });
 
@@ -218,6 +227,7 @@ void Steuerfenster::ausEinstellungen() {
     setze(m_fzGroesse, p.raeum.fahrzeugGroesse);
     setze(m_gleichzeitig, p.raeum.gleichzeitig);
     setze(m_trefferStreik, p.raeum.trefferBisStreik);
+    m_ausdruck->setCurrentIndex(std::clamp(p.spruecheMaxStufe, SPRUCH_STUFE_MIN, SPRUCH_STUFE_MAX) - SPRUCH_STUFE_MIN);
     m_setzt = false;
     uebernehmen(); // nur Beschriftungen, da Werte gleich
 }
@@ -262,6 +272,7 @@ void Steuerfenster::uebernehmen() {
     lies(m_fzGroesse, p.raeum.fahrzeugGroesse);
     p.raeum.gleichzeitig = m_gleichzeitig.slider->value();
     p.raeum.trefferBisStreik = m_trefferStreik.slider->value();
+    p.spruecheMaxStufe = m_ausdruck->currentIndex() + SPRUCH_STUFE_MIN;
     if (einstellungenAlsText(p) == einstellungenAlsText(alt)) return;
     m_app->einstellungenAendern(p);
 }
