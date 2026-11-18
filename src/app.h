@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
+#include "bildtakt.h"
 #include "einstellungen.h"
 #include "klang.h"
 #include "raeumdienst.h"
@@ -54,7 +55,10 @@ private:
     void bildschirmWeg(QScreen *s);
     void bildschirmeMelden();
     void sichtbarkeitPruefen();
-    void takt();
+    void takt();                 // Wächter: rechnet weiter, falls gerade keine Ebene zeichnet
+    void bildKommt(double jetzt); // eine Ebene beginnt ein Bild: Simulationsschritt, wenn fällig
+    void schritt(double jetzt);
+    bool inBewegung(double jetzt) const;
     void laden();
     void speichern();
     void trayAufbauen();
@@ -68,14 +72,19 @@ private:
     schnee::Raeumdienst m_raeum{m_sim};
     schnee::Szene m_szene;        // was vom Räumdienst zu zeichnen ist (einmal je Takt für alle Ebenen)
     QElapsedTimer m_mausUhr;
-    int m_eingabeTakt = 0;
+    double m_eingabeFaellig = 0;   // uhrSekunden(), ab wann die Eingaberegion wieder angepasst wird
+    schnee::Taktstand m_taktstand; // gemeinsamer Simulationsstand für alle Ebenen
+    double m_flockenUhr = -1;      // wann die Ebenen zuletzt ihre Flocken neu gebaut haben
+    double m_fensterUhr = -1;      // wann sich zuletzt Fenster bewegt/geändert haben
+    bool m_mausGedrueckt = false;
+    int m_schritte = 0, m_flockenAufbauten = 0; // seit dem letzten --status
+    double m_statusUhr = 0;
     double m_zeitlupe = 1.0;
     std::vector<schnee::Fenster> m_fenster;
     QString m_letzteListe;
     QHash<QScreen *, Overlay *> m_ebenen;
-    QTimer m_takt;
+    QTimer m_takt;                 // Wächter (alle 100 ms), der eigentliche Takt kommt aus den Ebenen
     QTimer m_speicherTimer;
-    QElapsedTimer m_uhr;
     QFileSystemWatcher m_beobachter;
     bool m_laeuft = false;
     bool m_vollbild = false;

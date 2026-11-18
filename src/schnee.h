@@ -75,6 +75,13 @@ struct Flocke {
     bool hinten = false; // fest: liegt hinter einem Fenster (wurde verdeckt), bis sie unter ihm herauskommt
 };
 
+// So schnell läuft die Schaukel-Phase einer Flocke (rad/s); Drehung und Taumeln hängen an ihr.
+constexpr double PHASENTEMPO = 1.7;
+// waagrechtes Tempo einer Flocke samt Schaukeln (px/s)
+double flockeTempoX(const Flocke &f);
+// eine Flocke frei weiterbewegen (ohne Landen und Fenster): Phase, Schaukeln, Fall
+void flockeBewegen(Flocke &f, double dt);
+
 // Schneebrett/Brocken: zusammenhängender Block, der schnell fällt und beim Aufprall zerbricht
 struct Brocken {
     double x = 0, y = 0;        // linke Kante, Unterseite
@@ -173,6 +180,10 @@ private:
     void schuetteln(Decke &d, double dt);
     void brockenSchritt(double dt);
     const Fenster *fensterBei(double x, double y) const; // oberstes Fenster an dieser Stelle (fest)
+    bool imSchatten(double x, double y) const;           // in oder senkrecht unter einem Fenster (fest)
+    bool amOberenRand(const Fenster &w) const;           // Oberkante am oberen Rand seines Monitors
+    bool ohneDecke(const Fenster &w) const;              // Vollbild oder (fest) am oberen Rand: trägt keinen Schnee
+    bool durchlaessig(const Fenster &w) const;           // fest: Schnee fällt davor, statt anzustoßen
     void festKollision(Flocke &f, double x0, double y0, bool &weg);
     double maxFuer(const Decke &d) const { return d.boden || d.dock ? m_e.bodenMax : m_e.maxHoehe; }
     void sichtbarkeitBerechnen();
@@ -197,6 +208,7 @@ private:
     double m_erzeugRest = 0;
     double m_zeit = 0;
     uint64_t m_deckenStand = 0;
+    bool m_fensterBekannt = false; // erste Fensterliste von KWin schon da (vorher vorgefüllte Flocken liegen auch in Fenstern)
     struct Strecke { double x0, y0, x1, y1; int seite; }; // seite: 0 oben, -1 links, +1 rechts
     std::vector<Strecke> m_raender;  // Ränder, an denen neue Flocken hereinkommen
 };

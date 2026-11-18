@@ -40,6 +40,13 @@ void Simulation::setBildschirme(const std::vector<Rechteck> &b) {
         if (d.boden) zerfallen(d, 0, d.hoehe.size());
     m_decken.erase(std::remove_if(m_decken.begin(), m_decken.end(), [](const Decke &d) { return d.boden; }), m_decken.end());
     bodenAufbauen();
+    // geänderte Monitore: Fenster können jetzt am oberen Rand liegen (dann fällt ihre Decke ab)
+    for (Decke &d : m_decken) {
+        if (d.boden) continue;
+        for (const Fenster &w : m_fenster)
+            if (w.id == d.id && ohneDecke(w)) { verschwinden(d); d.hoehe.clear(); }
+    }
+    m_decken.erase(std::remove_if(m_decken.begin(), m_decken.end(), [](const Decke &d) { return !d.boden && d.hoehe.empty(); }), m_decken.end());
     nachSichtbarkeitZerfallen();
 }
 
@@ -139,7 +146,8 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
             if (w.id == id) return &w;
         return nullptr;
     };
-    auto traegt = [](const Fenster *w) { return w && !w->minimiert && !w->vollbild && w->r.w >= 1; };
+    // am oberen Monitorrand (maximiert) oder im Vollbild: keine Decke, sonst blitzt oben ein Streifen hervor
+    auto traegt = [this](const Fenster *w) { return w && !w->minimiert && !w->vollbild && w->r.w >= 1 && !ohneDecke(*w); };
     // bestehende Decken mitnehmen (Schnee fährt mit dem Fenster) oder bei verschwundenem Fenster abgehen lassen
     for (Decke &d : m_decken) {
         if (d.boden) continue;
@@ -194,6 +202,15 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
         m_decken.push_back(std::move(d));
     }
     nachSichtbarkeitZerfallen();
+    // Beim Start wird vorgefüllt, bevor KWin die Fenster meldet. Flocken, die dabei in oder unter ein Fenster
+    // geraten sind, wären „dahinter“ und kämen unten heraus bzw. fielen im Schneeschatten – Schnee unter den
+    // Fenstern. Weg damit, als hätte es von Anfang an mit diesen Fenstern geschneit.
+    if (!m_fensterBekannt && !m_fenster.empty()) {
+        m_fensterBekannt = true;
+        if (m_e.modus == Fenstermodus::Fest)
+            m_flocken.erase(std::remove_if(m_flocken.begin(), m_flocken.end(), [this](const Flocke &f) { return imSchatten(f.x, f.y); }),
+                            m_flocken.end());
+    }
 }
 
 // Geschwindigkeit und Beschleunigung einer Decke aus den Fensterpositionen (geglättet, Zeitkonstante 30 ms).
@@ -362,8 +379,9 @@ void Simulation::sichtbarkeitBerechnen() {
             for (const Fenster &w : m_fenster) {
                 if (!sicht) break;
                 if (&w == eigen || w.minimiert || w.stapel <= stapel) continue;
-                // die Schnee-Ebene liegt über allen Fenstern: den Boden verdecken nur Docks (die tragen selbst)
-                if (d.boden && !w.dock) continue;
+                // die Schnee-Ebene liegt über allen Fenstern: den Boden verdecken nur Docks (die tragen selbst),
+                // und nur, wo sie zu sehen sind (nicht unter einem Vollbildfenster)
+                if (d.boden && (!w.dock || fensterBei(cx, w.r.y + 1) != &w)) continue;
                 // höheres Fenster überdeckt die Kante oder den Raum direkt darüber
                 if (cx >= w.r.x && cx < w.r.rechts() && d.y + 1 > w.r.y && d.y - 2 < w.r.unten())
                     sicht = false;
@@ -475,12 +493,50 @@ bool Simulation::aufBildschirm(double x, double y) const {
     return false;
 }
 
-// oberstes nicht minimiertes Fenster, das den Punkt enthält (Docks zählen mit)
+// oberstes nicht minimiertes Fenster, das den Punkt enthält (Docks zählen mit). Ist das oberste durchlässig
+// (fest: am oberen Rand oder Vollbild), gibt es hier kein Hindernis: der Schnee fällt davor.
 const Fenster *Simulation::fensterBei(double x, double y) const {
     const Fenster *oben = nullptr;
     for (const Fenster &w : m_fenster)
         if (!w.minimiert && w.r.w >= 1 && w.r.enthaelt(x, y) && (!oben || w.stapel > oben->stapel)) oben = &w;
+    if (oben && durchlaessig(*oben)) return nullptr;
     return oben;
+}
+
+// Liegt die Oberkante am oberen Rand des Monitors, auf dem das Fenster liegt (maximiert, hochgezogen)?
+// Maßgeblich ist der Monitor unter der Mitte der Oberkante – auch wenn darüber ein weiterer Monitor liegt.
+bool Simulation::amOberenRand(const Fenster &w) const {
+    const double cx = w.r.x + w.r.w / 2;
+    const Rechteck *bester = nullptr;
+    double ueberlapp = 0;
+    for (const Rechteck &b : m_bildschirme) {
+        if (cx < b.x || cx >= b.rechts()) continue;
+        if (b.enthaelt(cx, w.r.y + 5)) { bester = &b; break; }
+        const double u = std::min(w.r.unten(), b.unten()) - std::max(w.r.y, b.y);
+        if (u > ueberlapp) { ueberlapp = u; bester = &b; }
+    }
+    return bester && w.r.y <= bester->y + 4;
+}
+
+bool Simulation::ohneDecke(const Fenster &w) const {
+    if (w.vollbild) return true;
+    return m_e.modus == Fenstermodus::Fest && !w.dock && !w.minimiert && amOberenRand(w);
+}
+
+bool Simulation::durchlaessig(const Fenster &w) const { return m_e.modus == Fenstermodus::Fest && ohneDecke(w); }
+
+// fest: liegt der Punkt in einem Fenster oder darunter (senkrecht über ihm ein Fenster auf demselben Monitor)?
+// Dort käme beim ruhigen Schneien keine Flocke hin.
+bool Simulation::imSchatten(double x, double y) const {
+    if (fensterBei(x, y)) return true;
+    for (const Fenster &w : m_fenster) {
+        if (w.minimiert || w.r.w < 1 || x < w.r.x || x >= w.r.rechts() || w.r.unten() > y) continue;
+        if (fensterBei(x, w.r.unten() - 1) != &w) continue; // dort verdeckt (z. B. von einem maximierten Fenster)
+        // auf demselben Monitor (über Monitorgrenzen hinweg fällt der Schnee neu herein)
+        for (const Rechteck &b : m_bildschirme)
+            if (b.enthaelt(x, y) && b.enthaelt(x, w.r.unten() - 1)) return true;
+    }
+    return false;
 }
 
 // fest: Fenster sind Hindernisse. Wer seitlich anprallt, rutscht an der Seite ab; Schnee, über den ein
@@ -502,6 +558,18 @@ void Simulation::festKollision(Flocke &f, double x0, double y0, bool &weg) {
     if (fensterBei(f.x, f.y)) f.hinten = true;
 }
 
+double flockeTempoX(const Flocke &f) {
+    // Kristalle schaukeln im Fall, Pulverklümpchen kaum
+    const double schaukeln = f.art == Flockenart::Pulver ? 0.75 : 2.5;
+    return f.vx + std::cos(f.phase) * f.groesse * schaukeln;
+}
+
+void flockeBewegen(Flocke &f, double dt) {
+    f.phase += dt * PHASENTEMPO;
+    f.x += flockeTempoX(f) * dt;
+    f.y += f.vy * dt;
+}
+
 void Simulation::schritt(double dt, bool erzeugenAn) {
     m_zeit += dt;
     if (erzeugenAn) erzeugen(dt);
@@ -519,11 +587,7 @@ void Simulation::schritt(double dt, bool erzeugenAn) {
     bleiben.reserve(m_flocken.size());
     for (Flocke f : m_flocken) {
         const double x0 = f.x, y0 = f.y;
-        f.phase += dt * 1.7;
-        // Kristalle schaukeln im Fall, Pulverklümpchen kaum
-        const double schaukeln = f.art == Flockenart::Pulver ? 0.75 : 2.5;
-        f.x += (f.vx + std::cos(f.phase) * f.groesse * schaukeln) * dt;
-        f.y += f.vy * dt;
+        flockeBewegen(f, dt);
         if (f.leben > 0) {
             // Wolkenstaub: löst sich auf, landet nie
             f.leben -= float(dt);
@@ -684,11 +748,9 @@ double Simulation::gesamtSchnee(const std::string &id) const {
 bool Simulation::flockeZeichnen(const Flocke &f) const {
     switch (m_e.modus) {
     case Fenstermodus::Davor: return true;
-    case Fenstermodus::Fest: // nie in einem sichtbaren Fenster (auch nicht vor der Taskleiste)
+    case Fenstermodus::Fest: // nie in einem sichtbaren Fenster (auch nicht vor der Taskleiste); vor durchlässigen schon
         if (f.hinten) return false;
-        for (const Fenster &w : m_fenster)
-            if (!w.minimiert && w.r.enthaelt(f.x, f.y)) return false;
-        return true;
+        return fensterBei(f.x, f.y) == nullptr;
     case Fenstermodus::Dahinter: break;
     }
     for (const Fenster &w : m_fenster) {
@@ -705,7 +767,7 @@ void Simulation::vorfuellen() {
         int n = int(b.w * b.h * m_e.menge / 10000.0);
         for (int i = 0; i < n; ++i) {
             const double x = b.x + u(m_rng) * b.w, y = b.y + u(m_rng) * b.h;
-            if (fest && fensterBei(x, y)) continue; // Schneeschatten unter Fenstern gleich von Anfang an
+            if (fest && imSchatten(x, y)) continue; // Schneeschatten unter Fenstern gleich von Anfang an
             m_flocken.push_back(neueFlocke(x, y));
         }
     }

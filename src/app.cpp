@@ -109,8 +109,8 @@ void App::laden() {
     if (!m_beobachter.files().contains(konfigPfad()) && QFile::exists(konfigPfad())) m_beobachter.addPath(konfigPfad());
     m_sim.setEinstellungen(m_einst.sim);
     m_raeum.setEinstellungen(m_einst.raeum);
-    m_eingabeTakt = 0;
-    m_takt.setInterval(std::max(1, 1000 / m_einst.fps));
+    m_eingabeFaellig = 0;
+    for (Overlay *o : std::as_const(m_ebenen)) o->setzeObergrenze(m_einst.bildrate);
     m_klang.setzeLautstaerke(m_einst.lautstaerke / 100.0);
     m_klang.setzeAn(m_einst.ton);
     if (m_anAktion) m_anAktion->setChecked(m_einst.an);
@@ -139,10 +139,10 @@ void App::einstellungenAendern(const Programmeinstellungen &p) {
     m_einst = p;
     m_sim.setEinstellungen(m_einst.sim);
     m_raeum.setEinstellungen(m_einst.raeum);
-    m_eingabeTakt = 0;
+    m_eingabeFaellig = 0;
     m_klang.setzeLautstaerke(m_einst.lautstaerke / 100.0);
     m_klang.setzeAn(m_einst.ton);
-    m_takt.setInterval(std::max(1, 1000 / m_einst.fps));
+    for (Overlay *o : std::as_const(m_ebenen)) o->setzeObergrenze(m_einst.bildrate);
     if (m_anAktion) m_anAktion->setChecked(m_einst.an);
     sichtbarkeitPruefen();
     m_speicherTimer.start();
@@ -189,8 +189,10 @@ void App::trayAufbauen() {
 
 void App::bildschirmHinzu(QScreen *s) {
     if (m_ebenen.contains(s)) return;
-    auto *o = new Overlay(s, &m_sim, &m_einst.realistisch, &m_szene, &m_einst.raeum.fahrzeugGroesse);
+    auto *o = new Overlay(s, &m_sim, &m_einst.realistisch, &m_szene, &m_einst.raeum.fahrzeugGroesse, &m_taktstand);
     o->mausziel = [this](int art, double x, double y) { maus(art, x, y); };
+    o->vorDemBild = [this](double jetzt) { bildKommt(jetzt); };
+    o->setzeObergrenze(m_einst.bildrate);
     m_ebenen.insert(s, o);
     connect(s, &QScreen::geometryChanged, this, [this, o] {
         o->anBildschirmAnpassen();
@@ -226,9 +228,9 @@ void App::sichtbarkeitPruefen() {
     if (soll == m_laeuft) return;
     m_laeuft = soll;
     if (soll) {
+        m_taktstand.schrittUhr = uhrSekunden(); // die Pause zählt nicht als Simulationszeit
         for (Overlay *o : std::as_const(m_ebenen)) o->show();
-        m_uhr.restart();
-        m_takt.start(std::max(1, 1000 / m_einst.fps));
+        m_takt.start(100);
     } else {
         m_takt.stop();
         for (Overlay *o : std::as_const(m_ebenen)) o->hide();
@@ -238,8 +240,26 @@ void App::sichtbarkeitPruefen() {
     }
 }
 
+// Bewegung, die über das Fortschreiben im Shader hinausgeht: dann rechnet die Simulation in jedem
+// Monitorbild (Fenster ziehen, fallende Schneebretter, Räumdienst, Schneebälle, Maus gedrückt)
+bool App::inBewegung(double jetzt) const {
+    return m_raeum.etwasLos() || !m_sim.brocken().empty() || m_mausGedrueckt || jetzt - m_fensterUhr < 0.5;
+}
+
+void App::bildKommt(double jetzt) {
+    if (!m_laeuft) return;
+    // Ruhe: 30 Schritte je s, die Flocken schreibt der Shader fort. Bewegung: in jedem Bild (höchstens 400/s)
+    const double faellig = inBewegung(jetzt) ? 1.0 / 400 : 1.0 / 30 - 0.002;
+    if (jetzt - m_taktstand.schrittUhr >= faellig) schritt(jetzt);
+}
+
 void App::takt() {
-    double dt = std::min(0.1, m_uhr.restart() / 1000.0);
+    const double jetzt = uhrSekunden();
+    if (jetzt - m_taktstand.schrittUhr >= 0.09) schritt(jetzt);
+}
+
+void App::schritt(double jetzt) {
+    double dt = std::clamp(jetzt - m_taktstand.schrittUhr, 0.0, 0.1);
     dt *= m_zeitlupe;
     QElapsedTimer t;
     t.start();
@@ -249,13 +269,22 @@ void App::takt() {
     else m_szene.leeren();
     klaengeWeitergeben();
     // Eingaberegion: alle halbe Sekunde, mit Fahrzeug unterwegs öfter
-    if (--m_eingabeTakt <= 0) {
-        m_eingabeTakt = m_raeum.einsaetze().empty() ? std::max(1, m_einst.fps / 2) : std::max(1, m_einst.fps / 8);
+    if (jetzt >= m_eingabeFaellig) {
+        m_eingabeFaellig = jetzt + (m_raeum.einsaetze().empty() ? 0.5 : 0.125);
         eingabeAktualisieren();
+    }
+    m_taktstand.schrittUhr = jetzt;
+    m_taktstand.zeitlupe = m_zeitlupe;
+    ++m_taktstand.schritt;
+    ++m_schritte;
+    // Flocken höchstens 30-mal je s neu aufbauen lassen (dazwischen schreibt der Shader sie fort)
+    if (jetzt - m_flockenUhr >= 1.0 / 30 - 0.002) {
+        m_flockenUhr = jetzt;
+        ++m_taktstand.flockenSchritt;
+        ++m_flockenAufbauten;
     }
     m_rechenNs += t.nsecsElapsed();
     ++m_rechenBilder;
-    for (Overlay *o : std::as_const(m_ebenen)) o->update();
 }
 
 void App::Fenster(const QString &json) {
@@ -279,7 +308,9 @@ void App::Fenster(const QString &json) {
     }
     m_fenster = std::move(f);
     // Zeitpunkt in Simulationszeit: daraus misst der Kern, wie schnell und ruckartig ein Fenster gezogen wird
-    m_sim.setFenster(m_fenster, m_sim.zeit() + (m_laeuft ? std::min(0.1, m_uhr.elapsed() / 1000.0) : 0.0));
+    const double jetzt = uhrSekunden();
+    m_sim.setFenster(m_fenster, m_sim.zeit() + (m_laeuft ? std::clamp(jetzt - m_taktstand.schrittUhr, 0.0, 0.1) * m_zeitlupe : 0.0));
+    m_fensterUhr = jetzt; // Fenster bewegen sich: Decken in jedem Bild nachführen
     m_vollbild = vollbildAktiv(m_fenster);
     sichtbarkeitPruefen();
 }
@@ -307,10 +338,15 @@ QString App::Status() {
     double ms = m_rechenBilder ? m_rechenNs / 1e6 / m_rechenBilder : 0;
     m_rechenNs = 0;
     m_rechenBilder = 0;
+    const double jetzt = uhrSekunden(), spanne = std::max(1e-3, jetzt - m_statusUhr);
+    const QString takt = QStringLiteral("bildrate=%1 schritte_je_s=%2 flockenaufbau_je_s=%3 bewegung=%4\n")
+                             .arg(m_einst.bildrate > 0 ? QString::number(m_einst.bildrate) : QStringLiteral("auto"))
+                             .arg(m_schritte / spanne, 0, 'f', 1).arg(m_flockenAufbauten / spanne, 0, 'f', 1).arg(inBewegung(jetzt));
+    m_statusUhr = jetzt;
+    m_schritte = m_flockenAufbauten = 0;
     QStringList b;
     for (auto it = m_ebenen.cbegin(); it != m_ebenen.cend(); ++it) {
         const Overlay::Last l = it.value()->lastAbholen();
-        it.value()->setzeSollAbstand(1.0 / m_einst.fps);
         const Bildzeiten::Bericht z = it.value()->bildzeitenAbholen();
         b << QStringLiteral("%1 %2x%3+%4+%5 dpr=%6 sichtbar=%7 sammeln_ms=%8 zeichnen_ms=%9 ecken=%10")
                  .arg(it.key()->name())
@@ -318,7 +354,9 @@ QString App::Status() {
                  .arg(it.key()->geometry().x()).arg(it.key()->geometry().y())
                  .arg(it.value()->devicePixelRatio()).arg(it.value()->isVisible())
                  .arg(l.sammelnMs, 0, 'f', 3).arg(l.zeichnenMs, 0, 'f', 3).arg(l.ecken)
-          + QLatin1Char(' ') + bildzeitenText(it.key()->refreshRate(), it.value()->sollAbstand(), z);
+          + QStringLiteral(" tausch_ms=%1").arg(l.tauschMs, 0, 'f', 3)
+          + QLatin1Char(' ') + bildzeitenText(it.value()->monitorHz(), it.value()->sollAbstand(), z)
+          + QStringLiteral(" teiler=%1").arg(it.value()->teiler());
     }
     int decken = 0;
     double schnee = 0;
@@ -337,7 +375,7 @@ QString App::Status() {
                          .arg(e.fz.wulst, 0, 'f', 0).arg(e.fz.treffer).arg(e.fz.spruch);
     return QStringLiteral("laeuft=%1 an=%2 vollbild=%3 flocken=%4 fenster=%5 decken=%6 schnee=%7 rechenzeit_ms=%8 brocken=%9 einsaetze=%11 wartend=%12 baelle=%13 eingabeflaechen=%14\n%10%15")
         .arg(m_laeuft).arg(m_einst.an).arg(m_vollbild).arg(m_sim.flocken().size()).arg(m_fenster.size())
-        .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(b.join(QLatin1Char('\n')))
+        .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(takt + b.join(QLatin1Char('\n')))
         .arg(m_raeum.einsaetze().size()).arg(m_raeum.warteschlange().size()).arg(m_raeum.baelle().size() + (m_raeum.ballInHand() ? 1 : 0))
         .arg(m_raeum.eingabeRechtecke().size()).arg(einsaetze.isEmpty() ? QString() : QLatin1Char('\n') + einsaetze.join(QLatin1Char('\n')));
 }
@@ -370,6 +408,7 @@ void App::eingabeAktualisieren() {
 
 void App::maus(int art, double x, double y) {
     const double t = m_mausUhr.elapsed() / 1000.0;
+    m_mausGedrueckt = art != 2;
     if (art == 0) m_raeum.mausDruck(x, y, t);
     else if (art == 1) m_raeum.mausBewegt(x, y, t);
     else m_raeum.mausLos(x, y, t);

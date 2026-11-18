@@ -30,6 +30,7 @@ private:
     QSlider *m_laut;
     QLabel *m_lautWert;
     QComboBox *m_detail; // Flockendetail: 0 = einfach, 1 = realistisch
+    QComboBox *m_bildrate; // Auto, 30, 60, 120, 144 (+ eigener Wert aus der Datei)
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
     // Gruppe „Fenster“
     Regler m_schwelle, m_rutschAb, m_rutschTempo, m_wolkeDauer, m_wolkeLiegen, m_bodenMax;

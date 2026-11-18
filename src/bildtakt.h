@@ -2,6 +2,7 @@
 // Bilder) und wie oft eine Ebene bei gegebener Bildwiederholrate und Obergrenze zeichnet.
 #pragma once
 #include <array>
+#include <cstdint>
 #include <vector>
 
 namespace schnee {
@@ -32,6 +33,14 @@ private:
     double m_soll = 1.0 / 60;
     double m_letzt = -1;
     std::vector<float> m_abstaende; // s
+};
+
+// Stand der Simulation, den alle Ebenen lesen (gehört der App)
+struct Taktstand {
+    uint64_t schritt = 0;        // zählt jeden Simulationsschritt
+    double schrittUhr = 0;       // uhrSekunden() des letzten Schritts
+    uint64_t flockenSchritt = 0; // zählt, wenn die Ebenen ihre Flocken neu aufbauen sollen (höchstens 30-mal je s)
+    double zeitlupe = 1;         // Simulationszeit je Sekunde
 };
 
 // Jedes wievielte Monitorbild gezeichnet wird, damit die Obergrenze (Bilder/s, 0 = keine) gleichmäßig

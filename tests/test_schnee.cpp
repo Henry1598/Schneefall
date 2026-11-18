@@ -49,6 +49,11 @@ private slots:
     void einstellungenGrenzenUndFehler();
     void einstellungenRundreise();
     void maximiertesFensterAmOberenMonitorrandTraegtSchnee();
+    void festFensterAmOberenRandTraegtKeinenSchnee();
+    void festTeilmaximiertNebenAnderemFenster();
+    void festFensterOben3AufUnteremMonitorMitMonitorDarueber();
+    void festMaximierenLaesstDeckeAbfallen();
+    void festVollbildOhnePauseLaesstSchneeDurch();
     void vordereFlockenFallenVorFensternWeiter();
     void bodenWirdNurVonDocksVerdeckt();
     void henrysMonitoreUndFenster();
@@ -342,13 +347,102 @@ void TestSchnee::einstellungenRundreise() {
 }
 
 // Fehler 2 (Henry 18.11.): maximierte Fenster liegen mit der Oberkante genau auf dem Monitorrand
+// nur noch in „davor“/„dahinter“; zu „fest“ siehe festFensterAmOberenRandTraegtKeinenSchnee
 void TestSchnee::maximiertesFensterAmOberenMonitorrandTraegtSchnee() {
-    Simulation s(ruhig());
+    Einstellungen e = ruhig();
+    e.modus = Fenstermodus::Davor;
+    Simulation s(e);
     s.setBildschirme({{0, 0, 1000, 800}});
     s.setFenster({fenster("max", 0, 0, 1000, 760, 1)});
     s.flockeHinzufuegen(flocke(500, -2));   // kommt gerade oben herein
     laufen(s, 1.0);
     QVERIFY(hoeheUm(s, "max", 500) > 0.5);
+}
+
+// Henry 18.11.: Fenster am oberen Monitorrand (maximiert, hochgezogen) tragen keinen Schnee, sonst blitzt
+// oben ein Streifen hervor. Der Schnee fällt sichtbar davor bis zum Boden bzw. zur Taskleiste.
+void TestSchnee::festFensterAmOberenRandTraegtKeinenSchnee() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster leiste = fenster("leiste", 0, 760, 1000, 40, 5);
+    leiste.dock = true;
+    Fenster hinten = fenster("hinten", 300, 200, 300, 200, 1); // liegt ganz hinter dem maximierten Fenster
+    s.setFenster({hinten, fenster("max", 0, 2, 1000, 758, 2), leiste});
+    QVERIFY(s.decke("max") == nullptr);
+    for (int i = 0; i < 20; ++i) s.flockeHinzufuegen(flocke(100 + i * 40, -2));
+    // fällt vor dem Fenster: wird gezeichnet
+    QVERIFY(s.flockeZeichnen(flocke(500, 300)));
+    laufen(s, 20.0);
+    QCOMPARE(s.gesamtSchnee("hinten"), 0.0);
+    QCOMPARE(s.gesamtSchnee("leiste"), 20.0); // alles kommt unten auf der Taskleiste an
+}
+
+void TestSchnee::festTeilmaximiertNebenAnderemFenster() {
+    // links ein an den oberen Rand gezogenes Fenster (halbe Breite), rechts ein normales
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("links", 0, 0, 500, 800, 1), fenster("rechts", 600, 300, 300, 200, 2)});
+    QVERIFY(s.decke("links") == nullptr);
+    QVERIFY(s.decke("rechts") != nullptr);
+    s.flockeHinzufuegen(flocke(250, -2));
+    s.flockeHinzufuegen(flocke(750, 100));
+    laufen(s, 20.0);
+    QVERIFY(hoeheUm(s, "boden:0", 250) > 0.5);
+    QVERIFY(hoeheUm(s, "rechts", 750) > 0.5);
+}
+
+void TestSchnee::festFensterOben3AufUnteremMonitorMitMonitorDarueber() {
+    // zwei Monitore übereinander; das Fenster beginnt an der Oberkante des unteren
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 600}, {0, 600, 1000, 600}});
+    s.setFenster({fenster("unten", 0, 603, 1000, 597, 1), fenster("oben", 200, 100, 300, 300, 2)});
+    QVERIFY(s.decke("unten") == nullptr); // kein Streifen am unteren Rand des oberen Monitors
+    QVERIFY(s.decke("oben") != nullptr);  // normales Fenster auf dem oberen Monitor
+    s.flockeHinzufuegen(flocke(800, 500));
+    laufen(s, 20.0);
+    QVERIFY(hoeheUm(s, "boden:1", 800) > 0.5);
+    // dieselbe Lage weiter unten ist ein normales Fenster
+    s.setFenster({fenster("unten", 0, 640, 1000, 560, 1)});
+    QVERIFY(s.decke("unten") != nullptr);
+}
+
+void TestSchnee::festMaximierenLaesstDeckeAbfallen() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster a = fenster("a", 100, 300, 400, 300, 1);
+    s.setFenster({a});
+    for (int i = 0; i < 40; ++i) s.flockeHinzufuegen(flocke(120 + i * 9, 200));
+    laufen(s, 5.0);
+    QCOMPARE(s.gesamtSchnee("a"), 40.0);
+    a.r = {0, 0, 1000, 800}; // maximiert
+    s.setFenster({a});
+    QVERIFY(s.decke("a") == nullptr);
+    QVERIFY(s.flocken().size() > 20 || !s.brocken().empty()); // die Decke fällt (Wolke oder Brett) statt oben zu bleiben
+    laufen(s, 30.0);
+    QVERIFY(s.gesamtSchnee("boden:0") > 10);
+}
+
+void TestSchnee::festVollbildOhnePauseLaesstSchneeDurch() {
+    // mit „Bei Vollbild pausieren“ hält die App an (vollbildAktiv); ohne gilt dieselbe Regel wie oben
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster v = fenster("video", 0, 0, 1000, 800, 3);
+    v.vollbild = true;
+    v.aktiv = true;
+    QVERIFY(vollbildAktiv({v}));
+    s.setFenster({fenster("hinten", 200, 300, 400, 200, 1), v});
+    QVERIFY(s.decke("video") == nullptr);
+    QVERIFY(s.flockeZeichnen(flocke(500, 400)));
+    s.flockeHinzufuegen(flocke(300, 100));
+    laufen(s, 20.0);
+    QCOMPARE(s.gesamtSchnee("hinten"), 0.0);
+    QVERIFY(hoeheUm(s, "boden:0", 300) > 0.5);
+    // ein Vollbildfenster mitten auf dem Monitor (nicht am Rand) lässt ebenfalls durch
+    v.r = {100, 100, 600, 400};
+    s.setFenster({v});
+    QVERIFY(s.decke("video") == nullptr);
 }
 
 // Fehler 1: Schnee fällt auch vor großen Fenstern weiter (nicht jede Flocke bleibt auf dem Dach)

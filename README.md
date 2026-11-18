@@ -49,7 +49,9 @@ qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # Schneeba
   Tiefenwirkung, „Einfach“ alle Flocken als weiche Punkte.
 - **Schnee abschütteln:** Alle Schneedecken fallen herunter.
 - **Gruppe „Fenster“:**
-  - **Fenstermodus:** „Fest“ (Standard, siehe oben), „Dahinter“ (fallender Schnee nur über der
+  - **Bildrate:** Auto (so oft wie der Monitor, am flüssigsten), 30, 60, 120 oder 144 Bilder/s als
+  Obergrenze (spart CPU bei schneefall und KWin).
+- **Fenstermodus:** „Fest“ (Standard, siehe oben), „Dahinter“ (fallender Schnee nur über der
     Arbeitsfläche, ein Teil bleibt auf den Kanten) oder „Davor“ (fällt vor den Fenstern).
   - **Schüttel-Schwelle:** ab welcher Beschleunigung beim Ziehen Schnee abfällt. Wie viel abfällt,
     hängt von der Heftigkeit ab: bei doppelter Schwelle etwa die Hälfte.
@@ -84,7 +86,8 @@ liest das laufende Programm sofort neu ein.
 | `flockengroesse` | mittlerer Durchmesser in px | 1 … 12 | 3 |
 | `max_deckenhoehe` | höchste Schneedecke in px | 2 … 80 | 18 |
 | `fallgeschwindigkeit` | px/s | 5 … 300 | 45 |
-| `fps` | Bilder pro Sekunde | 10 … 120 | 30 |
+| `bildrate` | Bilder/s je Monitor: `auto` = so oft wie der Monitor (z. B. 144/165 Hz), sonst Obergrenze | auto, 10 … 360 | auto |
+| `fps` | alter fester Takt; wird nur noch für ältere Versionen mitgeschrieben (fehlt `bildrate`, zählt ein selbst gewählter `fps`-Wert, der alte Standard 30 wird zu `auto`) | 10 … 120 | 30 |
 | `an` | Schnee an | true/false | true |
 | `fenstermodus` | fest, dahinter oder davor | fest/dahinter/davor | fest |
 | `schuetteln_schwelle` | Beschleunigung beim Ziehen, ab der Schnee abfällt (px/s²) | 1000 … 100000 | 15000 |
@@ -111,11 +114,25 @@ Werte bleiben unverändert.
 `flockengroesse` ist die Grundgröße: Bei „realistisch“ sind ferne Flocken etwa so groß wie
 eingestellt (weiche Punkte), mittlere 2,5- bis 5-mal und nahe bis 7,5-mal so groß (Kristalle).
 
-Gemessen (4 Monitore, ca. 2000 Flocken, 30 fps): schneefall ca. 3 % eines Kerns bei „realistisch“
-(vor den Kristallen 2 %), KWin unverändert ca. 2 Prozentpunkte. `--status` zeigt je Monitor die
-Zeit fürs Zusammenstellen und Zeichnen eines Bildes und die Zahl der Ecken.
+`--status` zeigt je Monitor die Zeit fürs Zusammenstellen und Zeichnen eines Bildes, die Zahl der
+Ecken und die **Bildzeiten**: Monitorrate (`hz`), Teiler (jedes wievielte Monitorbild gezeichnet
+wird), Soll-Abstand, gemessene Bilder/s, mittlerer Abstand, Jitter (Standardabweichung), p50/p95/p99/max,
+verpasste Bilder (Abstand über 1,5 × Soll) und die Verteilung der Abstände in Vielfachen des Solls.
+Dazu oben `schritte_je_s` (Simulationsschritte) und `flockenaufbau_je_s`.
 
-`fps=60` sieht etwas flüssiger aus, kostet aber etwa doppelt so viel CPU (schneefall + KWin).
+### Takt (Bildrate)
+
+Gezeichnet wird im Takt des Compositors (Wayland-Frame-Callbacks, `requestUpdate()` nach jedem Bild),
+je Monitor mit dessen eigener Rate. Bei einer Obergrenze zeichnet die Ebene gleichmäßig jedes n-te
+Monitorbild (165 Hz mit Grenze 60 → jedes 3., also 55 Bilder/s, alle gleich lang) auf einem festen
+Raster, das an einem Frame-Callback ausgerichtet ist – kein Wechsel zwischen kurzen und langen Bildern.
+
+Die Simulation rechnet in Ruhe 30 Schritte je Sekunde. Die Flocken baut die CPU nur 30-mal je
+Sekunde zusammen (mit Tempo, Drehtempo und Taumeltempo je Flocke); der Vertex-Shader schreibt sie bis
+zum jeweiligen Monitorbild fort. Dadurch bewegen und drehen sie sich in jedem Bild stufenlos, die
+CPU-Last hängt kaum an der Bildrate. Bewegt sich etwas, das der Shader nicht fortschreiben kann
+(Fenster ziehen, Schneebretter, Räumdienst, Schneebälle, Maus gedrückt), rechnet die Simulation in
+jedem Bild.
 
 ## Räumdienst
 
@@ -229,6 +246,7 @@ das, „Schnee anfassbar“ abschalten.
   Sie hat keine Tastatur; die Eingaberegion ist leer oder umfasst nur anfassbaren Schnee und
   Fahrzeuge, alle anderen Klicks gehen durch.
   Gezeichnet wird mit OpenGL in voller Gerätepixel-Auflösung (scharf bei 1,5×).
+- `src/bildtakt.{h,cpp}`: Bildzeiten-Messung, Teiler für die Obergrenze, gemeinsamer Taktstand (ohne Qt).
 - `src/app.{h,cpp}`: D-Bus-Dienst `org.schneefall` (Sitzungsbus), Monitore, Takt, Systemabschnitt.
 - `src/steuerfenster.{h,cpp}`: Steuerfenster.
 - `kwin/`: KWin-Skript `schneefall-fenster`. Es meldet bei jeder Änderung (höchstens alle 15 ms,
@@ -259,7 +277,8 @@ cmake wird nicht gebraucht, es reicht ein Makefile mit pkg-config.
 ```
 cd ~/Schneefall
 ~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen
-~/.local/bin/testlauf 4G 300 make test         # QtTest: Klang, Räumdienst, Kern, Aussehen, Steuerfenster + Test des KWin-Skripts (node)
+~/.local/bin/testlauf 4G 300 make test         # QtTest: Klang, Räumdienst, Kern, Aussehen, Bildtakt, Steuerfenster + Test des KWin-Skripts (node)
+~/.local/bin/testlauf 3G 300 make test-bildtakt # nur Bildzeiten, Teiler, Fortschreiben der Flocken, Bildrate
 ~/.local/bin/testlauf 4G 300 make test-raeumdienst   # nur Räumdienst, Schneebälle und 3D-Ansicht
 tests/rauchtest.sh                             # Live-Test der D-Bus-Schnittstelle (Sitzung nötig)
 make install                                   # schneefall-umschalten + Starter
@@ -277,6 +296,15 @@ rm ~/.local/bin/schneefall-umschalten ~/.local/share/applications/schneefall.des
 rm ~/.config/schneefall.conf ~/.config/autostart/schneefall.desktop   # falls vorhanden
 rm -r ~/Schneefall                                                     # Quellen
 ```
+
+### Fenster am oberen Rand und Vollbild
+
+Im Modus „fest“ tragen Fenster, deren Oberkante am oberen Rand ihres Monitors liegt (maximiert oder
+hochgezogen, bis 4 px darunter), und Vollbildfenster keine Schneedecke – sonst blitzte oben ein
+Streifen hervor, auch auf einem Monitor darüber. Der Schnee fällt sichtbar davor bis zum unteren
+Rand bzw. zur Taskleiste und sammelt sich dort (bis `boden_max`). Fenster dahinter bekommen dort
+keinen Schnee. Wird ein Fenster mit Schnee maximiert oder an den oberen Rand geschoben, fällt seine
+Decke ab (Brett oder Wolke). Ist „Bei Vollbild pausieren“ an, pausiert der Schnee bei Vollbild wie bisher.
 
 ## Bekannte Grenzen
 
