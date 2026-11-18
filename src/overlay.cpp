@@ -196,11 +196,27 @@ void Overlay::flockenSammeln(float bx, float by, float bw, float bh) {
 
 // Schneedecken als Bänder zwischen der geglätteten Oberkante und der Fensterkante
 void Overlay::deckenSammeln(float bx, float by, float bw, float bh, double dpr, float weich) {
+    for (const Decke &d : m_sim->decken()) deckeSammeln(d, bx, by, bw, bh, dpr, weich);
+}
+
+// fallende Schneebretter: wie eine Decke ohne Fenster darunter (rundum weich), in jedem Bild neu
+void Overlay::brockenSammeln(float bx, float by, float bw, float bh, double dpr, float weich) {
+    for (const Brocken &b : m_sim->brocken()) {
+        m_brockenDecke.x = b.x;
+        m_brockenDecke.y = b.y;
+        m_brockenDecke.spaltenBreite = b.spaltenBreite;
+        m_brockenDecke.hoehe = b.hoehe;
+        m_brockenDecke.sichtbar.assign(b.hoehe.size(), 1);
+        deckeSammeln(m_brockenDecke, bx, by, bw, bh, dpr, weich);
+    }
+}
+
+void Overlay::deckeSammeln(const Decke &d, float bx, float by, float bw, float bh, double dpr, float weich) {
     // Pixelraster des Monitors: Kanten auf ganze Gerätepixel runden (scharf bei 1,5×)
     auto px = [dpr](float v) { return float(std::round(v * dpr) / dpr); };
     const float fest = 4.f; // Abstand zur Unterseite, ab dem nichts mehr ausgeblendet wird
-    for (const Decke &d : m_sim->decken()) {
-        if (d.y < by || d.y > by + bh + 1 || d.x - 4 > bx + bw || d.x + d.breite() + 4 < bx) continue;
+    {
+        if (d.y < by || d.y > by + bh + 1 || d.x - 4 > bx + bw || d.x + d.breite() + 4 < bx) return;
         m_punkte.clear();
         m_enden.clear();
         deckenProfilAnhaengen(d, m_punkte, m_enden);
@@ -267,7 +283,8 @@ void Overlay::paintGL() {
         std::copy_n(fuer, 5, m_deckenFuer);
     }
     m_daten.resize(m_deckenEnde);
-    const size_t deckenEnde = m_deckenEnde;
+    brockenSammeln(bx, by, bw, bh, dpr, weich);
+    const size_t deckenEnde = m_daten.size();
     flockenSammeln(bx, by, bw, bh);
     const qint64 gesammelt = stoppuhr.nsecsElapsed();
     m_sammelNs += gesammelt;

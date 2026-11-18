@@ -1,6 +1,7 @@
 // Kleines Steuerfenster: Schalter, Regler, Abschütteln, Autostart, Beenden.
 #pragma once
 #include <QWidget>
+#include <vector>
 
 class App;
 class QCheckBox;
@@ -15,17 +16,20 @@ public:
     static QString autostartPfad();
 
 private:
-    struct Regler { QSlider *slider; QLabel *wert; double faktor; };
-    Regler regler(const QString &name, int min, int max, double faktor, const QString &einheit, class QGridLayout *g, int zeile);
+    struct Regler { QSlider *slider = nullptr; QLabel *wert = nullptr; double faktor = 1; QString einheit; };
+    Regler regler(const QString &name, int min, int max, double faktor, const QString &einheit, class QGridLayout *g, int zeile,
+                  const QString &tipp = QString());
     void uebernehmen();
 
     App *m_app;
     QCheckBox *m_an;
     QCheckBox *m_vollbild;
-    QCheckBox *m_vorFenstern;
+    QComboBox *m_modus; // Fenstermodus: 0 = fest, 1 = dahinter, 2 = davor
     QCheckBox *m_autostart;
     QComboBox *m_detail; // Flockendetail: 0 = einfach, 1 = realistisch
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
-    QString m_einheiten[5];
+    // Gruppe „Fenster“
+    Regler m_schwelle, m_rutschAb, m_rutschTempo, m_wolkeDauer, m_wolkeLiegen, m_bodenMax;
+    std::vector<Regler *> m_alle;
     bool m_setzt = false;
 };

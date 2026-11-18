@@ -32,6 +32,8 @@ private:
     void atlasLaden(double dpr);
     void flockenSammeln(float bx, float by, float bw, float bh);
     void deckenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
+    void brockenSammeln(float bx, float by, float bw, float bh, double dpr, float weich);
+    void deckeSammeln(const schnee::Decke &d, float bx, float by, float bw, float bh, double dpr, float weich);
     QOpenGLShaderProgram *programm(const char *fragment);
 
     QScreen *m_bildschirm;
@@ -47,6 +49,7 @@ private:
     std::vector<float> m_daten;
     std::vector<schnee::ProfilPunkt> m_punkte;
     std::vector<size_t> m_enden;
+    schnee::Decke m_brockenDecke; // Arbeitsspeicher fürs Zeichnen der Brocken
     // Decken ändern sich langsam: ihre Ecken bleiben einige Bilder gültig (vorn in m_daten)
     size_t m_deckenEnde = 0;
     uint64_t m_deckenStand = ~0ull;

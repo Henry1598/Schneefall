@@ -84,7 +84,13 @@ bool App::dienstAnmelden() {
 void App::laden() {
     QFile f(konfigPfad());
     if (f.open(QIODevice::ReadOnly)) {
-        m_einst = einstellungenAusText(f.readAll().toStdString());
+        const std::string text = f.readAll().toStdString();
+        m_einst = einstellungenAusText(text);
+        // neue Schlüssel ergänzen bzw. vor_fenstern entfernen; vorhandene Werte bleiben, wie sie sind
+        if (einstellungenBrauchtErgaenzung(text)) {
+            f.close();
+            speichern();
+        }
     } else {
         m_einst = Programmeinstellungen{};
         speichern(); // Datei mit Standardwerten und Erklärungen anlegen
@@ -233,7 +239,8 @@ void App::Fenster(const QString &json) {
         if (!w.id.empty()) f.push_back(std::move(w));
     }
     m_fenster = std::move(f);
-    m_sim.setFenster(m_fenster);
+    // Zeitpunkt in Simulationszeit: daraus misst der Kern, wie schnell und ruckartig ein Fenster gezogen wird
+    m_sim.setFenster(m_fenster, m_sim.zeit() + (m_laeuft ? std::min(0.1, m_uhr.elapsed() / 1000.0) : 0.0));
     m_vollbild = vollbildAktiv(m_fenster);
     sichtbarkeitPruefen();
 }
@@ -277,9 +284,9 @@ QString App::Status() {
         ++decken;
         for (float h : d.hoehe) schnee += h;
     }
-    return QStringLiteral("laeuft=%1 an=%2 vollbild=%3 flocken=%4 fenster=%5 decken=%6 schnee=%7 rechenzeit_ms=%8\n%9")
+    return QStringLiteral("laeuft=%1 an=%2 vollbild=%3 flocken=%4 fenster=%5 decken=%6 schnee=%7 rechenzeit_ms=%8 brocken=%9\n%10")
         .arg(m_laeuft).arg(m_einst.an).arg(m_vollbild).arg(m_sim.flocken().size()).arg(m_fenster.size())
-        .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(b.join(QLatin1Char('\n')));
+        .arg(decken).arg(schnee, 0, 'f', 0).arg(ms, 0, 'f', 3).arg(m_sim.brocken().size()).arg(b.join(QLatin1Char('\n')));
 }
 
 QString App::Fensterliste() { return m_letzteListe; }

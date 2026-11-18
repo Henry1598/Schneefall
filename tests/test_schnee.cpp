@@ -1,6 +1,8 @@
 #include <QtTest>
 #include "schnee.h"
 #include "einstellungen.h"
+#include <cmath>
+#include <limits>
 
 using namespace schnee;
 
@@ -58,6 +60,21 @@ private slots:
     void groessereFlockenFallenSchneller();
     void deckenStandMeldetSprunghafteAenderungen();
     void abfallenderSchneeFaelltFastSenkrecht();
+    // Teil A – feste Fenster, Mitfahren, Rutsch/Wolke
+    void festFensterFaengtJedeFlocke();
+    void festUeberlappungNurFreierTeil();
+    void festSchneeschattenUnterFenster();
+    void festSeitlichAnprallenRutschtAbwaerts();
+    void festFlockenNieImFensterGezeichnet();
+    void mitfahrenBeimVerschieben();
+    void schuettelnUeberSchwelleWirftSchneeAb();
+    void minimierenJungGibtWolke();
+    void minimierenAltGibtRutsch();
+    void vielSchneeRutschtAuchJung();
+    void rutschUebergibtMasseAnFensterDarunter();
+    void bodenMaxBegrenztBodenUndTaskleiste();
+    void fenstermodusUndNeueSchluessel();
+    void schnittstellenFuerRaeumdienst();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -135,7 +152,13 @@ void TestSchnee::deckeZerfaelltBeiVeraenderung() {
     QCOMPARE(s.gesamtSchnee("a"), 20.0);
     QCOMPARE(int(s.flocken().size()), 0);
 
-    if (art == "verschoben") s.setFenster({fenster("a", 150, 400, 400, 300, 1)});
+    if (art == "verschoben") {   // seit Teil A fährt der Schnee mit; nur ein Sprung ohne Zwischenschritte
+        s.setFenster({fenster("a", 150, 400, 400, 300, 1)});  // (Teleport, z. B. Kacheln) bleibt liegen
+        QCOMPARE(s.gesamtSchnee("a"), 20.0);
+        QCOMPARE(s.decke("a")->x, 150.0);
+        QCOMPARE(s.decke("a")->y, 400.0);
+        return;
+    }
     if (art == "geschlossen") s.setFenster({});
     if (art == "minimiert") { Fenster f = fenster("a", 100, 300, 400, 300, 1); f.minimiert = true; s.setFenster({f}); }
     if (art == "verdeckt") s.setFenster({fenster("a", 100, 300, 400, 300, 1), fenster("b", 50, 200, 600, 400, 2)});
@@ -228,7 +251,8 @@ void TestSchnee::abschuettelnLaesstAlleDeckenFallen() {
     QCOMPARE(s.gesamtSchnee("a"), 0.0);
     QVERIFY(s.flocken().size() >= 8);
     // Regression 18.11.: die Flocken blieben sofort wieder auf derselben Kante liegen
-    laufen(s, 0.5);
+    // (fest: sie rutschen erst über die Fensterkante, dann fallen sie)
+    laufen(s, 1.5);
     QCOMPARE(s.gesamtSchnee("a"), 0.0);
     QVERIFY(!s.flocken().empty());
     for (const Flocke &f : s.flocken()) QVERIFY(f.y > 300);   // unter die Kante gefallen
@@ -328,6 +352,7 @@ void TestSchnee::maximiertesFensterAmOberenMonitorrandTraegtSchnee() {
 void TestSchnee::vordereFlockenFallenVorFensternWeiter() {
     Einstellungen e;
     e.wind = 0;
+    e.modus = Fenstermodus::Davor;
     Simulation s(e, 3);
     s.setBildschirme({{0, 0, 1000, 800}});
     s.setFenster({fenster("gross", 50, 100, 900, 650, 1)});
@@ -342,7 +367,9 @@ void TestSchnee::vordereFlockenFallenVorFensternWeiter() {
 
 // Fehler 3: Boden unter normalen Fenstern sammelt trotzdem (Ebene liegt über allem), nur Docks tragen selbst
 void TestSchnee::bodenWirdNurVonDocksVerdeckt() {
-    Simulation s(ruhig());
+    Einstellungen e = ruhig();
+    e.modus = Fenstermodus::Davor;   // bei „fest“ fällt nichts durch Fenster hindurch
+    Simulation s(e);
     s.setBildschirme({{0, 0, 1000, 800}});
     Fenster leiste = fenster("leiste", 600, 760, 400, 40, 5);
     leiste.dock = true;
@@ -357,7 +384,9 @@ void TestSchnee::bodenWirdNurVonDocksVerdeckt() {
 
 // Nachbau von Henrys Aufbau (kscreen-doctor + KWin-Mitschnitt 18.11.)
 void TestSchnee::henrysMonitoreUndFenster() {
-    Simulation s(Einstellungen{}, 7);
+    Einstellungen e;
+    e.modus = Fenstermodus::Davor;
+    Simulation s(e, 7);
     s.setBildschirme({{0, 1100, 1080, 1920}, {1080, 1440, 3413.33, 1440}, {1586, 0, 2560, 1440}, {4494, 1800, 1920, 1080}});
     Fenster leiste = fenster("leiste", 2218, 2824, 1137, 56, 11);
     leiste.dock = true;
@@ -400,7 +429,7 @@ void TestSchnee::bodenSchmilztLangsamerAlsEsSchneit() {
 
 void TestSchnee::hinterFensternWerdenFlockenImFensterNichtGezeichnet() {
     Einstellungen e = ruhig();
-    e.vorFenstern = false;
+    e.modus = Fenstermodus::Dahinter;
     Simulation s(e);
     s.setBildschirme({{0, 0, 1000, 800}});
     Fenster leiste = fenster("leiste", 0, 760, 1000, 40, 5);
@@ -418,17 +447,13 @@ void TestSchnee::hinterFensternWerdenFlockenImFensterNichtGezeichnet() {
     s.flockeHinzufuegen(flocke(250, 250));
     laufen(s, 2.0);
     QVERIFY(hoeheUm(s, "a", 250) > 0.5);
-    // Standard: Schnee fällt vor den Fenstern
-    Simulation v(ruhig());
+    // Modus „davor“: Schnee fällt vor den Fenstern
+    Einstellungen ve = ruhig();
+    ve.modus = Fenstermodus::Davor;
+    Simulation v(ve);
     v.setBildschirme({{0, 0, 1000, 800}});
     v.setFenster({fenster("a", 100, 300, 400, 300, 1)});
     QVERIFY(v.flockeZeichnen(flocke(250, 450)));
-    // Einstellung aus der Datei
-    QCOMPARE(einstellungenAusText("vor_fenstern=false\n").sim.vorFenstern, false);
-    QCOMPARE(einstellungenAusText("").sim.vorFenstern, true);
-    Programmeinstellungen p;
-    p.sim.vorFenstern = false;
-    QCOMPARE(einstellungenAusText(einstellungenAlsText(p)).sim.vorFenstern, false);
 }
 
 // Aussehen: realistisch (Kristalle) ist Standard, „einfach“ gibt die alten weichen Punkte
@@ -528,7 +553,9 @@ void TestSchnee::abfallenderSchneeFaelltFastSenkrecht() {
     }
     QVERIFY(geprueft > 50);
     // und der Weg selbst: nach dem Abschütteln bleibt jede Flocke nah an ihrer Senkrechten
-    // (frische Simulation: nur die Fensterdecke trägt Schnee, keine Flocke verlässt den Bildschirm)
+    // (frische Simulation: nur die Fensterdecke trägt Schnee, keine Flocke verlässt den Bildschirm;
+    //  Modus „davor“, weil bei „fest“ der Schnee erst über die Oberkante zum Rand rutscht)
+    e.modus = Fenstermodus::Davor;
     Simulation t(e);
     t.setBildschirme({{0, 0, 1000, 800}});
     t.setFenster({fenster("a", 300, 300, 60, 300, 1)});
@@ -544,6 +571,375 @@ void TestSchnee::abfallenderSchneeFaelltFastSenkrecht() {
         const double dx = std::abs(t.flocken()[i].x - start[i].x), dy = t.flocken()[i].y - start[i].y;
         QVERIFY2(dy > 15 && dx < 0.3 * dy, qPrintable(QString("dx %1 dy %2").arg(dx).arg(dy)));
     }
+}
+
+// ---------------- Teil A: feste Fenster, Mitfahren, Rutsch/Wolke ----------------
+namespace {
+// füllt eine Decke mit genau n Einheiten (ablageJeFlocke = 1), gleichmäßig über [x0, x1)
+void fuellen(Simulation &s, double x0, double x1, double y, int n) {
+    for (int i = 0; i < n; ++i) s.flockeHinzufuegen(flocke(x0 + 8 + (x1 - x0 - 16) * (i + 0.5) / n, y)); // Abstand: Flocken schaukeln
+    laufen(s, 2.0);
+}
+// verschiebt ein Fenster in kleinen Schritten (wie beim Ziehen mit der Maus, ein Schritt je Bild)
+void ziehen(Simulation &s, Fenster f, double zuX, double zuY, int schritte, std::vector<Fenster> andere = {}) {
+    const double x0 = f.r.x, y0 = f.r.y;
+    for (int i = 1; i <= schritte; ++i) {
+        f.r.x = x0 + (zuX - x0) * i / schritte;
+        f.r.y = y0 + (zuY - y0) * i / schritte;
+        std::vector<Fenster> l = andere;
+        l.push_back(f);
+        s.setFenster(l);
+        s.schritt(1.0 / 60, false);
+    }
+}
+}
+
+// fest: jede Flocke, die ein Fenster trifft, bleibt liegen (keine Fangquote mehr)
+void TestSchnee::festFensterFaengtJedeFlocke() {
+    Simulation s(ruhig());
+    QCOMPARE(s.einstellungen().modus, Fenstermodus::Fest);   // Standard
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    for (int i = 0; i < 30; ++i) {
+        Flocke f = flocke(120 + i * 12, 100);
+        f.fang = 0.0f;   // früher: fällt vor dem Fenster vorbei
+        s.flockeHinzufuegen(f);
+    }
+    laufen(s, 6.0);
+    QCOMPARE(s.gesamtSchnee("a"), 30.0);
+    QCOMPARE(s.gesamtSchnee("boden:0"), 0.0);
+}
+
+void TestSchnee::festUeberlappungNurFreierTeil() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    // b liegt oben und deckt a zwischen 200 und 400 ab
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1), fenster("b", 200, 250, 200, 200, 2)});
+    for (int i = 0; i < 10; ++i) s.flockeHinzufuegen(flocke(220 + i * 16, 100)); // über b
+    for (int i = 0; i < 5; ++i) s.flockeHinzufuegen(flocke(420 + i * 15, 100));  // über dem freien Teil von a
+    for (int i = 0; i < 5; ++i) s.flockeHinzufuegen(flocke(110 + i * 15, 100));  // links, freier Teil von a
+    laufen(s, 10.0);
+    QCOMPARE(s.gesamtSchnee("b"), 10.0);
+    QCOMPARE(s.gesamtSchnee("a"), 10.0);
+    QCOMPARE(hoeheUm(s, "a", 300, 95), 0.0);   // verdeckter Teil bleibt leer
+    QCOMPARE(s.gesamtSchnee("boden:0"), 0.0);
+}
+
+void TestSchnee::festSchneeschattenUnterFenster() {
+    Einstellungen e;
+    e.wind = 0;
+    e.menge = 3;
+    e.schmelzen = 0;
+    Simulation s(e, 4);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 300, 200, 400, 300, 1)});
+    for (int i = 0; i < 60 * 60; ++i) s.schritt(1.0 / 60, true);
+    // unter dem Fenster (mit Abstand zu den Kanten, Flocken schaukeln) kommt nichts an
+    QCOMPARE(hoeheUm(s, "boden:0", 500, 150), 0.0);
+    QVERIFY(hoeheUm(s, "boden:0", 120, 80) > 0.5);
+    QVERIFY(hoeheUm(s, "boden:0", 880, 80) > 0.5);
+    QVERIFY(s.gesamtSchnee("a") > 20);
+}
+
+void TestSchnee::festSeitlichAnprallenRutschtAbwaerts() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    Flocke f = flocke(80, 400);  // neben dem Fenster, Wind treibt sie hinein
+    f.vx = 60;
+    s.flockeHinzufuegen(f);
+    bool drin = false, amRand = false;
+    for (int i = 0; i < 60 * 10; ++i) {
+        s.schritt(1.0 / 60, false);
+        for (const Flocke &g : s.flocken()) {
+            if (Rechteck{100, 300, 400, 300}.enthaelt(g.x, g.y)) drin = true;
+            if (g.y > 450 && g.y < 590 && g.x > 95 && g.x <= 100) amRand = true;   // gleitet an der Seite herab
+        }
+    }
+    QVERIFY(!drin);
+    QVERIFY(amRand);
+    QCOMPARE(s.gesamtSchnee("a"), 0.0);
+    QCOMPARE(s.gesamtSchnee("boden:0"), 1.0);   // unter dem Fenster weitergeweht und am Boden gelandet
+}
+
+void TestSchnee::festFlockenNieImFensterGezeichnet() {
+    Einstellungen e;
+    e.menge = 3;
+    e.wind = 40;
+    Simulation s(e, 11);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster leiste = fenster("leiste", 0, 760, 1000, 40, 5);
+    leiste.dock = true;
+    const std::vector<Fenster> fl = {fenster("a", 100, 300, 400, 300, 1), fenster("b", 350, 200, 300, 200, 2), leiste};
+    s.setFenster(fl);
+    s.vorfuellen();
+    for (int i = 0; i < 60 * 20; ++i) {
+        s.schritt(1.0 / 60, true);
+        if (i % 30) continue;
+        for (const Flocke &f : s.flocken())
+            for (const Fenster &w : fl)
+                if (w.r.enthaelt(f.x, f.y)) QVERIFY(!s.flockeZeichnen(f));
+    }
+    // ein Fenster, das über fallenden Schnee geschoben wird, verdeckt ihn
+    QVERIFY(!s.flockeZeichnen(flocke(250, 450)));
+    QVERIFY(s.flockeZeichnen(flocke(50, 450)));
+}
+
+void TestSchnee::mitfahrenBeimVerschieben() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster a = fenster("a", 100, 300, 400, 300, 1);
+    s.setFenster({a});
+    fuellen(s, 100, 500, 250, 20);
+    QCOMPARE(s.gesamtSchnee("a"), 20.0);
+    // ruhig 200 px nach rechts und 100 nach oben ziehen (2 s, 110 px/s)
+    ziehen(s, a, 300, 200, 120);
+    QCOMPARE(s.decke("a")->x, 300.0);
+    QCOMPARE(s.decke("a")->y, 200.0);
+    QCOMPARE(s.gesamtSchnee("a"), 20.0);
+    QVERIFY(s.flocken().empty());
+    // auch zügiges, gleichmäßiges Ziehen lässt den Schnee liegen (800 px/s)
+    a.r.x = 300; a.r.y = 200;
+    ziehen(s, a, 500, 200, 15);
+    laufen(s, 0.5);
+    QCOMPARE(s.gesamtSchnee("a"), 20.0);
+}
+
+void TestSchnee::schuettelnUeberSchwelleWirftSchneeAb() {
+    for (bool empfindlich : {true, false}) {
+        Einstellungen e = ruhig();
+        e.schuettelnSchwelle = empfindlich ? 15000 : 1e9;
+        Simulation s(e);
+        s.setBildschirme({{0, 0, 1000, 800}});
+        Fenster a = fenster("a", 300, 300, 300, 300, 1);
+        s.setFenster({a});
+        fuellen(s, 300, 600, 250, 30);
+        // heftig hin und her: ±40 px mit 7,5 Hz
+        for (int i = 0; i < 120; ++i) {
+            a.r.x = 300 + 40 * std::sin(i * 3.14159265 / 4);
+            s.setFenster({a});
+            s.schritt(1.0 / 60, false);
+        }
+        if (empfindlich) {
+            QVERIFY2(s.gesamtSchnee("a") < 24, qPrintable(QString::number(s.gesamtSchnee("a"))));
+            QVERIFY(s.gesamtSchnee("a") > 0);   // nur ein Teil, der zur Heftigkeit passt
+        } else {
+            QCOMPARE(s.gesamtSchnee("a"), 30.0);
+        }
+    }
+}
+
+void TestSchnee::minimierenJungGibtWolke() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    e.rutschAbMinuten = 10;
+    e.wolkeDauer = 6;
+    e.wolkeLiegen = 0.4;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster a = fenster("a", 100, 300, 400, 300, 1);
+    s.setFenster({a});
+    fuellen(s, 100, 500, 250, 100);
+    laufen(s, 60);   // erst eine Minute offen
+    a.minimiert = true;
+    s.setFenster({a});
+    QVERIFY(s.brocken().empty());
+    QVERIFY(s.flocken().size() > 60);
+    for (const Flocke &f : s.flocken()) {
+        QCOMPARE(f.art, Flockenart::Pulver);
+        QVERIFY2(f.vy < 30, qPrintable(QString::number(f.vy)));   // langsam
+    }
+    laufen(s, 0.5);
+    QVERIFY(!s.flocken().empty());
+    laufen(s, 60);
+    // ein Teil landet, der Rest löst sich auf
+    const double unten = s.gesamtSchnee("boden:0");
+    QVERIFY2(unten > 25 && unten < 60, qPrintable(QString::number(unten)));
+    QVERIFY(s.flocken().empty());
+}
+
+void TestSchnee::minimierenAltGibtRutsch() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    e.rutschAbMinuten = 1;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster a = fenster("a", 100, 300, 400, 300, 1);
+    s.setFenster({a});
+    fuellen(s, 100, 500, 250, 100);
+    laufen(s, 61);
+    a.minimiert = true;
+    s.setFenster({a});
+    QCOMPARE(s.gesamtSchnee("a"), 0.0);
+    QVERIFY(!s.brocken().empty());
+    QVERIFY(s.flocken().empty());   // ein zusammenhängender Block, kein Pulver
+    const double y0 = s.brocken().front().y;
+    laufen(s, 0.4);
+    QVERIFY(s.brocken().empty() || s.brocken().front().y > y0 + 80);   // schnell
+    laufen(s, 5);
+    QVERIFY(s.brocken().empty());
+    QVERIFY2(std::abs(s.gesamtSchnee("boden:0") - 100) < 2, qPrintable(QString::number(s.gesamtSchnee("boden:0"))));
+    // geschlossen statt minimiert: genauso
+    Simulation t(e);
+    t.setBildschirme({{0, 0, 1000, 800}});
+    t.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    fuellen(t, 100, 500, 250, 50);
+    laufen(t, 61);
+    t.setFenster({});
+    QVERIFY(!t.brocken().empty());
+}
+
+void TestSchnee::vielSchneeRutschtAuchJung() {
+    Einstellungen e = ruhig();
+    e.rutschAbMinuten = 10;
+    e.maxHoehe = 10;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster a = fenster("a", 100, 300, 80, 300, 1);   // 20 Spalten
+    s.setFenster({a});
+    fuellen(s, 100, 180, 250, 180);                  // im Mittel 9 px = 90 % voll
+    a.minimiert = true;
+    s.setFenster({a});
+    QVERIFY(!s.brocken().empty());
+}
+
+void TestSchnee::rutschUebergibtMasseAnFensterDarunter() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    e.rutschAbMinuten = 0;   // immer Rutsch
+    e.maxHoehe = 40;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster oben = fenster("oben", 200, 100, 200, 100, 2);
+    const Fenster unten = fenster("unten", 100, 400, 500, 300, 1);
+    s.setFenster({oben, unten});
+    fuellen(s, 200, 400, 50, 60);
+    QCOMPARE(s.gesamtSchnee("oben"), 60.0);
+    oben.minimiert = true;
+    s.setFenster({oben, unten});
+    laufen(s, 4);
+    QVERIFY(s.brocken().empty());
+    const double gesamt = s.gesamtSchnee("unten") + s.gesamtSchnee("boden:0") + s.fallenderSchnee();
+    QVERIFY2(std::abs(gesamt - 60) < 1.5, qPrintable(QString::number(gesamt)));
+    QVERIFY2(s.gesamtSchnee("unten") > 45, qPrintable(QString::number(s.gesamtSchnee("unten"))));
+    // liegt dort, wo der Block aufkam (x 200 … 400), nicht verteilt über das ganze Fenster
+    QCOMPARE(hoeheUm(s, "unten", 130, 20), 0.0);
+}
+
+void TestSchnee::bodenMaxBegrenztBodenUndTaskleiste() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    e.maxHoehe = 40;
+    e.bodenMax = 6;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster leiste = fenster("leiste", 600, 760, 400, 40, 5);
+    leiste.dock = true;
+    s.setFenster({leiste});
+    for (int i = 0; i < 400; ++i) {
+        s.flockeHinzufuegen(flocke(300, 700));
+        s.flockeHinzufuegen(flocke(800, 700));
+        s.schritt(1.0 / 30, false);
+    }
+    laufen(s, 10);
+    for (const char *id : {"boden:0", "leiste"}) {
+        const Decke *d = s.decke(id);
+        QVERIFY(d);
+        QVERIFY2(*std::max_element(d->hoehe.begin(), d->hoehe.end()) <= 6.5f, id);
+    }
+}
+
+void TestSchnee::fenstermodusUndNeueSchluessel() {
+    Programmeinstellungen leer = einstellungenAusText("");
+    QCOMPARE(leer.sim.modus, Fenstermodus::Fest);
+    QCOMPARE(leer.sim.rutschAbMinuten, 10.0);
+    QCOMPARE(einstellungenAusText("fenstermodus=davor\n").sim.modus, Fenstermodus::Davor);
+    QCOMPARE(einstellungenAusText("fenstermodus=Dahinter\n").sim.modus, Fenstermodus::Dahinter);
+    QCOMPARE(einstellungenAusText("fenstermodus=quatsch\n").sim.modus, Fenstermodus::Fest);
+    // alter Schlüssel: Henry will jetzt „fest“, der Schlüssel verschwindet beim Speichern
+    auto alt = einstellungenAusText("menge=2\nvor_fenstern=false\n");
+    QCOMPARE(alt.sim.modus, Fenstermodus::Fest);
+    QCOMPARE(alt.sim.menge, 2.0);
+    QVERIFY(einstellungenAlsText(alt).find("vor_fenstern") == std::string::npos);
+    QVERIFY(einstellungenBrauchtErgaenzung("menge=2\nvor_fenstern=false\n"));
+    QVERIFY(!einstellungenBrauchtErgaenzung(einstellungenAlsText(alt)));
+    // Grenzen
+    auto g = einstellungenAusText("schuetteln_schwelle=1\nrutsch_ab_minuten=-3\nrutsch_tempo=99\nwolke_dauer=0\nwolke_liegen=150\nboden_max=500\nmax_deckenhoehe=80\n");
+    QCOMPARE(g.sim.schuettelnSchwelle, 1000.0);
+    QCOMPARE(g.sim.rutschAbMinuten, 0.0);
+    QCOMPARE(g.sim.rutschTempo, 3.0);
+    QCOMPARE(g.sim.wolkeDauer, 1.0);
+    QCOMPARE(g.sim.wolkeLiegen, 1.0);
+    QCOMPARE(g.sim.bodenMax, 80.0);
+    QCOMPARE(g.sim.maxHoehe, 80.0);
+    // Rundreise
+    Programmeinstellungen p;
+    p.sim.modus = Fenstermodus::Dahinter;
+    p.sim.schuettelnSchwelle = 22000;
+    p.sim.rutschAbMinuten = 3.5;
+    p.sim.rutschTempo = 1.5;
+    p.sim.wolkeDauer = 12;
+    p.sim.wolkeLiegen = 0.25;
+    p.sim.bodenMax = 30;
+    const std::string t = einstellungenAlsText(p);
+    QVERIFY(t.find("fenstermodus=dahinter\n") != std::string::npos);
+    QVERIFY(t.find("wolke_liegen=25\n") != std::string::npos);   // in Prozent
+    auto q = einstellungenAusText(t);
+    QCOMPARE(q.sim.modus, Fenstermodus::Dahinter);
+    QCOMPARE(q.sim.schuettelnSchwelle, 22000.0);
+    QCOMPARE(q.sim.rutschAbMinuten, 3.5);
+    QCOMPARE(q.sim.rutschTempo, 1.5);
+    QCOMPARE(q.sim.wolkeDauer, 12.0);
+    QCOMPARE(q.sim.wolkeLiegen, 0.25);
+    QCOMPARE(q.sim.bodenMax, 30.0);
+}
+
+// Schnittstellen, die der Räumdienst und die Schneebälle (Teil B) brauchen
+void TestSchnee::schnittstellenFuerRaeumdienst() {
+    Einstellungen e = ruhig();
+    e.schmelzen = 0;
+    e.maxHoehe = 40;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    // hinzufügen an einer Stelle
+    QCOMPARE(s.schneeHinzufuegen("a", 250, 10), 10.0);
+    QCOMPARE(s.gesamtSchnee("a"), 10.0);
+    QCOMPARE(s.schneeHinzufuegen("gibtsnicht", 250, 10), 0.0);
+    // Oberkante in Weltkoordinaten
+    QVERIFY(s.oberkanteBei("a", 250) < 300 - 0.5);
+    QVERIFY(std::isnan(s.oberkanteBei("a", 50)));   // außerhalb der Decke
+    // entnehmen (Schneeball): höchstens, was da ist
+    s.schneeHinzufuegen("a", 450, 20);
+    laufen(s, 1);
+    const double vorher = s.gesamtSchnee("a");
+    const double weg = s.schneeEntnehmen("a", 400, 500, 5);
+    QCOMPARE(weg, 5.0);
+    QVERIFY(std::abs(s.gesamtSchnee("a") - (vorher - 5)) < 1e-4);
+    QVERIFY(s.schneeEntnehmen("a", 400, 500, 1000) < 1000);
+    // abtragen: Schnee verschwindet von der Decke und fällt als Brocken über die rechte Kante
+    s.schneeHinzufuegen("a", 300, 12);
+    laufen(s, 1);
+    const double davor = s.gesamtSchnee("a");
+    const double ab = s.abtragenUndFallenLassen("a", 300, 6, +1);
+    QCOMPARE(ab, 6.0);
+    QVERIFY(std::abs(s.gesamtSchnee("a") - (davor - 6)) < 1e-4);
+    QCOMPARE(int(s.brocken().size()), 1);
+    QVERIFY(s.brocken().front().x >= 500 - 0.5);   // jenseits der rechten Kante
+    QVERIFY(std::abs(s.fallenderSchnee() - 6) < 1e-4);
+    laufen(s, 4);
+    QVERIFY(s.brocken().empty());
+    QVERIFY(std::abs(s.gesamtSchnee("boden:0") + s.fallenderSchnee() - 6) < 0.5);
+    // ein freier Brocken irgendwo (z. B. ein zerplatzter Schneeball)
+    s.brockenFallenLassen(250, 150, 12, 4);
+    QCOMPARE(int(s.brocken().size()), 1);
+    laufen(s, 3);
+    QVERIFY(s.brocken().empty());
+    // Profil: Spalten, Höhen und Lage in Weltkoordinaten
+    const Decke *d = s.decke("a");
+    QVERIFY(d && d->x == 100 && d->y == 300 && d->spaltenBreite == 4 && d->hoehe.size() == 100);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

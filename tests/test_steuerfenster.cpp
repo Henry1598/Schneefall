@@ -23,7 +23,8 @@ private slots:
         auto *f = findChild();
         QVERIFY(f);
         const auto slider = f->findChildren<QSlider *>();
-        QCOMPARE(slider.size(), 5);
+        QCOMPARE(slider.size(), 11);   // 5 oben, 6 in der Gruppe „Fenster“
+        QCOMPARE(slider[3]->maximum(), 80);   // max. Deckenhöhe bis 80 px
         // jeden Regler einmal ganz durchziehen
         for (QSlider *s : slider)
             for (int v = s->minimum(); v <= s->maximum(); v += std::max(1, (s->maximum() - s->minimum()) / 7))
@@ -43,11 +44,30 @@ private slots:
                 if (c->text() == text) return c;
             return static_cast<QCheckBox *>(nullptr);
         };
-        QVERIFY(haken("Schnee an") && haken("Schnee fällt vor Fenstern") && haken("Bei Vollbild pausieren") && haken("Mit dem System starten"));
-        haken("Schnee fällt vor Fenstern")->click();
-        QCOMPARE(app.einstellungen().sim.vorFenstern, false);
+        QVERIFY(haken("Schnee an") && haken("Bei Vollbild pausieren") && haken("Mit dem System starten"));
+        QVERIFY(!haken("Schnee fällt vor Fenstern"));   // ersetzt durch den Fenstermodus
+        // Gruppe „Fenster“
+        auto *modus = f->findChild<QComboBox *>("fenstermodus");
+        QVERIFY(modus);
+        QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Fest);
+        modus->setCurrentIndex(2);
+        QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Davor);
+        modus->setCurrentIndex(0);
+        QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Fest);
+        slider[5]->setValue(30);   // Schüttel-Schwelle 30 000 px/s²
+        slider[6]->setValue(3);    // Rutsch ab 3 min
+        slider[7]->setValue(15);   // Rutschtempo 1,5
+        slider[8]->setValue(12);   // Wolkendauer 12 s
+        slider[9]->setValue(25);   // 25 % bleiben liegen
+        slider[10]->setValue(40);  // Boden max 40 px
+        QCOMPARE(app.einstellungen().sim.schuettelnSchwelle, 30000.0);
+        QCOMPARE(app.einstellungen().sim.rutschAbMinuten, 3.0);
+        QCOMPARE(app.einstellungen().sim.rutschTempo, 1.5);
+        QCOMPARE(app.einstellungen().sim.wolkeDauer, 12.0);
+        QCOMPARE(app.einstellungen().sim.wolkeLiegen, 0.25);
+        QCOMPARE(app.einstellungen().sim.bodenMax, 40.0);
         // Flockendetail: Standard realistisch, umstellbar auf einfach
-        auto *detail = f->findChild<QComboBox *>();
+        auto *detail = f->findChild<QComboBox *>("flockendetail");
         QVERIFY(detail);
         QCOMPARE(app.einstellungen().realistisch, true);
         QCOMPARE(detail->currentText(), QString("Realistisch (Schneekristalle)"));
@@ -73,7 +93,9 @@ private slots:
             QFile d(App::konfigPfad());
             d.open(QIODevice::ReadOnly);
             QByteArray t = d.readAll();
-            return t.contains("menge=2\n") && t.contains("wind=-30\n") && t.contains("vor_fenstern=false\n") && t.contains("flockendetail=einfach\n");
+            return t.contains("menge=2\n") && t.contains("wind=-30\n") && t.contains("fenstermodus=fest\n") && !t.contains("vor_fenstern")
+                && t.contains("rutsch_ab_minuten=3\n") && t.contains("wolke_liegen=25\n") && t.contains("boden_max=40\n")
+                && t.contains("flockendetail=einfach\n");
         }(), 3000);
     }
     void dateiAenderungKommtImFensterAn() {
@@ -87,7 +109,27 @@ private slots:
         app.Fenster("[]"); // irgendein Ereignis; das Nachladen kommt über den Dateibeobachter
         QTRY_COMPARE_WITH_TIMEOUT(app.einstellungen().sim.maxHoehe, 40.0, 3000);
         QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChildren<QSlider *>()[3]->value(), 40, 3000);
-        QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChild<QComboBox *>()->currentIndex(), 0, 3000);
+        QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChild<QComboBox *>("flockendetail")->currentIndex(), 0, 3000);
+    }
+    // Henrys alte Datei: vor_fenstern=false wird zu fenstermodus=fest, alle anderen Werte bleiben, neue Schlüssel kommen dazu
+    void alteDateiWirdErgaenztOhneWerteZuVerstellen() {
+        {
+            QFile d(App::konfigPfad());
+            QVERIFY(d.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            d.write("menge=2\nwind=0\nflockengroesse=4\nmax_deckenhoehe=18\nfallgeschwindigkeit=23\nfps=30\nan=true\n"
+                    "vor_fenstern=false\nvollbild_pausieren=true\nflockendetail=realistisch\n");
+        }
+        App app;
+        app.starten();
+        QFile d(App::konfigPfad());
+        QVERIFY(d.open(QIODevice::ReadOnly));
+        const QByteArray t = d.readAll();
+        for (const char *z : {"menge=2\n", "wind=0\n", "flockengroesse=4\n", "max_deckenhoehe=18\n", "fallgeschwindigkeit=23\n", "fps=30\n",
+                              "an=true\n", "vollbild_pausieren=true\n", "flockendetail=realistisch\n", "fenstermodus=fest\n",
+                              "schuetteln_schwelle=15000\n", "rutsch_ab_minuten=10\n", "boden_max=18\n"})
+            QVERIFY2(t.contains(z), z);
+        QVERIFY(!t.contains("vor_fenstern"));
+        QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Fest);
     }
 
 private:

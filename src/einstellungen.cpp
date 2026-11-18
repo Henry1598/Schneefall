@@ -1,6 +1,7 @@
 #include "einstellungen.h"
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <sstream>
 
 namespace schnee {
@@ -40,7 +41,22 @@ std::string fmt(double v) {
     return std::string(buf, p);
 }
 
+const char *modusText(Fenstermodus m) {
+    switch (m) {
+    case Fenstermodus::Dahinter: return "dahinter";
+    case Fenstermodus::Davor: return "davor";
+    case Fenstermodus::Fest: break;
+    }
+    return "fest";
+}
+
 } // namespace
+
+bool einstellungenBrauchtErgaenzung(const std::string &text) {
+    for (const char *k : {"fenstermodus", "schuetteln_schwelle", "rutsch_ab_minuten", "rutsch_tempo", "wolke_dauer", "wolke_liegen", "boden_max"})
+        if (text.find(std::string("\n") + k + "=") == std::string::npos && text.rfind(std::string(k) + "=", 0) != 0) return true;
+    return text.find("vor_fenstern") != std::string::npos;
+}
 
 Programmeinstellungen einstellungenAusText(const std::string &text) {
     Programmeinstellungen p;
@@ -60,7 +76,19 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "fallgeschwindigkeit") setzen(p.sim.fallGeschw, w, 5.0, 300.0);
         else if (k == "fps") { double v = p.fps; setzen(v, w, 10.0, 120.0); p.fps = int(v); }
         else if (k == "an") wahrheit(w, p.an);
-        else if (k == "vor_fenstern") wahrheit(w, p.sim.vorFenstern);
+        // vor_fenstern (bis 18.11.) wird nicht mehr gelesen: Henry will jetzt „fest“, beim Speichern verschwindet er
+        else if (k == "fenstermodus") {
+            std::transform(w.begin(), w.end(), w.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            if (w == "fest") p.sim.modus = Fenstermodus::Fest;
+            else if (w == "dahinter") p.sim.modus = Fenstermodus::Dahinter;
+            else if (w == "davor") p.sim.modus = Fenstermodus::Davor;
+        }
+        else if (k == "schuetteln_schwelle") setzen(p.sim.schuettelnSchwelle, w, 1000.0, 100000.0);
+        else if (k == "rutsch_ab_minuten") setzen(p.sim.rutschAbMinuten, w, 0.0, 120.0);
+        else if (k == "rutsch_tempo") setzen(p.sim.rutschTempo, w, 0.2, 3.0);
+        else if (k == "wolke_dauer") setzen(p.sim.wolkeDauer, w, 1.0, 60.0);
+        else if (k == "wolke_liegen") { double v = p.sim.wolkeLiegen * 100; setzen(v, w, 0.0, 100.0); p.sim.wolkeLiegen = v / 100; }
+        else if (k == "boden_max") setzen(p.sim.bodenMax, w, 2.0, 80.0);
         else if (k == "vollbild_pausieren") wahrheit(w, p.vollbildPausieren);
         else if (k == "flockendetail") {
             std::transform(w.begin(), w.end(), w.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -88,8 +116,22 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "fps=" << p.fps << "\n"
       << "# Schnee an (true) oder pausiert (false)\n"
       << "an=" << (p.an ? "true" : "false") << "\n"
-      << "# Schnee fällt vor den Fenstern (true) oder nur über der Arbeitsfläche, also scheinbar dahinter (false)\n"
-      << "vor_fenstern=" << (p.sim.vorFenstern ? "true" : "false") << "\n"
+      << "# Fenster: fest (Schnee landet auf jedem sichtbaren Fenster, nie davor oder dahinter),\n"
+      << "# dahinter (fällt scheinbar hinter den Fenstern) oder davor (fällt vor den Fenstern)\n"
+      << "fenstermodus=" << modusText(p.sim.modus) << "\n"
+      << "# Schütteln: ab dieser Beschleunigung eines gezogenen Fensters in px/s² fällt Schnee ab (1000 … 100000)\n"
+      << "schuetteln_schwelle=" << fmt(p.sim.schuettelnSchwelle) << "\n"
+      << "# Minimieren/Schließen: war das Fenster so viele Minuten offen (oder ist die Decke fast voll),\n"
+      << "# rutscht der Schnee als Brett ab, sonst rieselt er als Wolke herunter (0 … 120)\n"
+      << "rutsch_ab_minuten=" << fmt(p.sim.rutschAbMinuten) << "\n"
+      << "# Tempo des Schneebretts (0.2 … 3, 1 = normal)\n"
+      << "rutsch_tempo=" << fmt(p.sim.rutschTempo) << "\n"
+      << "# so viele Sekunden hält sich die Schneewolke (1 … 60)\n"
+      << "wolke_dauer=" << fmt(p.sim.wolkeDauer) << "\n"
+      << "# so viel Prozent der Wolke bleiben unten liegen, der Rest löst sich auf (0 … 100)\n"
+      << "wolke_liegen=" << fmt(std::round(p.sim.wolkeLiegen * 1000) / 10) << "\n"
+      << "# höchste Schneedecke auf Boden und Taskleiste in px (2 … 80)\n"
+      << "boden_max=" << fmt(p.sim.bodenMax) << "\n"
       << "# bei aktivem Vollbildfenster (Spiele, Videos) pausieren\n"
       << "vollbild_pausieren=" << (p.vollbildPausieren ? "true" : "false") << "\n"
       << "# Flockendetail: realistisch (Schneekristalle, nahe Flocken groß) oder einfach (weiche Punkte)\n"

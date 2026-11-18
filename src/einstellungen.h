@@ -14,4 +14,7 @@ struct Programmeinstellungen {
 // Wertet den Dateiinhalt aus; unbekannte Schlüssel/kaputte Werte werden ignoriert.
 Programmeinstellungen einstellungenAusText(const std::string &text);
 std::string einstellungenAlsText(const Programmeinstellungen &p);
+// true, wenn in der Datei neue Schlüssel fehlen oder der alte Schlüssel vor_fenstern steht:
+// dann wird sie einmal neu geschrieben (vorhandene Werte bleiben, nur Schlüssel kommen dazu)
+bool einstellungenBrauchtErgaenzung(const std::string &text);
 }

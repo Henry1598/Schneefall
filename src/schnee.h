@@ -1,7 +1,13 @@
 // Simulationskern von Schneefall: reine Logik ohne Qt-GUI.
 // Alle Koordinaten sind globale logische Bildschirmkoordinaten (wie in KWin).
+//
+// Schneemengen („menge“) werden wie gesamtSchnee() gemessen: Summe der Spaltenhöhen in px
+// (eine Flocke legt ablageFuer(groesse) auf ihre Spalte). Schnittstellen für Räumdienst und
+// Schneebälle (Teil B): decke()/decken() (Profil je Fenster), oberkanteBei(), schneeHinzufuegen(),
+// schneeEntnehmen(), abtragenUndFallenLassen(), brockenFallenLassen(), brocken(), fallenderSchnee().
 #pragma once
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <string>
 #include <vector>
@@ -25,6 +31,13 @@ struct Fenster {
     bool dock = false;       // Taskleiste/Panel
 };
 
+// Wie fallender Schnee und Fenster zueinander stehen
+enum class Fenstermodus : uint8_t {
+    Fest,     // Fenster sind feste 2D-Flächen: Schnee landet auf jeder sichtbaren Oberkante, prallt seitlich ab, nie im Fenster
+    Dahinter, // Schnee fällt scheinbar hinter den Fenstern (im Fenster nicht gezeichnet), ein Teil bleibt auf den Kanten
+    Davor,    // Schnee fällt vor den Fenstern, ein Teil bleibt auf den Kanten
+};
+
 struct Einstellungen {
     double menge = 1.0;          // Flocken pro 10 000 px² Bildschirmfläche (ungefähr)
     double wind = 0.0;           // px/s, positiv = nach rechts
@@ -34,13 +47,19 @@ struct Einstellungen {
     double fallGeschw = 45.0;    // mittlere Fallgeschwindigkeit px/s
     double schmelzen = 0.01;     // px/s Abbau am unteren Bildschirmrand (×(0,2 + Höhe/maxHöhe))
     double ablageJeFlocke = 0.0; // Höhenzuwachs je Flocke; 0 = aus Größe berechnet
-    bool vorFenstern = true;     // false: fallende Flocken nur über der Arbeitsfläche zeichnen (wirkt wie hinter den Fenstern)
-    double fangAnteil = 0.4;     // Anteil der Flocken, die auf einer Fensterkante liegen bleiben (Rest fällt davor vorbei)
+    Fenstermodus modus = Fenstermodus::Fest;
+    double fangAnteil = 0.4;     // nur davor/dahinter: Anteil der Flocken, die auf einer Fensterkante liegen bleiben
+    double bodenMax = 18.0;      // höchste Schneedecke auf Boden und Taskleiste in px
+    double schuettelnSchwelle = 15000; // px/s²: ab dieser Beschleunigung eines gezogenen Fensters fällt Schnee ab
+    double rutschAbMinuten = 10; // ab diesem Deckenalter rutscht beim Minimieren/Schließen ein Schneebrett ab (sonst Wolke)
+    double rutschTempo = 1.0;    // Fallbeschleunigung des Schneebretts (1 = 1200 px/s²)
+    double wolkeDauer = 8;       // s, so lange hält sich die Schneewolke
+    double wolkeLiegen = 0.4;    // Anteil der Wolke, der unten liegen bleibt (Rest löst sich auf)
 };
 
 enum class Flockenart : uint8_t {
     Kristall, // fällt vom Himmel
-    Pulver,   // von einer Schneedecke abgefallen (Zerfall, Abschütteln, Abrutschen)
+    Pulver,   // von einer Schneedecke abgefallen (Zerfall, Abschütteln, Abrutschen, Wolke)
 };
 
 struct Flocke {
@@ -52,6 +71,19 @@ struct Flocke {
     uint32_t los = 0;   // Zufallszahl der Flocke; entscheidet je Kante fest, ob sie fängt
     uint32_t herkunft = 0; // Schlüssel der Decke, aus der sie zerfallen ist (dort nie wieder landen)
     Flockenart art = Flockenart::Kristall; // nur fürs Aussehen
+    float leben = -1;   // > 0: Wolkenstaub, löst sich nach so vielen Sekunden auf (landet nie); < 0: normal
+    bool hinten = false; // fest: liegt hinter einem Fenster (wurde verdeckt), bis sie unter ihm herauskommt
+};
+
+// Schneebrett/Brocken: zusammenhängender Block, der schnell fällt und beim Aufprall zerbricht
+struct Brocken {
+    double x = 0, y = 0;        // linke Kante, Unterseite
+    double spaltenBreite = 3;
+    std::vector<float> hoehe;   // Höhe je Spalte (Summe = Menge)
+    double vx = 0, vy = 0;
+    uint32_t herkunft = 0;      // Schlüssel der Decke, aus der er kommt (dort landet er nie)
+    double breite() const { return hoehe.size() * spaltenBreite; }
+    double menge() const { double m = 0; for (float h : hoehe) m += h; return m; }
 };
 
 // Schneedecke auf einer Kante (Fensteroberkante oder Bildschirmboden)
@@ -65,6 +97,12 @@ struct Decke {
     bool dock = false;       // Taskleiste: fängt wie der Boden alle Flocken
     uint32_t schluessel = 0;      // aus id, nie 0
     float abfallLinks = 0, abfallRechts = 0; // gesammelter Überhang, der als Flocke herunterfällt
+    double geboren = 0;      // Simulationszeit, seit der das Fenster Schnee trägt (Alter fürs Minimieren)
+    double fensterBreite = 0; // Fensterbreite in px (Spalten = floor(Breite / Spaltenbreite))
+    // Bewegung beim Ziehen (geglättet, px/s und px/s²) und Schüttelvorgang
+    double vx = 0, vy = 0, ax = 0, ay = 0;
+    double tLetzt = 0, offenX = 0, offenY = 0;
+    double schuettelnSeit = -1, schuettelnMenge = 0, schuettelnMax = 0;
     double breite() const { return hoehe.size() * spaltenBreite; }
 };
 
@@ -79,7 +117,9 @@ public:
     const Einstellungen &einstellungen() const { return m_e; }
 
     void setBildschirme(const std::vector<Rechteck> &b);
-    void setFenster(const std::vector<Fenster> &f);
+    // zeitpunkt: wann die Fensterliste galt, in Simulationszeit (zeit() + Zeit seit dem letzten Schritt);
+    // daraus werden Geschwindigkeit und Beschleunigung gezogener Fenster gemessen. NaN = zeit().
+    void setFenster(const std::vector<Fenster> &f, double zeitpunkt = std::numeric_limits<double>::quiet_NaN());
 
     // Simuliert dt Sekunden. Neue Flocken entstehen nur, wenn erzeugen=true.
     void schritt(double dt, bool erzeugen = true);
@@ -96,14 +136,41 @@ public:
 
     // Zielanzahl fallender Flocken für die aktuelle Bildschirmfläche
     int zielAnzahl() const;
-    // Soll diese Flocke gezeichnet werden? (bei vorFenstern=false nicht über normalen Fenstern)
+    // Soll diese Flocke gezeichnet werden? (fest/dahinter: nicht in Fenstern)
     bool flockeZeichnen(const Flocke &f) const;
     void alleFlockenEntfernen() { m_flocken.clear(); }
     void abschuetteln(); // alle Decken zerfallen in Flocken
     void vorfuellen();   // Flocken gleichmäßig über alle Monitore verteilen (Start)
+    double zeit() const { return m_zeit; } // Simulationszeit in s
+
+    // ---- Schnittstellen für Räumdienst und Schneebälle (Teil B) ----
+    const std::vector<Brocken> &brocken() const { return m_brocken; }
+    // Oberkante des Schnees (Welt-y) an globalem x; NaN, wenn x nicht über der Decke liegt
+    double oberkanteBei(const std::string &id, double x) const;
+    // legt menge auf die Spalte bei x (rutscht danach wie üblich); gibt zurück, was angenommen wurde
+    double schneeHinzufuegen(const std::string &id, double x, double menge);
+    // nimmt bis zu menge aus den sichtbaren Spalten in [x0, x1) (von oben, gleichmäßig); gibt die entnommene Menge zurück
+    double schneeEntnehmen(const std::string &id, double x0, double x1, double menge);
+    // nimmt bis zu menge von der Spalte bei x (und Nachbarn) und lässt sie als Brocken über die
+    // linke (richtung < 0) oder rechte (> 0) Fensterkante fallen; gibt die abgetragene Menge zurück
+    double abtragenUndFallenLassen(const std::string &id, double x, double menge, int richtung);
+    // freier Brocken: Mitte x, Unterseite y, Breite in px, Menge, Anfangstempo
+    void brockenFallenLassen(double x, double y, double breite, double menge, double vx = 0, double vy = 0, uint32_t herkunft = 0);
+    // Schnee, der gerade fällt und noch landen wird (Flocken ohne Wolkenstaub + Brocken)
+    double fallenderSchnee() const;
 
 private:
-    void zerfallen(Decke &d, size_t von, size_t bis); // Spalten [von,bis) in Flocken
+    // Spalten [von,bis) (davon „anteil“) in Flocken; seitwaerts: rutschen erst über die nähere Kante
+    void zerfallen(Decke &d, size_t von, size_t bis, double anteil = 1.0, bool seitwaerts = false);
+    void bewegungMessen(Decke &d, double dx, double dy, double t);
+    void verschwinden(Decke &d);                      // Fenster weg: Rutsch oder Wolke
+    void wolke(Decke &d);
+    void rutsch(Decke &d);
+    void schuetteln(Decke &d, double dt);
+    void brockenSchritt(double dt);
+    const Fenster *fensterBei(double x, double y) const; // oberstes Fenster an dieser Stelle (fest)
+    void festKollision(Flocke &f, double x0, double y0, bool &weg);
+    double maxFuer(const Decke &d) const { return d.boden || d.dock ? m_e.bodenMax : m_e.maxHoehe; }
     void sichtbarkeitBerechnen();
     void nachSichtbarkeitZerfallen();
     void bodenAufbauen();
@@ -119,9 +186,12 @@ private:
     std::mt19937 m_rng;
     std::vector<Rechteck> m_bildschirme;
     std::vector<Fenster> m_fenster;
+    std::vector<uint32_t> m_fensterSchluessel; // je Fenster der Schlüssel seiner Decke
     std::vector<Decke> m_decken;
     std::vector<Flocke> m_flocken;
+    std::vector<Brocken> m_brocken;
     double m_erzeugRest = 0;
+    double m_zeit = 0;
     uint64_t m_deckenStand = 0;
     struct Strecke { double x0, y0, x1, y1; int seite; }; // seite: 0 oben, -1 links, +1 rechts
     std::vector<Strecke> m_raender;  // Ränder, an denen neue Flocken hereinkommen

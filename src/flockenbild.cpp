@@ -20,6 +20,13 @@ float sinusSchnell(float winkel) {
 }
 
 Flockenbild flockenbild(const Flocke &f, double grundgroesse, bool realistisch) {
+    Flockenbild b = flockenbildOhneStaub(f, grundgroesse, realistisch);
+    // Wolkenstaub ist zart und blendet in seiner letzten Sekunde aus
+    if (f.leben > 0) b.deckkraft *= 0.7f * std::min(1.f, f.leben / 1.2f);
+    return b;
+}
+
+Flockenbild flockenbildOhneStaub(const Flocke &f, double grundgroesse, bool realistisch) {
     Flockenbild b;
     if (!realistisch) {
         b.sprite = Sprite::Punkt;

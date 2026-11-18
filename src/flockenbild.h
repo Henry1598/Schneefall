@@ -23,5 +23,6 @@ struct Flockenbild {
 
 // grundgroesse = eingestellte Flockengröße; realistisch = false: weiche Punkte wie früher
 Flockenbild flockenbild(const Flocke &f, double grundgroesse, bool realistisch);
+Flockenbild flockenbildOhneStaub(const Flocke &f, double grundgroesse, bool realistisch);
 
 } // namespace schnee
