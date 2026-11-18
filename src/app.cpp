@@ -257,8 +257,12 @@ bool App::inBewegung(double jetzt) const {
 
 void App::bildKommt(double jetzt) {
     if (!m_laeuft) return;
-    // Ruhe: 30 Schritte je s, die Flocken schreibt der Shader fort. Bewegung: in jedem Bild (höchstens 400/s)
-    const double faellig = inBewegung(jetzt) ? 1.0 / 400 : 1.0 / 30 - 0.002;
+    // Ruhe: 30 Schritte je s, die Flocken schreibt der Shader fort. Bewegung (Räumdienst, Schneeball, gezogenes
+    // Fenster): etwas öfter als die Bildrate. Die Monitore zeichnen zeitversetzt; ein Schritt je Bild jedes Monitors
+    // wären bei vier Monitoren über 150 Schritte je s. So ist der Stand in jedem Bild höchstens einen
+    // Dreiviertel-Bildabstand alt (bei 80 px/s rund 1 px), und der Einsatz kostet spürbar weniger.
+    const double rate = m_einst.bildrate > 0 ? m_einst.bildrate : 320;
+    const double faellig = inBewegung(jetzt) ? 1.0 / (rate * 1.25) : 1.0 / 30 - 0.002;
     if (jetzt - m_taktstand.schrittUhr >= faellig) schritt(jetzt);
 }
 
