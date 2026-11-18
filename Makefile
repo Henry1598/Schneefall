@@ -42,6 +42,7 @@ MM_LIBS   := $(shell pkg-config --libs Qt6Multimedia)
 
 B ?= build
 SPRUECHE_O := $(B)/sprueche.o $(B)/qrc_sprueche.o
+STAT_O := $(B)/statistik.o
 RAEUM_O := $(B)/raeumdienst.o $(B)/raeumszene.o $(B)/fahrzeugbild.o $(B)/ansicht3d.o $(B)/fahrzeugmodell.o $(B)/blasen.o
 # Plattform-Schicht: Schnittstellen in src/plattform/*.h, plattformneutral pfade/steuerkanal, Backend in src/plattform/$(PLATTFORM)/
 PLAT_H := src/plattform/fensterquelle.h src/plattform/ebene.h src/plattform/steuerkanal.h src/plattform/autostart.h src/plattform/pfade.h \
@@ -49,7 +50,7 @@ PLAT_H := src/plattform/fensterquelle.h src/plattform/ebene.h src/plattform/steu
 PLAT_O := $(B)/pfade.o $(B)/steuerkanal.o $(patsubst %,$(B)/pl_%.o,$(PLAT_DATEIEN) $(PLAT_MOC))
 # alles, was die App (ohne main) braucht
 APP_O := $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o \
-         $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O) $(PLAT_O)
+         $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O) $(STAT_O) $(PLAT_O)
 
 all: $(B)/schneefall$(EXE)
 
@@ -98,7 +99,7 @@ $(B)/pl_moc_dbusdienst.o: $(B)/moc_dbusdienst.cpp
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h src/sprueche.h src/blasen.h src/fahrzeugmodell.h $(PLAT_H) | $(B)
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h src/sprueche.h src/blasen.h src/fahrzeugmodell.h src/statistik.h $(PLAT_H) | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
@@ -133,6 +134,16 @@ $(B)/test_steuerfenster.moc: tests/test_steuerfenster.cpp | $(B)
 
 $(B)/test_steuerfenster$(EXE): tests/test_steuerfenster.cpp tests/fakefensterquelle.h $(B)/test_steuerfenster.moc $(APP_O)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_steuerfenster.cpp $(APP_O) -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+
+# ---- Statistik (Zähler, Speicherung) ----
+$(B)/test_statistik.moc: tests/test_statistik.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_statistik$(EXE): tests/test_statistik.cpp $(B)/test_statistik.moc $(B)/statistik.o $(B)/pfade.o $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o $(SPRUECHE_O)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_statistik.cpp $(B)/statistik.o $(B)/pfade.o $(B)/raeumdienst.o $(B)/schnee.o $(B)/ansicht3d.o $(SPRUECHE_O) -o $@ $(TEST_LIBS)
+
+test-statistik: $(B)/test_statistik$(EXE)
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_statistik$(EXE)
 
 # ---- Plattform-Schicht ----
 $(B)/test_app.moc: tests/test_app.cpp | $(B)
@@ -219,7 +230,7 @@ test-klang: $(B)/test_klang$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 
 TESTS := test_klang test_ansicht test_blasen test_raeumdienst test_schnee test_bild test_bildtakt test_steuerfenster test_sprueche \
-         test_steuerkanal test_app
+         test_statistik test_steuerkanal test_app
 test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(if $(KWIN_TEST),$(B)/$(KWIN_TEST))
 	@set -e; for t in $(TESTS) $(KWIN_TEST); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
 ifeq ($(PLATTFORM),linux)
@@ -235,7 +246,7 @@ kwin-skript:
 clean:
 	rm -rf $(B)
 
-.PHONY: test-plattform test-sprueche test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
+.PHONY: test-plattform test-statistik test-sprueche test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
 
 # Befehl schneefall-umschalten und Desktop-Starter für den aktuellen Benutzer
 install: all

@@ -14,6 +14,7 @@
 #include "raeumdienst.h"
 #include "raeumszene.h"
 #include "schnee.h"
+#include "statistik.h"
 #include "plattform/fensterquelle.h"
 #include "plattform/steuerkanal.h"
 
@@ -40,6 +41,8 @@ public:
     const schnee::Programmeinstellungen &einstellungen() const { return m_einst; }
     void einstellungenAendern(const schnee::Programmeinstellungen &p); // wirkt sofort, speichert verzögert
     static QString konfigPfad();
+    schnee::Statistik &statistik() { return m_statistik; }   // Zähler (Räumeinsätze, Treffer, Streiks), Anzeige im Steuerfenster
+    void statistikZuruecksetzen();
     Klang &klang() { return m_klang; } // Geräusche (Teil B ruft ereignis()/dauerklang() hier auf)
 
 public Q_SLOTS:
@@ -68,6 +71,7 @@ private:
     void laden();
     void speichern();
     void trayAufbauen();
+    void statistikAbholen(); // Ereignisse des Räumdienstes verbuchen, Tooltip auffrischen
     void klaengeWeitergeben();
     void eingabeAktualisieren();
     void maus(int art, double x, double y); // 0 = gedrückt, 1 = bewegt, 2 = losgelassen
@@ -76,6 +80,8 @@ private:
     schnee::Programmeinstellungen m_einst;
     Klang m_klang;
     schnee::Raeumdienst m_raeum{m_sim};
+    schnee::Statistik m_statistik;
+    QTimer m_statistikTimer;       // schreibt die Statistik höchstens alle 30 s
     schnee::Szene m_szene;        // was vom Räumdienst zu zeichnen ist (einmal je Takt für alle Ebenen)
     QElapsedTimer m_mausUhr;
     double m_eingabeFaellig = 0;   // uhrSekunden(), ab wann die Eingaberegion wieder angepasst wird

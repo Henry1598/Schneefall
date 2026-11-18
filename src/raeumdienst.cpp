@@ -249,6 +249,7 @@ bool Raeumdienst::starten(const std::string &id) {
     e.fz.gier = 0;
     e.fz.x = e.seil.x;
     e.fz.y = e.seil.y + fzH;
+    zaehlen(Statistikereignis::EinsatzGestartet, e.fz.art == Fahrzeugart::Pflug);
     m_einsaetze.push_back(std::move(e));
     return true;
 }
@@ -267,6 +268,12 @@ std::vector<Klangereignis> Raeumdienst::klaengeAbholen() {
     std::vector<Klangereignis> k;
     k.swap(m_klaenge);
     return k;
+}
+
+std::vector<Statistikereignis> Raeumdienst::statistikAbholen() {
+    std::vector<Statistikereignis> s;
+    s.swap(m_statistik);
+    return s;
 }
 
 void Raeumdienst::klaengeAnhalten() {
@@ -293,6 +300,7 @@ bool Raeumdienst::sagen(Sprechblase &b, Redner wer, Redeanlass anlass, int treff
     b.text = std::move(text);
     b.anlass = anlass;
     b.dauer = b.rest = blasenDauer(b.text);
+    zaehlen(Statistikereignis::Spruch);
     klang(Geraeusch::Murren, x, y, std::clamp(0.5 + 0.25 * zahl, 0.6, 1.9));
     return true;
 }
@@ -339,6 +347,7 @@ void Raeumdienst::abwerfen(Einsatz &e, double menge, bool alles, bool seitlich) 
     Fahrzeug &f = e.fz;
     const double sb = m_sim.einstellungen().spaltenBreite;
     const int r = f.richtung;
+    if (menge > 0) zaehlen(Statistikereignis::SchneeGeraeumt, false, menge);
     if (!seitlich) {
         f.ueberhang += menge;
         if (f.ueberhang > 0 && (alles || f.ueberhang >= f.bruchAb)) ueberhangBrechen(e);
@@ -949,6 +958,7 @@ void Raeumdienst::schritt(double dt) {
     for (size_t i = 0; i < m_einsaetze.size();) {
         if (m_einsaetze[i].phase == Phase::Fertig) {
             const Einsatz &e = m_einsaetze[i];
+            zaehlen(e.abbruch ? Statistikereignis::EinsatzAbgebrochen : Statistikereignis::EinsatzAbgeschlossen, e.fz.art == Fahrzeugart::Pflug);
             m_sperre[e.id] = m_sim.zeit() + (e.beleidigt ? 600 : 45);
             m_einsaetze.erase(m_einsaetze.begin() + long(i));
         } else ++i;
@@ -1047,6 +1057,7 @@ void Raeumdienst::werfen(double x, double y, double vx, double vy, double menge)
     b.vx = vx; b.vy = vy;
     b.drall = vx / std::max(4.0, b.radius()) * 0.5 + (zufall() - 0.5) * 4;
     m_baelle.push_back(b);
+    zaehlen(Statistikereignis::BallGeworfen);
     if (tempo > 120) klang(Geraeusch::Wurf, x, y, std::clamp(tempo / 1200, 0.3, 2.0));
 }
 
@@ -1067,6 +1078,7 @@ void Raeumdienst::treffer(Einsatz &e, const Schneeball &b) {
     const double G = g();
     const Fahrzeugmass m = massVon(f.art);
     klang(Geraeusch::Treffer, b.x, b.y, std::clamp(b.menge / 100, 0.4, 2.0));
+    zaehlen(Statistikereignis::TrefferFahrzeug);
     // ein Teil bleibt kleben, der Rest zerplatzt zu Staub und Pulver
     const double klebt = b.menge * 0.3;
     // klebt am Fahrzeug, nicht in der Luft daneben: über der Haube niedriger als an der Kabine
@@ -1116,8 +1128,10 @@ void Raeumdienst::streikPruefen(Einsatz &e) {
         f.phase = FahrPhase::Beleidigt;
         f.t = 0;
         e.beleidigt = true;
+        zaehlen(Statistikereignis::BeleidigterAbflug);
         sagen(f.blase, Redner::Fahrer, Redeanlass::BeleidigtAbflug, f.trefferGesamt, f.x, f.y);
     } else {
+        zaehlen(Statistikereignis::Streik);
         f.vorStreik = f.phase;
         f.phase = FahrPhase::Streik;
         f.t = 0;
@@ -1158,6 +1172,7 @@ void Raeumdienst::ballSchritt(double dt) {
                     platzen(b, {}, 0);
                     klang(Geraeusch::Treffer, b.x, b.y, 0.6);
                     ++e.heliTreffer;
+                    zaehlen(Statistikereignis::TrefferHeli);
                     sagen(e.heli.blase, Redner::Pilot, Redeanlass::HeliTreffer, e.heliTreffer, e.heli.x, e.heli.y, 1.5);
                     e.heli.stoss += vorzeichen(b.vx) * 0.25;
                     e.heli.vx += std::clamp(b.vx * 0.05, -60.0, 60.0);
@@ -1173,6 +1188,7 @@ void Raeumdienst::ballSchritt(double dt) {
                     if (rel < 0 || size_t(rel) >= d.hoehe.size() || !d.sichtbar[size_t(rel)]) continue;
                     const double oben = d.y - d.hoehe[size_t(rel)];
                     if (y0 + r <= d.y + 4 && b.y + r >= oben) {
+                        zaehlen(Statistikereignis::BallDaneben);
                         platzen(b, d.id, 0.75);
                         klang(Geraeusch::Plumps, b.x, b.y, std::clamp(b.menge / 150, 0.2, 1.0));
                         weg = true;
@@ -1180,7 +1196,7 @@ void Raeumdienst::ballSchritt(double dt) {
                     }
                 }
             }
-            if (b.y > unten + 60 || b.x < links - 300 || b.x > rechts + 300) weg = true;
+            if (!weg && (b.y > unten + 60 || b.x < links - 300 || b.x > rechts + 300)) { weg = true; zaehlen(Statistikereignis::BallDaneben); }
         }
         if (!weg) bleiben.push_back(b);
     }

@@ -11,6 +11,9 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLocale>
+#include <QMessageBox>
+#include <QTimer>
 #include <QPushButton>
 #include <QSlider>
 #include <QVBoxLayout>
@@ -153,6 +156,37 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     gruppen->addWidget(fensterGruppe);
     gruppen->addWidget(raeumGruppe);
     haupt->addLayout(gruppen);
+
+    // Gruppe „Statistik“: Zähler aus statistik.h, live aktualisiert
+    auto *statGruppe = new QGroupBox(QStringLiteral("Statistik"), this);
+    statGruppe->setObjectName(QStringLiteral("statistik"));
+    auto *sg = new QGridLayout(statGruppe);
+    static const char *const statNamen[12] = {"Geräumt", "Einsätze gestartet", "Einsätze abgebrochen", "davon Taskleiste/Boden",
+                                              "Schneebälle geworfen", "Treffer Fahrzeug", "Treffer Hubschrauber", "Daneben",
+                                              "Trefferquote", "Gestreikt", "Beleidigte Abflüge", "Sprüche gesagt"};
+    for (int i = 0; i < 12; ++i) {
+        const int sp = i / 6 * 2, ze = i % 6;
+        sg->addWidget(new QLabel(QString::fromUtf8(statNamen[i]), this), ze, sp);
+        m_stat[i] = new QLabel(this);
+        m_stat[i]->setObjectName(QStringLiteral("stat_%1").arg(i));
+        m_stat[i]->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_stat[i]->setMinimumWidth(70);
+        QFont fb = m_stat[i]->font();
+        fb.setBold(true);
+        m_stat[i]->setFont(fb);
+        sg->addWidget(m_stat[i], ze, sp + 1);
+    }
+    m_statSeit = new QLabel(this);
+    sg->addWidget(m_statSeit, 6, 0, 1, 2);
+    auto *statReset = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-delete")), QStringLiteral("Statistik zurücksetzen"), this);
+    statReset->setObjectName(QStringLiteral("statistik_zuruecksetzen"));
+    sg->addWidget(statReset, 6, 2, 1, 2);
+    haupt->addWidget(statGruppe);
+    connect(statReset, &QPushButton::clicked, this, [this] { statistikZuruecksetzen(); });
+    auto *statTimer = new QTimer(this);
+    statTimer->setInterval(1000);
+    connect(statTimer, &QTimer::timeout, this, [this] { if (isVisible()) statistikAnzeigen(); });
+    statTimer->start();
     m_alle = {&m_menge, &m_wind, &m_groesse, &m_hoehe, &m_fall, &m_schwelle, &m_rutschAb, &m_rutschTempo, &m_wolkeDauer, &m_wolkeLiegen, &m_bodenMax,
               &m_raeumenAb, &m_fzGroesse, &m_gleichzeitig, &m_trefferStreik};
 
@@ -187,7 +221,32 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     ausEinstellungen();
 }
 
+void Steuerfenster::statistikAnzeigen() {
+    const Zaehlerstand &z = m_app->statistik().stand();
+    const double q = z.trefferquote();
+    const QString werte[12] = {
+        QStringLiteral("%1×").arg(z.einsaetzeAbgeschlossen), QString::number(z.einsaetzeGestartet), QString::number(z.einsaetzeAbgebrochen),
+        QString::number(z.pflugAbgeschlossen), QString::number(z.baelleGeworfen), QString::number(z.trefferFahrzeug),
+        QString::number(z.trefferHeli), QString::number(z.baelleDaneben),
+        q < 0 ? QStringLiteral("–") : QStringLiteral("%1 %").arg(q, 0, 'f', 0),
+        QStringLiteral("%1×").arg(z.streiks), QString::number(z.beleidigteAbfluege), QString::number(z.sprueche)};
+    for (int i = 0; i < 12; ++i)
+        if (m_stat[i]->text() != werte[i]) m_stat[i]->setText(werte[i]);
+    m_stat[0]->setToolTip(QStringLiteral("Abgeschlossene Einsätze; geräumte Menge: %1 Einheiten").arg(z.schneeGeraeumt, 0, 'f', 0));
+    m_statSeit->setText(QStringLiteral("seit %1").arg(QLocale().toString(z.seit.toLocalTime(), QLocale::ShortFormat)));
+}
+
+void Steuerfenster::statistikZuruecksetzen() {
+    const auto antwort = QMessageBox::question(this, QStringLiteral("Statistik zurücksetzen"),
+                                               QStringLiteral("Alle Zähler (geräumt, Treffer, Streiks …) auf null setzen?"),
+                                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (antwort != QMessageBox::Yes) return;
+    m_app->statistikZuruecksetzen();
+    statistikAnzeigen();
+}
+
 void Steuerfenster::ausEinstellungen() {
+    statistikAnzeigen();
     m_setzt = true;
     const Programmeinstellungen &p = m_app->einstellungen();
     m_an->setChecked(p.an);
