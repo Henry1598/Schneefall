@@ -354,7 +354,7 @@ QString App::Status() {
                  .arg(it.key()->geometry().x()).arg(it.key()->geometry().y())
                  .arg(it.value()->devicePixelRatio()).arg(it.value()->isVisible())
                  .arg(l.sammelnMs, 0, 'f', 3).arg(l.zeichnenMs, 0, 'f', 3).arg(l.ecken)
-          + QStringLiteral(" tausch_ms=%1").arg(l.tauschMs, 0, 'f', 3)
+          + QStringLiteral(" tausch_ms=%1 flockenaufbau_ms=%2 instanzen=%3").arg(l.tauschMs, 0, 'f', 3).arg(l.flockenaufbauMs, 0, 'f', 3).arg(l.instanzen)
           + QLatin1Char(' ') + bildzeitenText(it.value()->monitorHz(), it.value()->sollAbstand(), z)
           + QStringLiteral(" teiler=%1").arg(it.value()->teiler());
     }

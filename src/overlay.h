@@ -28,7 +28,8 @@ public:
     QScreen *bildschirm() const { return m_bildschirm; }
     void anBildschirmAnpassen();
     // Lastmessung seit dem letzten Aufruf (für --status): Zeit fürs Zusammenstellen und fürs Zeichnen, Ecken je Bild
-    struct Last { double sammelnMs = 0, zeichnenMs = 0, tauschMs = 0; int ecken = 0; }; // tausch: Ende paintGL bis Bild abgegeben (Swap)
+    // tausch: Ende paintGL bis Bild abgegeben (Swap); flockenaufbau: Zusammenstellen der Flocken (je Aufbau)
+    struct Last { double sammelnMs = 0, zeichnenMs = 0, tauschMs = 0, flockenaufbauMs = 0; int ecken = 0; bool instanzen = false; }; // tausch: Ende paintGL bis Bild abgegeben (Swap)
     Last lastAbholen();
     // Abstände der gezeichneten Bilder seit dem letzten Abholen (für --status)
     schnee::Bildzeiten::Bericht bildzeitenAbholen() { return m_bildzeiten.abholen(); }
@@ -75,7 +76,10 @@ private:
     QOpenGLShaderProgram *m_fortProg = nullptr;    // Flocken: schiebt und dreht im Vertex-Shader weiter
     QOpenGLBuffer m_flockenVbo{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_flockenIndex{QOpenGLBuffer::IndexBuffer};
-    std::vector<float> m_flocken;  // je Flocke 4 Ecken zu FORT_WERTE Zahlen
+    QOpenGLShaderProgram *m_instProg = nullptr;    // dasselbe mit Instanzen (ein Satz Werte je Flocke)
+    QOpenGLBuffer m_eckenVbo{QOpenGLBuffer::VertexBuffer};
+    bool m_instanzen = false;
+    std::vector<float> m_flocken;  // je Flocke INST_WERTE Zahlen (Instanzen) bzw. 4 Ecken zu FORT_WERTE Zahlen
     size_t m_flockenZahl = 0;      // Flocken im Puffer
     uint64_t m_flockenGebaut = ~0ull; // Taktstand::flockenSchritt der Flocken im Puffer
     double m_flockenUhr = 0;       // Uhrzeit des Simulationsstands, aus dem sie gebaut wurden
@@ -113,6 +117,8 @@ private:
     float m_deckenFuer[5] = {0, 0, 0, 0, 0}; // Monitorfläche und Skalierung der gespeicherten Ecken
     qint64 m_sammelNs = 0, m_zeichenNs = 0, m_eckenSumme = 0, m_tauschNs = 0;
     double m_zeichnenEnde = 0;
+    qint64 m_aufbauNs = 0;
+    int m_aufbauten = 0;
     int m_bilder = 0;
     schnee::Bildzeiten m_bildzeiten;
 };

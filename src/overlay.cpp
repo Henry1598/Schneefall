@@ -1,6 +1,8 @@
 #include "overlay.h"
 #include <LayerShellQt/Window>
 #include <QMouseEvent>
+#include <QOpenGLContext>
+#include <QOpenGLExtraFunctions>
 #include <QScreen>
 #include <algorithm>
 #include <cmath>
@@ -46,6 +48,31 @@ void main() {
     vec2 n = (p - bild.xy) / bild.zw;
     gl_Position = vec4(n.x * 2.0 - 1.0, 1.0 - n.y * 2.0, 0.0, 1.0);
     v = uva;
+}
+)";
+// dasselbe mit Instanzen (OpenGL 3.3 / ES 3): je Flocke ein Satz Werte statt vier Ecken, die Ecke kommt
+// aus einem festen Puffer – ein Viertel der Daten, die die CPU je Aufbau schreibt und hochlädt
+const int INST_WERTE = 15;
+const char *INST = R"(
+attribute vec2 ecke;
+attribute vec2 mitte;
+attribute vec2 achseA;
+attribute vec2 achseQ;
+attribute vec2 tempo;
+attribute vec2 dreh;
+attribute vec4 feld;
+attribute float deckkraft;
+uniform vec4 bild;
+uniform float h;
+varying vec3 v;
+void main() {
+    float w = dreh.x * h;
+    float c = cos(w), s = sin(w);
+    vec2 o = ecke.x * achseA + ecke.y * achseQ * (1.0 + dreh.y * h);
+    vec2 p = mitte + tempo * h + vec2(c * o.x - s * o.y, s * o.x + c * o.y);
+    vec2 n = (p - bild.xy) / bild.zw;
+    gl_Position = vec4(n.x * 2.0 - 1.0, 1.0 - n.y * 2.0, 0.0, 1.0);
+    v = vec3(mix(feld.xy, feld.zw, ecke * 0.5 + 0.5), deckkraft);
 }
 )";
 // je Zeichenaufruf höchstens so viele Flocken (16-Bit-Indizes: 4 Ecken je Flocke)
@@ -198,6 +225,8 @@ Overlay::~Overlay() {
     if (m_fahrzeugTextur) glDeleteTextures(1, &m_fahrzeugTextur);
     m_flockenVbo.destroy();
     m_flockenIndex.destroy();
+    m_eckenVbo.destroy();
+    delete m_instProg;
     delete m_flockenProg;
     delete m_deckenProg;
     delete m_fortProg;
@@ -210,7 +239,10 @@ QOpenGLShaderProgram *Overlay::programm(const char *fragment, const char *vertex
     auto *p = new QOpenGLShaderProgram;
     p->addShaderFromSourceCode(QOpenGLShader::Vertex, vertex ? vertex : VERTEX);
     p->addShaderFromSourceCode(QOpenGLShader::Fragment, fragment);
-    if (vertex) {
+    if (vertex == INST) {
+        int i = 0;
+        for (const char *name : {"ecke", "mitte", "achseA", "achseQ", "tempo", "dreh", "feld", "deckkraft"}) p->bindAttributeLocation(name, i++);
+    } else if (vertex) {
         int i = 0;
         for (const char *name : {"mitte", "achseA", "achseQ", "tempo", "dreh", "uva"}) p->bindAttributeLocation(name, i++);
     } else {
@@ -226,6 +258,22 @@ void Overlay::initializeGL() {
     m_flockenProg = programm(FLOCKEN);
     m_deckenProg = programm(DECKEN);
     m_fortProg = programm(FLOCKEN, FORT);
+    // Instanzen, wenn der Kontext sie kann (sonst vier Ecken je Flocke)
+    {
+        QOpenGLContext *k = context();
+        const auto v = k->format().version();
+        m_instanzen = k->isOpenGLES() ? v.first >= 3 : (v >= qMakePair(3, 3) || k->hasExtension("GL_ARB_instanced_arrays"));
+        if (qEnvironmentVariableIsSet("SCHNEEFALL_OHNE_INSTANZEN")) m_instanzen = false;
+        if (m_instanzen) {
+            m_instProg = programm(FLOCKEN, INST);
+            if (!m_instProg->isLinked()) m_instanzen = false;
+            static const float ecken[8] = {-1, -1, 1, -1, -1, 1, 1, 1};
+            m_eckenVbo.create();
+            m_eckenVbo.bind();
+            m_eckenVbo.allocate(ecken, sizeof ecken);
+            m_eckenVbo.release();
+        }
+    }
     m_vbo.create();
     m_vbo.setUsagePattern(QOpenGLBuffer::StreamDraw);
     m_flockenVbo.create();
@@ -369,10 +417,10 @@ void Overlay::flockenBauen(float bx, float by, float bw, float bh) {
     m_flockenZahl = 0;
     for (const Flocke &f : m_sim->flocken()) {
         const float fx = float(f.x), fy = float(f.y);
+        // grob aussortieren (größte Flocke: 64 px, dazu Weg bis zum nächsten Aufbau), bevor gerechnet wird
+        if (fx + 80 < bx || fx - 80 > bx + bw || fy + 80 < by || fy - 80 > by + bh) continue;
         // bis zum nächsten Aufbau (1/30 s, bei Rucklern länger) wandert sie noch ein Stück: Rand dazugeben
         const float weg = 0.12f * float(std::abs(f.vx) + std::abs(f.vy) + 3 * f.groesse);
-        // grob aussortieren (größte Flocke: 64 px), bevor das Aussehen berechnet wird
-        if (fx + 33 + weg < bx || fx - 33 - weg > bx + bw || fy + 33 + weg < by || fy - 33 - weg > by + bh) continue;
         const Flockenbild b = flockenbild(f, grund, realistisch);
         const float r = b.durchmesser * 0.5f + weg;
         if (fx + r < bx || fx - r > bx + bw || fy + r < by || fy - r > by + bh) continue;
@@ -389,6 +437,12 @@ void Overlay::flockenBauen(float bx, float by, float bw, float bh) {
         const float v0 = (feld->y + 0.5f) / ah, v1 = (feld->y + feld->groesse - 0.5f) / ah;
         const FlockenViereck v = flockenViereck(f, b);
         const float a = b.deckkraft;
+        ++m_flockenZahl;
+        if (m_instanzen) {
+            const float w[INST_WERTE] = {v.mx, v.my, v.ax, v.ay, v.qx, v.qy, v.vx, v.vy, v.drehtempo, v.stauchTempo, u0, v0, u1, v1, a};
+            m_flocken.insert(m_flocken.end(), w, w + INST_WERTE);
+            continue;
+        }
         // Ecken wie in viereckEcken: links oben, rechts oben, links unten, rechts unten
         const float ecke[4][5] = {{-1, -1, u0, v0, a}, {1, -1, u1, v0, a}, {-1, 1, u0, v1, a}, {1, 1, u1, v1, a}};
         const size_t alt = m_flocken.size();
@@ -399,12 +453,36 @@ void Overlay::flockenBauen(float bx, float by, float bw, float bh) {
                                          v.drehtempo, v.stauchTempo, e[2], e[3], e[4]};
             z = std::copy_n(w, FORT_WERTE, z);
         }
-        ++m_flockenZahl;
     }
 }
 
 void Overlay::flockenZeichnen(float bx, float by, float bw, float bh, float h) {
     if (m_flockenZahl == 0) return;
+    if (m_instanzen) {
+        QOpenGLExtraFunctions *f = context()->extraFunctions();
+        m_instProg->bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
+        m_instProg->setUniformValue("atlas", 0);
+        m_instProg->setUniformValue("bild", bx, by, bw, bh);
+        m_instProg->setUniformValue("h", h);
+        for (int i = 0; i < 8; ++i) m_instProg->enableAttributeArray(i);
+        m_eckenVbo.bind();
+        m_instProg->setAttributeBuffer(0, GL_FLOAT, 0, 2, 2 * sizeof(float));
+        m_flockenVbo.bind();
+        static const int lage[7] = {0, 2, 4, 6, 8, 10, 14}, breite[7] = {2, 2, 2, 2, 2, 4, 1};
+        for (int i = 0; i < 7; ++i) {
+            m_instProg->setAttributeBuffer(i + 1, GL_FLOAT, lage[i] * int(sizeof(float)), breite[i], INST_WERTE * sizeof(float));
+            f->glVertexAttribDivisor(GLuint(i + 1), 1);
+        }
+        f->glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, GLsizei(m_flockenZahl));
+        // Teiler zurücksetzen: die Attribut-Plätze teilen sich alle Programme
+        for (int i = 1; i < 8; ++i) f->glVertexAttribDivisor(GLuint(i), 0);
+        for (int i = 0; i < 8; ++i) m_instProg->disableAttributeArray(i);
+        m_flockenVbo.release();
+        m_instProg->release();
+        return;
+    }
     m_fortProg->bind();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
@@ -486,7 +564,10 @@ void Overlay::deckeSammeln(const Decke &d, float bx, float by, float bw, float b
 
 Overlay::Last Overlay::lastAbholen() {
     Last l;
-    if (m_bilder) l = {m_sammelNs / 1e6 / m_bilder, m_zeichenNs / 1e6 / m_bilder, m_tauschNs / 1e6 / m_bilder, int(m_fahrzeugEcken + GLint(m_flockenZahl * 4))};
+    if (m_bilder) l = {m_sammelNs / 1e6 / m_bilder, m_zeichenNs / 1e6 / m_bilder, m_tauschNs / 1e6 / m_bilder,
+                       m_aufbauten ? m_aufbauNs / 1e6 / m_aufbauten : 0, int(m_fahrzeugEcken + GLint(m_flockenZahl * 4)), m_instanzen};
+    m_aufbauNs = 0;
+    m_aufbauten = 0;
     m_sammelNs = m_zeichenNs = m_eckenSumme = m_tauschNs = 0;
     m_bilder = 0;
     return l;
@@ -517,9 +598,10 @@ void Overlay::paintGL() {
     // Decken, Brocken und Räumdienst: nach jedem Simulationsschritt neu (sie bewegen sich mit der Simulation)
     if (m_takt->schritt != m_teileGebaut || anders) {
         m_teileGebaut = m_takt->schritt;
-        // Deckenform nur in jedem zweiten Schritt (Ruhe: 15-mal je s, die Decken wachsen um Bruchteile
-        // eines Pixels) – sofort aber, wenn sich Fenster, Monitore oder Skalierung geändert haben
-        if (m_sim->deckenStand() != m_deckenStand || ++m_deckenAlter >= 2 || anders) {
+        // Deckenform nur in jedem vierten Schritt (Ruhe: 7,5-mal je s, die Decken wachsen dabei um Bruchteile
+        // eines Pixels) – sofort aber, wenn sich Fenster, Monitore oder Skalierung geändert haben oder
+        // Schnee abgefallen ist (deckenStand)
+        if (m_sim->deckenStand() != m_deckenStand || ++m_deckenAlter >= 4 || anders) {
             m_daten.clear();
             deckenSammeln(bx, by, bw, bh, dpr, weich);
             m_deckenEnde = m_daten.size();
@@ -548,12 +630,15 @@ void Overlay::paintGL() {
     if (m_takt->flockenSchritt != m_flockenGebaut || anders) {
         m_flockenGebaut = m_takt->flockenSchritt;
         m_flockenUhr = m_takt->schrittUhr;
+        const qint64 a = stoppuhr.nsecsElapsed();
         flockenBauen(bx, by, bw, bh);
         if (m_flockenZahl) {
             m_flockenVbo.bind();
             m_flockenVbo.allocate(m_flocken.data(), int(m_flocken.size() * sizeof(float)));
             m_flockenVbo.release();
         }
+        m_aufbauNs += stoppuhr.nsecsElapsed() - a;
+        ++m_aufbauten;
         m_eckenSumme += qint64(m_flockenZahl * 4);
     }
     const qint64 gesammelt = stoppuhr.nsecsElapsed();

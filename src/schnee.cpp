@@ -748,9 +748,12 @@ double Simulation::gesamtSchnee(const std::string &id) const {
 bool Simulation::flockeZeichnen(const Flocke &f) const {
     switch (m_e.modus) {
     case Fenstermodus::Davor: return true;
-    case Fenstermodus::Fest: // nie in einem sichtbaren Fenster (auch nicht vor der Taskleiste); vor durchlässigen schon
+    case Fenstermodus::Fest: // nie in einem Fenster (auch nicht vor der Taskleiste). Durch durchlässige Fenster
+        // (oberer Rand, Vollbild) fallen Flocken unsichtbar hindurch und kommen unten sichtbar an (Henry 18.11.)
         if (f.hinten) return false;
-        return fensterBei(f.x, f.y) == nullptr;
+        for (const Fenster &w : m_fenster)
+            if (!w.minimiert && w.r.enthaelt(f.x, f.y)) return false;
+        return true;
     case Fenstermodus::Dahinter: break;
     }
     for (const Fenster &w : m_fenster) {

@@ -370,8 +370,9 @@ void TestSchnee::festFensterAmOberenRandTraegtKeinenSchnee() {
     s.setFenster({hinten, fenster("max", 0, 2, 1000, 758, 2), leiste});
     QVERIFY(s.decke("max") == nullptr);
     for (int i = 0; i < 20; ++i) s.flockeHinzufuegen(flocke(100 + i * 40, -2));
-    // fällt vor dem Fenster: wird gezeichnet
-    QVERIFY(s.flockeZeichnen(flocke(500, 300)));
+    // fällt unsichtbar durch das Fenster (Henry: kein Schnee vor dem offenen Fenster), daneben sichtbar
+    QVERIFY(!s.flockeZeichnen(flocke(500, 300)));
+    QVERIFY(s.flockeZeichnen(flocke(500, 780)) == false); // vor der Taskleiste ebenfalls nicht
     laufen(s, 20.0);
     QCOMPARE(s.gesamtSchnee("hinten"), 0.0);
     QCOMPARE(s.gesamtSchnee("leiste"), 20.0); // alles kommt unten auf der Taskleiste an
@@ -384,6 +385,8 @@ void TestSchnee::festTeilmaximiertNebenAnderemFenster() {
     s.setFenster({fenster("links", 0, 0, 500, 800, 1), fenster("rechts", 600, 300, 300, 200, 2)});
     QVERIFY(s.decke("links") == nullptr);
     QVERIFY(s.decke("rechts") != nullptr);
+    QVERIFY(!s.flockeZeichnen(flocke(250, 400))); // im links hochgezogenen Fenster unsichtbar
+    QVERIFY(s.flockeZeichnen(flocke(550, 400)));  // daneben sichtbar
     s.flockeHinzufuegen(flocke(250, -2));
     s.flockeHinzufuegen(flocke(750, 100));
     laufen(s, 20.0);
@@ -434,7 +437,7 @@ void TestSchnee::festVollbildOhnePauseLaesstSchneeDurch() {
     QVERIFY(vollbildAktiv({v}));
     s.setFenster({fenster("hinten", 200, 300, 400, 200, 1), v});
     QVERIFY(s.decke("video") == nullptr);
-    QVERIFY(s.flockeZeichnen(flocke(500, 400)));
+    QVERIFY(!s.flockeZeichnen(flocke(500, 400))); // unsichtbar im Vollbildfenster
     s.flockeHinzufuegen(flocke(300, 100));
     laufen(s, 20.0);
     QCOMPARE(s.gesamtSchnee("hinten"), 0.0);
