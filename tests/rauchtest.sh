@@ -1,7 +1,8 @@
 #!/bin/bash
 # Live-Rauchtest in der laufenden Plasma-Sitzung: startet schneefall, ruft jede
 # D-Bus-Methode auf und prüft, dass das Programm danach noch lebt.
-# (Regression 18.11.: ein const-Slot mit QString-Rückgabe ließ QtDBus abstürzen.)
+# (18.11.: zweimal sporadischer Absturz in QtDBus beim Senden einer Antwort beobachtet,
+# Ursache ungeklärt – die erste Vermutung „const-Slot“ wurde widerlegt.)
 cd "$(dirname "$0")/.." || exit 1
 P=./build/schneefall
 if busctl --user status org.schneefall >/dev/null 2>&1; then echo "schneefall läuft schon – erst beenden"; exit 1; fi
