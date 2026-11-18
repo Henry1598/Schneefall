@@ -168,13 +168,16 @@ void TestSchnee::deckeZerfaelltBeiVeraenderung() {
     QVERIFY(s.flocken().size() >= 10);
     for (const Flocke &f : s.flocken()) {
         QVERIFY(f.x >= 95 && f.x <= 505);
+        if (f.leben > 0) continue;   // Wolkenstaub darf aufstieben, er landet nie
         QVERIFY(f.y <= 301 && f.y > 270);
         QVERIFY(f.vy > 0);
     }
-    // und fällt nach unten
-    double yVorher = s.flocken().front().y;
+    // und fällt nach unten (alle, die landen werden)
+    double yVorher = 0, yNachher = 0;
+    for (const Flocke &f : s.flocken()) if (f.leben < 0) yVorher += f.y;
     s.schritt(0.1, false);
-    QVERIFY(s.flocken().front().y > yVorher);
+    for (const Flocke &f : s.flocken()) if (f.leben < 0) yNachher += f.y;
+    QVERIFY(yNachher > yVorher);
 }
 
 void TestSchnee::schmalerWerdenWirftUeberstandAb() {

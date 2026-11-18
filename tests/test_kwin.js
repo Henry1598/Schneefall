@@ -6,7 +6,10 @@ const fs = require("fs");
 const pfad = process.argv[2] || __dirname + "/../kwin/contents/code/main.js";
 const quelle = fs.readFileSync(pfad, "utf8");
 
-function signal() { return { connect() {} }; }
+function signal() {
+    const s = { verbunden: [], connect(fn) { s.verbunden.push(fn); }, emit(...a) { for (const fn of s.verbunden) fn(...a); } };
+    return s;
+}
 function fenster(p) {
     const g = { x: p.x, y: p.y, width: p.w, height: p.h };
     return Object.assign({
@@ -20,9 +23,13 @@ function fenster(p) {
     }, p);
 }
 
-function lauf(fensterListe) {
-    const gesendet = [];
-    class QTimer { constructor() { this.timeout = signal(); this.active = false; } start() {} stop() {} }
+const timer = [];
+function lauf(fensterListe, gesendet = []) {
+    class QTimer {
+        constructor() { this.timeout = signal(); this.active = false; timer.push(this); }
+        start() { this.active = true; } stop() { this.active = false; }
+        ausloesen() { if (this.singleShot) this.active = false; this.timeout.emit(); }
+    }
     const workspace = {
         stackingOrder: fensterListe, windowList: () => fensterListe,
         currentDesktop: { id: "d1" }, currentActivity: "",
@@ -61,5 +68,25 @@ const l = liste.find(w => w.id === "{leiste}");
 pruefe(l && l.dock && !l.min, "Taskleiste wird als Dock gemeldet");
 const k = liste.find(w => w.id === "{konsole}");
 pruefe(k && k.x === 3087.25 && k.y === 1657.97 && typeof k.s === "number", "Geometrie und Stapelplatz kommen unverändert an");
+
+// Ziehen: jede Geometrieänderung (KWin meldet sie auch während des interaktiven Verschiebens)
+// führt nach der kurzen Sammelpause zu einer neuen Meldung mit der neuen Position
+timer.length = 0;
+const gesendet = [];
+const zieh = fenster({ name: "zieh", resourceClass: "test", caption: "Test", x: 100, y: 100, w: 400, h: 300 });
+lauf([zieh], gesendet);
+const bald = timer.find(t => t.singleShot);
+pruefe(bald && bald.interval <= 20, "Änderungen werden höchstens 20 ms gesammelt (flüssig genug fürs Mitfahren und Schütteln)");
+pruefe(zieh.frameGeometryChanged.verbunden.length > 0, "frameGeometryChanged ist verbunden");
+const vorher = gesendet.length;
+for (let i = 1; i <= 5; ++i) {
+    zieh.frameGeometry = { x: 100 + 10 * i, y: 100, width: 400, height: 300 };
+    zieh.frameGeometryChanged.emit();
+    bald.ausloesen();
+}
+pruefe(gesendet.length === vorher + 5 && gesendet[gesendet.length - 1].liste[0].x === 150, "jeder Schritt beim Ziehen wird gemeldet");
+zieh.frameGeometryChanged.emit();
+bald.ausloesen();
+pruefe(gesendet.length === vorher + 5, "unveränderte Liste wird nicht erneut gesendet");
 
 process.exit(fehler ? 1 : 0);

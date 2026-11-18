@@ -178,3 +178,7 @@ rm -r ~/Schneefall                                                     # Quellen
   und Schattenrand (CSD) kann der Schnee leicht über der sichtbaren Kante liegen.
 - Vollbild wird am aktiven Fenster erkannt. Ein Vollbildfenster auf einem anderen
   Monitor, das nicht aktiv ist, pausiert den Schnee nicht.
+- Modus „fest“: Gemessen wird die Fläche laut KWin (Rahmen). Schnee auf einem Fenster, das
+  teilweise über den Monitorrand hinausgeschoben wird, fällt dort ab und kommt nicht zurück.
+- Das Alter einer Decke zählt ab dem Start von Schneefall bzw. ab dem Öffnen/Wiederherstellen
+  des Fensters; während einer Pause zählt es nicht weiter.

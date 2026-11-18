@@ -315,7 +315,9 @@ void Simulation::wolke(Decke &d) {
             if (k < liegen) {
                 f.vy = 12 + 13 * u(m_rng);
             } else {
-                f.vy = 4 + 10 * u(m_rng);
+                // Staub stiebt auf: manche Körnchen steigen erst ein wenig, die Wolke wird höher statt ein Streifen
+                f.y -= u(m_rng) * 14;
+                f.vy = -4 + 14 * u(m_rng);
                 f.groesse *= 0.7;
                 f.leben = float(m_e.wolkeDauer * (0.35 + 0.65 * u(m_rng)));
             }
