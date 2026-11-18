@@ -9,6 +9,14 @@ Simulation::Simulation(Einstellungen e, uint32_t saat) : m_e(e), m_rng(saat) {}
 void Simulation::setEinstellungen(const Einstellungen &e) { m_e = e; }
 
 namespace {
+// Spalten einer Decke: mindestens 1, höchstens MAX_SPALTEN – die Fensterbreite kommt von außen, eine unsinnige
+// Breite (1e18, unendlich, NaN) darf keinen riesigen Speicher anfordern
+constexpr double MAX_SPALTEN = 65536;
+size_t spaltenFuer(double breite, double spaltenBreite) {
+    const double n = std::floor(breite / spaltenBreite);
+    if (!(n >= 1)) return 1; // auch NaN
+    return size_t(std::min(n, MAX_SPALTEN));
+}
 uint32_t schluesselVon(const std::string &id) {
     uint32_t h = 2166136261u; // FNV-1a
     for (unsigned char c : id) { h ^= c; h *= 16777619u; }
@@ -138,6 +146,12 @@ int Simulation::zielAnzahl() const {
 void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
     ++m_deckenStand;
     m_fenster = f;
+    // Fenstermaße kommen von außen (Fensterquelle): nicht endliche Rahmen verwerfen
+    m_fenster.erase(std::remove_if(m_fenster.begin(), m_fenster.end(),
+                                   [](const Fenster &w) {
+                                       return !std::isfinite(w.r.x) || !std::isfinite(w.r.y) || !std::isfinite(w.r.w) || !std::isfinite(w.r.h);
+                                   }),
+                    m_fenster.end());
     m_fensterSchluessel.clear();
     for (const Fenster &w : m_fenster) m_fensterSchluessel.push_back(schluesselVon(w.id));
     if (std::isnan(zeitpunkt)) zeitpunkt = m_zeit;
@@ -158,7 +172,7 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
             continue;
         }
         const size_t alt = d.hoehe.size();
-        const size_t n = std::max<size_t>(1, size_t(std::floor(w->r.w / d.spaltenBreite)));
+        const size_t n = spaltenFuer(w->r.w, d.spaltenBreite);
         const bool rechtsFest = std::abs(w->r.x - d.x) > 0.5 && std::abs(w->r.rechts() - (d.x + d.fensterBreite)) < 0.5;
         if (n != alt && rechtsFest) {
             // Größe an der linken Kante geändert: rechte Kante bleibt, links Spalten weg oder dazu
@@ -196,7 +210,7 @@ void Simulation::setFenster(const std::vector<Fenster> &f, double zeitpunkt) {
         d.geboren = m_zeit;
         d.tLetzt = zeitpunkt;
         d.spaltenBreite = m_e.spaltenBreite;
-        size_t n = std::max<size_t>(1, size_t(std::floor(w.r.w / m_e.spaltenBreite)));
+        const size_t n = spaltenFuer(w.r.w, m_e.spaltenBreite);
         d.hoehe.assign(n, 0.f);
         d.sichtbar.assign(n, 1);
         m_decken.push_back(std::move(d));

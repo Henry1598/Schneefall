@@ -81,6 +81,7 @@ private slots:
     void bodenMaxBegrenztBodenUndTaskleiste();
     void fenstermodusUndNeueSchluessel();
     void schnittstellenFuerRaeumdienst();
+    void unsinnigeFenstermasseSprengenNichtDenSpeicher();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -1084,6 +1085,21 @@ void TestSchnee::flockenfreieFlaechenJeFenstermodus() {
     e.modus = Fenstermodus::Davor;
     s.setEinstellungen(e);
     QVERIFY(s.flockenfreieFlaechen().empty());
+}
+
+// Sicherheitsprüfung M1: Fenstermaße kommen von außen (D-Bus); der Kern begrenzt die Spaltenzahl selbst
+void TestSchnee::unsinnigeFenstermasseSprengenNichtDenSpeicher() {
+    const double nan = std::numeric_limits<double>::quiet_NaN(), inf = std::numeric_limits<double>::infinity();
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("riesig", 0, 300, 1e18, 300, 1), fenster("maximal", 0, 400, 1e308, 300, 2), fenster("unendlich", 0, 500, inf, 300, 3),
+                  fenster("nan", 0, 200, nan, 300, 4), fenster("nanx", nan, 100, 400, 300, 5), fenster("minus", -1e300, 600, 400, 300, 6)});
+    for (const Decke &d : s.decken()) QVERIFY2(d.hoehe.size() <= 65536, d.id.c_str());
+    // Größe ändern (vorhandene Decke wird angepasst) ebenso
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    s.setFenster({fenster("a", 100, 300, 1e18, 300, 1)});
+    for (const Decke &d : s.decken()) QVERIFY2(d.hoehe.size() <= 65536, d.id.c_str());
+    laufen(s, 0.5);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)
