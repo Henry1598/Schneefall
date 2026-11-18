@@ -7,7 +7,8 @@
 namespace schnee {
 struct Programmeinstellungen {
     Einstellungen sim;
-    int fps = 30;  // 60 kostet etwa doppelt so viel CPU (schneefall + KWin)
+    int fps = 30;       // alter Schlüssel (fester Takt); wird nur noch für ältere Versionen mitgeschrieben
+    int bildrate = 60;  // Obergrenze Bilder/s je Monitor, 0 = auto (Bildwiederholrate des Monitors); Henry 18.11.: Standard 60
     bool an = true;                 // Schnee sichtbar (Pause = false)
     bool vollbildPausieren = true;  // bei aktivem Vollbildfenster ausblenden
     bool realistisch = true;        // Flockendetail: true = Schneekristalle mit Tiefenwirkung, false = einfache weiche Punkte

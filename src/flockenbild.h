@@ -19,7 +19,23 @@ struct Flockenbild {
     int variante = 0;      // welche Form (fest je Flocke)
     float winkel = 0;      // Drehung in rad, ändert sich langsam im Fall
     float stauchung = 1;   // Taumeln: Flocke kippt, eine Achse wird kürzer (0,64 … 1)
+    float drehtempo = 0;   // rad/s, wie schnell sich winkel gerade ändert
+    float stauchTempo = 0; // 1/s, relative Änderung der Stauchung (d stauchung/dt ÷ stauchung)
 };
+
+// Lage einer Flocke als Viereck zur Simulationszeit, mit allem, was der Vertex-Shader braucht,
+// um sie bis zum nächsten Simulationsschritt stufenlos weiterzuschieben und zu drehen.
+struct FlockenViereck {
+    float mx = 0, my = 0;       // Mitte
+    float ax = 0, ay = 0;       // halbe Achse quer (gedreht)
+    float qx = 0, qy = 0;       // halbe Achse längs (gedreht und gestaucht)
+    float vx = 0, vy = 0;       // Tempo der Mitte, px/s
+    float drehtempo = 0;        // rad/s
+    float stauchTempo = 0;      // 1/s
+};
+FlockenViereck flockenViereck(const Flocke &f, const Flockenbild &b);
+// Ecken nach h Sekunden, genau wie im Vertex-Shader: links oben, rechts oben, links unten, rechts unten
+void viereckEcken(const FlockenViereck &v, float h, float ecken[4][2]);
 
 // grundgroesse = eingestellte Flockengröße; realistisch = false: weiche Punkte wie früher
 Flockenbild flockenbild(const Flocke &f, double grundgroesse, bool realistisch);

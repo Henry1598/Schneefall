@@ -78,6 +78,14 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     m_lautWert = new QLabel(this);
     m_lautWert->setMinimumWidth(70);
     m_lautWert->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_bildrate = new QComboBox(this);
+    for (const char *t : {"Auto (wie der Monitor)", "30 Bilder/s", "60 Bilder/s", "120 Bilder/s", "144 Bilder/s"}) m_bildrate->addItem(QString::fromUtf8(t));
+    m_bildrate->setObjectName(QStringLiteral("bildrate"));
+    m_bildrate->setToolTip(QStringLiteral("Wie oft der Schnee je Sekunde neu gezeichnet wird, im Takt des Monitors. Auto: so oft wie der Monitor "
+                                          "(z. B. 144 oder 165 Bilder/s, am flüssigsten). Eine Obergrenze zeichnet gleichmäßig jedes 2., 3. … "
+                                          "Monitorbild und spart CPU (schneefall und KWin)."));
+    g->addWidget(new QLabel(QStringLiteral("Bildrate"), this), 7, 0);
+    g->addWidget(m_bildrate, 7, 1, 1, 2);
     g->addWidget(m_ton, 6, 0);
     g->addWidget(m_laut, 6, 1);
     g->addWidget(m_lautWert, 6, 2);
@@ -177,6 +185,7 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     connect(m_vollbild, &QCheckBox::toggled, this, [this] { uebernehmen(); });
     connect(m_modus, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
     connect(m_detail, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
+    connect(m_bildrate, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
     connect(m_autostart, &QCheckBox::toggled, this, [this](bool an) {
         if (m_setzt) return;
         const QString pfad = autostartPfad();
@@ -205,6 +214,14 @@ void Steuerfenster::ausEinstellungen() {
     m_vollbild->setChecked(p.vollbildPausieren);
     m_modus->setCurrentIndex(int(p.sim.modus));
     m_detail->setCurrentIndex(p.realistisch ? 1 : 0);
+    {
+        // eigener Wert aus der Datei (z. B. 45): als zusätzlicher Eintrag, damit er nicht verstellt wird
+        static const int raten[] = {0, 30, 60, 120, 144};
+        int i = int(std::find(std::begin(raten), std::end(raten), p.bildrate) - std::begin(raten));
+        while (m_bildrate->count() > 5) m_bildrate->removeItem(5);
+        if (i == 5) m_bildrate->addItem(QStringLiteral("%1 Bilder/s").arg(p.bildrate), p.bildrate);
+        m_bildrate->setCurrentIndex(i);
+    }
     m_autostart->setChecked(QFile::exists(autostartPfad()));
     m_ton->setChecked(p.ton);
     m_laut->setValue(p.lautstaerke);
@@ -248,6 +265,11 @@ void Steuerfenster::uebernehmen() {
     p.vollbildPausieren = m_vollbild->isChecked();
     p.sim.modus = Fenstermodus(std::clamp(m_modus->currentIndex(), 0, 2));
     p.realistisch = m_detail->currentIndex() == 1;
+    {
+        static const int raten[] = {0, 30, 60, 120, 144};
+        const int i = m_bildrate->currentIndex();
+        p.bildrate = i >= 0 && i < 5 ? raten[i] : m_bildrate->currentData().toInt();
+    }
     p.ton = m_ton->isChecked();
     p.lautstaerke = m_laut->value();
     // Reglerwerte nur übernehmen, wenn der Regler bewegt wurde: so bleiben krumme Werte aus der Datei erhalten

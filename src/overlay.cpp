@@ -1,6 +1,8 @@
 #include "overlay.h"
 #include <LayerShellQt/Window>
 #include <QMouseEvent>
+#include <QOpenGLContext>
+#include <QOpenGLExtraFunctions>
 #include <QScreen>
 #include <algorithm>
 #include <cmath>
@@ -24,6 +26,57 @@ void main() {
     v = uva;
 }
 )";
+// Flocken: Lage zur Simulationszeit, dazu Tempo, Drehtempo und Stauchtempo; der Shader schreibt sie
+// um h Sekunden fort (wie viereckEcken in flockenbild.cpp). So bewegen und drehen sie sich in jedem
+// Monitorbild stufenlos, obwohl die CPU sie nur 30-mal je Sekunde neu zusammenstellt.
+const int FORT_WERTE = 13;
+const char *FORT = R"(
+attribute vec2 mitte;
+attribute vec2 achseA;
+attribute vec2 achseQ;
+attribute vec2 tempo;
+attribute vec2 dreh;
+attribute vec3 uva;
+uniform vec4 bild;
+uniform float h;
+varying vec3 v;
+void main() {
+    float w = dreh.x * h;
+    float c = cos(w), s = sin(w);
+    vec2 o = achseA + achseQ * (1.0 + dreh.y * h);
+    vec2 p = mitte + tempo * h + vec2(c * o.x - s * o.y, s * o.x + c * o.y);
+    vec2 n = (p - bild.xy) / bild.zw;
+    gl_Position = vec4(n.x * 2.0 - 1.0, 1.0 - n.y * 2.0, 0.0, 1.0);
+    v = uva;
+}
+)";
+// dasselbe mit Instanzen (OpenGL 3.3 / ES 3): je Flocke ein Satz Werte statt vier Ecken, die Ecke kommt
+// aus einem festen Puffer – ein Viertel der Daten, die die CPU je Aufbau schreibt und hochlädt
+const int INST_WERTE = 15;
+const char *INST = R"(
+attribute vec2 ecke;
+attribute vec2 mitte;
+attribute vec2 achseA;
+attribute vec2 achseQ;
+attribute vec2 tempo;
+attribute vec2 dreh;
+attribute vec4 feld;
+attribute float deckkraft;
+uniform vec4 bild;
+uniform float h;
+varying vec3 v;
+void main() {
+    float w = dreh.x * h;
+    float c = cos(w), s = sin(w);
+    vec2 o = ecke.x * achseA + ecke.y * achseQ * (1.0 + dreh.y * h);
+    vec2 p = mitte + tempo * h + vec2(c * o.x - s * o.y, s * o.x + c * o.y);
+    vec2 n = (p - bild.xy) / bild.zw;
+    gl_Position = vec4(n.x * 2.0 - 1.0, 1.0 - n.y * 2.0, 0.0, 1.0);
+    v = vec3(mix(feld.xy, feld.zw, ecke * 0.5 + 0.5), deckkraft);
+}
+)";
+// je Zeichenaufruf höchstens so viele Flocken (16-Bit-Indizes: 4 Ecken je Flocke)
+const int FLOCKEN_JE_AUFRUF = 16000;
 const char *FLOCKEN = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -76,12 +129,16 @@ const Atlas &atlasFuer(double dpr) {
 }
 } // namespace
 
-Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realistisch, const Szene *szene, const double *fahrzeugGroesse)
+Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realistisch, const Szene *szene, const double *fahrzeugGroesse,
+                 const Taktstand *takt)
     : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate), m_bildschirm(bildschirm), m_sim(sim), m_realistisch(realistisch), m_szene(szene),
       m_fahrzeugGroesse(fahrzeugGroesse) {
+    m_takt = takt ? takt : &m_eigenerTakt;
     QSurfaceFormat f = format();
     f.setAlphaBufferSize(8);
-    f.setSwapInterval(0); // Takt kommt vom eigenen Timer, nicht im Swap blockieren
+    // nicht im Swap blockieren (alle Ebenen teilen sich einen Thread); den Takt geben die Frame-Callbacks
+    // des Compositors: nach jedem Bild requestUpdate(), Qt liefert das nächste zum nächsten Monitorbild
+    f.setSwapInterval(0);
     f.setDepthBufferSize(0);
     f.setStencilBufferSize(0);
     setFormat(f);
@@ -101,6 +158,64 @@ Overlay::Overlay(QScreen *bildschirm, const Simulation *sim, const bool *realist
     ls->setActivateOnShow(false);
     anBildschirmAnpassen();
     m_uhr.start();
+    m_naechstes.setSingleShot(true);
+    m_naechstes.setTimerType(Qt::PreciseTimer);
+    connect(&m_naechstes, &QTimer::timeout, this, [this] { requestUpdate(); });
+    connect(this, &QOpenGLWindow::frameSwapped, this, &Overlay::naechstesBild);
+    connect(bildschirm, &QScreen::refreshRateChanged, this, [this] { teilerBerechnen(); });
+    teilerBerechnen();
+}
+
+double Overlay::monitorHz() const { return m_bildschirm->refreshRate(); }
+
+void Overlay::setzeObergrenze(int bilderJeSekunde) {
+    if (bilderJeSekunde == m_obergrenze) return;
+    m_obergrenze = bilderJeSekunde;
+    teilerBerechnen();
+}
+
+void Overlay::teilerBerechnen() {
+    const double hz = monitorHz() > 1 ? monitorHz() : 60.0;
+    m_teiler = bildTeiler(hz, m_obergrenze);
+    m_rasterGueltig = false;
+    m_bildzeiten.setzeSoll(m_teiler / hz);
+}
+
+// Nach jedem Bild das nächste anfordern. Teiler 1: Qt liefert es mit dem nächsten Frame-Callback des
+// Compositors, also genau einmal je Monitorbild. Teiler n: ein Bild, das per Frame-Callback kam, gibt die
+// Lage der Monitorbilder vor (es beginnt kurz nach einem Monitorbild). Die weiteren Bilder beginnen auf
+// einem festen Raster jeweils n Monitorbilder später, ein gutes Stück vor dem nächsten Zusammensetzen
+// durch KWin. So zeigt KWin jedes genau n Monitorbilder nach dem
+// vorigen, ohne Wechsel zwischen n-1 und n+1. Das Raster läuft fest weiter (Timer-Ungenauigkeit sammelt
+// sich nicht an); wird ein Bild zu spät gezeichnet, richtet ein Frame-Callback-Bild es neu aus.
+void Overlay::naechstesBild() {
+    m_tauschNs += qint64((uhrSekunden() - m_zeichnenEnde) * 1e9);
+    if (!isVisible()) return;
+    if (m_teiler <= 1 || !m_rasterGueltig) {
+        m_perCallback = true;
+        requestUpdate();
+        return;
+    }
+    m_naechstes.start(std::max(0, int(std::floor((m_raster - uhrSekunden()) * 1000))));
+}
+
+// im Bild: Raster nachführen (jetzt = Beginn dieses Bildes)
+void Overlay::rasterNachfuehren(double jetzt) {
+    const double periode = 1.0 / (monitorHz() > 1 ? monitorHz() : 60.0);
+    if (m_teiler <= 1) {
+        m_rasterGueltig = false;
+    } else if (m_perCallback) {
+        // Frame-Callback-Bild: KWin hat gerade zusammengesetzt (kurz vor oder nach einem Monitorbild), dieses Bild
+        // erscheint mit dem nächsten. Das folgende soll n Monitorbilder später erscheinen: ein Drittel Periode
+        // nach dem entsprechenden Monitorbild beginnen, mit Luft zu beiden Zusammensetz-Zeitpunkten.
+        m_raster = jetzt + (m_teiler + 0.35) * periode;
+        m_rasterGueltig = true;
+    } else if (jetzt - m_raster > 0.35 * periode || jetzt - m_raster < -0.35 * periode) {
+        m_rasterGueltig = false; // aus dem Tritt (Last, Pause): mit dem nächsten Frame-Callback neu ausrichten
+    } else {
+        m_raster += m_teiler * periode;
+    }
+    m_perCallback = false;
 }
 
 Overlay::~Overlay() {
@@ -109,19 +224,32 @@ Overlay::~Overlay() {
     if (m_atlasTextur) glDeleteTextures(1, &m_atlasTextur);
     if (m_fahrzeugTextur) glDeleteTextures(1, &m_fahrzeugTextur);
     if (m_blasenTextur) glDeleteTextures(1, &m_blasenTextur);
+    m_flockenVbo.destroy();
+    m_flockenIndex.destroy();
+    m_eckenVbo.destroy();
+    delete m_instProg;
     delete m_flockenProg;
     delete m_deckenProg;
+    delete m_fortProg;
     doneCurrent();
 }
 
 void Overlay::anBildschirmAnpassen() { resize(m_bildschirm->geometry().size()); }
 
-QOpenGLShaderProgram *Overlay::programm(const char *fragment) {
+QOpenGLShaderProgram *Overlay::programm(const char *fragment, const char *vertex) {
     auto *p = new QOpenGLShaderProgram;
-    p->addShaderFromSourceCode(QOpenGLShader::Vertex, VERTEX);
+    p->addShaderFromSourceCode(QOpenGLShader::Vertex, vertex ? vertex : VERTEX);
     p->addShaderFromSourceCode(QOpenGLShader::Fragment, fragment);
-    p->bindAttributeLocation("pos", 0);
-    p->bindAttributeLocation("uva", 1);
+    if (vertex == INST) {
+        int i = 0;
+        for (const char *name : {"ecke", "mitte", "achseA", "achseQ", "tempo", "dreh", "feld", "deckkraft"}) p->bindAttributeLocation(name, i++);
+    } else if (vertex) {
+        int i = 0;
+        for (const char *name : {"mitte", "achseA", "achseQ", "tempo", "dreh", "uva"}) p->bindAttributeLocation(name, i++);
+    } else {
+        p->bindAttributeLocation("pos", 0);
+        p->bindAttributeLocation("uva", 1);
+    }
     if (!p->link()) qWarning("Schneefall: Shader-Fehler: %s", qPrintable(p->log()));
     return p;
 }
@@ -130,8 +258,39 @@ void Overlay::initializeGL() {
     initializeOpenGLFunctions();
     m_flockenProg = programm(FLOCKEN);
     m_deckenProg = programm(DECKEN);
+    m_fortProg = programm(FLOCKEN, FORT);
+    // Instanzen, wenn der Kontext sie kann (sonst vier Ecken je Flocke)
+    {
+        QOpenGLContext *k = context();
+        const auto v = k->format().version();
+        m_instanzen = k->isOpenGLES() ? v.first >= 3 : (v >= qMakePair(3, 3) || k->hasExtension("GL_ARB_instanced_arrays"));
+        if (qEnvironmentVariableIsSet("SCHNEEFALL_OHNE_INSTANZEN")) m_instanzen = false;
+        if (m_instanzen) {
+            m_instProg = programm(FLOCKEN, INST);
+            if (!m_instProg->isLinked()) m_instanzen = false;
+            static const float ecken[8] = {-1, -1, 1, -1, -1, 1, 1, 1};
+            m_eckenVbo.create();
+            m_eckenVbo.bind();
+            m_eckenVbo.allocate(ecken, sizeof ecken);
+            m_eckenVbo.release();
+        }
+    }
     m_vbo.create();
     m_vbo.setUsagePattern(QOpenGLBuffer::StreamDraw);
+    m_flockenVbo.create();
+    m_flockenVbo.setUsagePattern(QOpenGLBuffer::StreamDraw);
+    // feste Indizes: Flocke k besteht aus den Ecken 4k … 4k+3 (links oben, rechts oben, links unten, rechts unten)
+    std::vector<GLushort> index(size_t(FLOCKEN_JE_AUFRUF) * 6);
+    for (int k = 0; k < FLOCKEN_JE_AUFRUF; ++k) {
+        const GLushort b = GLushort(4 * k), folge[6] = {b, GLushort(b + 1), GLushort(b + 2), GLushort(b + 1), GLushort(b + 3), GLushort(b + 2)};
+        std::copy_n(folge, 6, index.begin() + 6 * k);
+    }
+    m_flockenIndex.create();
+    m_flockenIndex.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    m_flockenIndex.bind();
+    m_flockenIndex.allocate(index.data(), int(index.size() * sizeof(GLushort)));
+    m_flockenIndex.release();
+    m_flockenGebaut = m_teileGebaut = ~0ull; // neuer Kontext: Puffer neu füllen
     m_atlasTextur = 0; // neuer Kontext: Textur neu anlegen
     m_atlasDpr = 0;
     m_fahrzeugTextur = 0;
@@ -278,17 +437,23 @@ void Overlay::viereck(const float e[4][5]) {
     for (int k : folge) z = std::copy_n(e[k], 5, z);
 }
 
-// Jede Flocke ist ein gedrehtes, beim Taumeln gestauchtes Viereck mit einem Bild aus dem Atlas
-void Overlay::flockenSammeln(float bx, float by, float bw, float bh) {
+// Jede Flocke ist ein gedrehtes, beim Taumeln gestauchtes Viereck mit einem Bild aus dem Atlas.
+// Gebaut wird aus dem aktuellen Simulationsstand mit Tempo und Drehtempo; das Fortschreiben bis
+// zum jeweiligen Monitorbild macht der Vertex-Shader (FORT).
+void Overlay::flockenBauen(float bx, float by, float bw, float bh) {
     const bool realistisch = *m_realistisch;
     const double grund = m_sim->einstellungen().groesse;
     const float aw = float(m_plan.breite), ah = float(m_plan.hoehe);
+    m_flocken.clear();
+    m_flockenZahl = 0;
     for (const Flocke &f : m_sim->flocken()) {
         const float fx = float(f.x), fy = float(f.y);
-        // grob aussortieren (größte Flocke: 64 px), bevor das Aussehen berechnet wird
-        if (fx + 33 < bx || fx - 33 > bx + bw || fy + 33 < by || fy - 33 > by + bh) continue;
+        // grob aussortieren (größte Flocke: 64 px, dazu Weg bis zum nächsten Aufbau), bevor gerechnet wird
+        if (fx + 80 < bx || fx - 80 > bx + bw || fy + 80 < by || fy - 80 > by + bh) continue;
+        // bis zum nächsten Aufbau (1/30 s, bei Rucklern länger) wandert sie noch ein Stück: Rand dazugeben
+        const float weg = 0.12f * float(std::abs(f.vx) + std::abs(f.vy) + 3 * f.groesse);
         const Flockenbild b = flockenbild(f, grund, realistisch);
-        const float r = b.durchmesser * 0.5f;
+        const float r = b.durchmesser * 0.5f + weg;
         if (fx + r < bx || fx - r > bx + bw || fy + r < by || fy - r > by + bh) continue;
         if (!m_sim->flockeZeichnen(f)) continue; // „hinter“ einem Fenster
         const AtlasFeld *feld = &m_plan.punkt;
@@ -301,17 +466,75 @@ void Overlay::flockenSammeln(float bx, float by, float bw, float bh) {
         // halbes Texel Abstand zum Feldrand: der Nachbar scheint nicht hinein
         const float u0 = (feld->x + 0.5f) / aw, u1 = (feld->x + feld->groesse - 0.5f) / aw;
         const float v0 = (feld->y + 0.5f) / ah, v1 = (feld->y + feld->groesse - 0.5f) / ah;
-        float ax = r, ay = 0, qx = 0, qy = r; // Achsen des Vierecks
-        if (b.sprite != Sprite::Punkt) {
-            const float c = kosinusSchnell(b.winkel), s = sinusSchnell(b.winkel);
-            ax = c * r; ay = s * r;
-            qx = -s * r * b.stauchung; qy = c * r * b.stauchung;
-        }
+        const FlockenViereck v = flockenViereck(f, b);
         const float a = b.deckkraft;
-        const float e[4][5] = {{fx - ax - qx, fy - ay - qy, u0, v0, a}, {fx + ax - qx, fy + ay - qy, u1, v0, a},
-                               {fx - ax + qx, fy - ay + qy, u0, v1, a}, {fx + ax + qx, fy + ay + qy, u1, v1, a}};
-        viereck(e);
+        ++m_flockenZahl;
+        if (m_instanzen) {
+            const float w[INST_WERTE] = {v.mx, v.my, v.ax, v.ay, v.qx, v.qy, v.vx, v.vy, v.drehtempo, v.stauchTempo, u0, v0, u1, v1, a};
+            m_flocken.insert(m_flocken.end(), w, w + INST_WERTE);
+            continue;
+        }
+        // Ecken wie in viereckEcken: links oben, rechts oben, links unten, rechts unten
+        const float ecke[4][5] = {{-1, -1, u0, v0, a}, {1, -1, u1, v0, a}, {-1, 1, u0, v1, a}, {1, 1, u1, v1, a}};
+        const size_t alt = m_flocken.size();
+        m_flocken.resize(alt + 4 * FORT_WERTE);
+        float *z = m_flocken.data() + alt;
+        for (const auto &e : ecke) {
+            const float w[FORT_WERTE] = {v.mx, v.my, e[0] * v.ax, e[0] * v.ay, e[1] * v.qx, e[1] * v.qy, v.vx, v.vy,
+                                         v.drehtempo, v.stauchTempo, e[2], e[3], e[4]};
+            z = std::copy_n(w, FORT_WERTE, z);
+        }
     }
+}
+
+void Overlay::flockenZeichnen(float bx, float by, float bw, float bh, float h) {
+    if (m_flockenZahl == 0) return;
+    if (m_instanzen) {
+        QOpenGLExtraFunctions *f = context()->extraFunctions();
+        m_instProg->bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
+        m_instProg->setUniformValue("atlas", 0);
+        m_instProg->setUniformValue("bild", bx, by, bw, bh);
+        m_instProg->setUniformValue("h", h);
+        for (int i = 0; i < 8; ++i) m_instProg->enableAttributeArray(i);
+        m_eckenVbo.bind();
+        m_instProg->setAttributeBuffer(0, GL_FLOAT, 0, 2, 2 * sizeof(float));
+        m_flockenVbo.bind();
+        static const int lage[7] = {0, 2, 4, 6, 8, 10, 14}, breite[7] = {2, 2, 2, 2, 2, 4, 1};
+        for (int i = 0; i < 7; ++i) {
+            m_instProg->setAttributeBuffer(i + 1, GL_FLOAT, lage[i] * int(sizeof(float)), breite[i], INST_WERTE * sizeof(float));
+            f->glVertexAttribDivisor(GLuint(i + 1), 1);
+        }
+        f->glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, GLsizei(m_flockenZahl));
+        // Teiler zurücksetzen: die Attribut-Plätze teilen sich alle Programme
+        for (int i = 1; i < 8; ++i) f->glVertexAttribDivisor(GLuint(i), 0);
+        for (int i = 0; i < 8; ++i) m_instProg->disableAttributeArray(i);
+        m_flockenVbo.release();
+        m_instProg->release();
+        return;
+    }
+    m_fortProg->bind();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
+    m_fortProg->setUniformValue("atlas", 0);
+    m_fortProg->setUniformValue("bild", bx, by, bw, bh);
+    m_fortProg->setUniformValue("h", h);
+    m_flockenVbo.bind();
+    m_flockenIndex.bind();
+    for (int i = 0; i < 6; ++i) m_fortProg->enableAttributeArray(i);
+    const int schritt = FORT_WERTE * sizeof(float);
+    for (size_t von = 0; von < m_flockenZahl; von += FLOCKEN_JE_AUFRUF) {
+        const int anzahl = int(std::min<size_t>(FLOCKEN_JE_AUFRUF, m_flockenZahl - von));
+        const int basis = int(von * 4) * schritt;
+        static const int lage[6] = {0, 2, 4, 6, 8, 10}, breite[6] = {2, 2, 2, 2, 2, 3};
+        for (int i = 0; i < 6; ++i) m_fortProg->setAttributeBuffer(i, GL_FLOAT, basis + lage[i] * int(sizeof(float)), breite[i], schritt);
+        glDrawElements(GL_TRIANGLES, anzahl * 6, GL_UNSIGNED_SHORT, nullptr);
+    }
+    for (int i = 0; i < 6; ++i) m_fortProg->disableAttributeArray(i);
+    m_flockenIndex.release();
+    m_flockenVbo.release();
+    m_fortProg->release();
 }
 
 // Schneedecken als Bänder zwischen der geglätteten Oberkante und der Fensterkante
@@ -372,8 +595,11 @@ void Overlay::deckeSammeln(const Decke &d, float bx, float by, float bw, float b
 
 Overlay::Last Overlay::lastAbholen() {
     Last l;
-    if (m_bilder) l = {m_sammelNs / 1e6 / m_bilder, m_zeichenNs / 1e6 / m_bilder, int(m_eckenSumme / m_bilder)};
-    m_sammelNs = m_zeichenNs = m_eckenSumme = 0;
+    if (m_bilder) l = {m_sammelNs / 1e6 / m_bilder, m_zeichenNs / 1e6 / m_bilder, m_tauschNs / 1e6 / m_bilder,
+                       m_aufbauten ? m_aufbauNs / 1e6 / m_aufbauten : 0, int(m_fahrzeugEcken + GLint(m_flockenZahl * 4)), m_instanzen};
+    m_aufbauNs = 0;
+    m_aufbauten = 0;
+    m_sammelNs = m_zeichenNs = m_eckenSumme = m_tauschNs = 0;
     m_bilder = 0;
     return l;
 }
@@ -381,6 +607,13 @@ Overlay::Last Overlay::lastAbholen() {
 void Overlay::paintGL() {
     QElapsedTimer stoppuhr;
     stoppuhr.start();
+    const double jetzt = uhrSekunden();
+    m_bildBeginn = jetzt;
+    rasterNachfuehren(jetzt);
+    m_bildzeiten.bild(jetzt);
+    if (vorDemBild) vorDemBild(jetzt); // die App rechnet die Simulation weiter, wenn ein Schritt fällig ist
+    else { ++m_eigenerTakt.schritt; ++m_eigenerTakt.flockenSchritt; m_eigenerTakt.schrittUhr = jetzt; }
+    const qint64 vorher = stoppuhr.nsecsElapsed(); // Simulationsschritt zählt nicht zum Zeichnen dieser Ebene
     const qreal dpr = devicePixelRatio();
     glViewport(0, 0, int(std::lround(width() * dpr)), int(std::lround(height() * dpr)));
     glClearColor(0, 0, 0, 0);
@@ -390,42 +623,63 @@ void Overlay::paintGL() {
     const QRect g = m_bildschirm->geometry();
     const float bx = g.x(), by = g.y(), bw = g.width(), bh = g.height();
     const float weich = float(0.6 + 0.4 / dpr);
-
-    // Deckenform nur in jedem vierten Bild neu berechnen – sofort aber, wenn sich Fenster,
-    // Monitore oder Skalierung geändert haben oder Schnee abgefallen ist
     const float fuer[5] = {bx, by, bw, bh, float(dpr)};
-    if (m_sim->deckenStand() != m_deckenStand || ++m_deckenAlter >= 4 || !std::equal(fuer, fuer + 5, m_deckenFuer)) {
-        m_daten.clear();
-        deckenSammeln(bx, by, bw, bh, dpr, weich);
-        m_deckenEnde = m_daten.size();
-        m_deckenStand = m_sim->deckenStand();
-        m_deckenAlter = 0;
-        std::copy_n(fuer, 5, m_deckenFuer);
+    const bool anders = !std::equal(fuer, fuer + 5, m_deckenFuer);
+
+    // Decken, Brocken und Räumdienst: nach jedem Simulationsschritt neu (sie bewegen sich mit der Simulation)
+    if (m_takt->schritt != m_teileGebaut || anders) {
+        m_teileGebaut = m_takt->schritt;
+        // Deckenform nur in jedem vierten Schritt (Ruhe: 7,5-mal je s, die Decken wachsen dabei um Bruchteile
+        // eines Pixels) – sofort aber, wenn sich Fenster, Monitore oder Skalierung geändert haben oder
+        // Schnee abgefallen ist (deckenStand)
+        if (m_sim->deckenStand() != m_deckenStand || ++m_deckenAlter >= 4 || anders) {
+            m_daten.clear();
+            deckenSammeln(bx, by, bw, bh, dpr, weich);
+            m_deckenEnde = m_daten.size();
+            m_deckenStand = m_sim->deckenStand();
+            m_deckenAlter = 0;
+            std::copy_n(fuer, 5, m_deckenFuer);
+        }
+        m_daten.resize(m_deckenEnde);
+        brockenSammeln(bx, by, bw, bh, dpr, weich);
+        haufenSammeln(bx, by, bw, bh, dpr, weich);
+        m_deckenEcken = GLint(m_daten.size() / 5);
+        // Räumdienst (Hubschrauber, Fahrzeuge, Bälle, Staub): hinter den fallenden Flocken, vor den Decken
+        if (m_szene && !m_szene->teile.empty()) {
+            if (fahrzeugAtlasLaden(dpr)) fahrzeugeSammeln(bx, by, bw, bh);
+        }
+        m_fahrzeugEcken = GLint(m_daten.size() / 5);
+        // Sprechblasen: liegen im selben Puffer, werden aber erst nach den Flocken (ganz vorn) gezeichnet
+        if (m_szene && !m_szene->blasen.empty()) blasenSammeln(bx, by, bw, bh, dpr);
+        m_blasenEcken = GLint(m_daten.size() / 5);
+        if (!m_daten.empty()) {
+            m_vbo.bind();
+            m_vbo.allocate(m_daten.data(), int(m_daten.size() * sizeof(float)));
+            m_vbo.release();
+        }
+        m_eckenSumme += qint64(m_daten.size() / 5);
     }
-    m_daten.resize(m_deckenEnde);
-    brockenSammeln(bx, by, bw, bh, dpr, weich);
-    haufenSammeln(bx, by, bw, bh, dpr, weich);
-    const size_t deckenEnde = m_daten.size();
-    // Räumdienst (Hubschrauber, Fahrzeuge, Bälle, Staub): hinter den fallenden Flocken, vor den Decken
-    if (m_szene && !m_szene->teile.empty()) {
-        if (fahrzeugAtlasLaden(dpr)) fahrzeugeSammeln(bx, by, bw, bh);
+    // Flocken: höchstens 30-mal je s neu, dazwischen schreibt der Shader sie fort
+    if (m_takt->flockenSchritt != m_flockenGebaut || anders) {
+        m_flockenGebaut = m_takt->flockenSchritt;
+        m_flockenUhr = m_takt->schrittUhr;
+        const qint64 a = stoppuhr.nsecsElapsed();
+        flockenBauen(bx, by, bw, bh);
+        if (m_flockenZahl) {
+            m_flockenVbo.bind();
+            m_flockenVbo.allocate(m_flocken.data(), int(m_flocken.size() * sizeof(float)));
+            m_flockenVbo.release();
+        }
+        m_aufbauNs += stoppuhr.nsecsElapsed() - a;
+        ++m_aufbauten;
+        m_eckenSumme += qint64(m_flockenZahl * 4);
     }
-    const size_t fahrzeugEnde = m_daten.size();
-    flockenSammeln(bx, by, bw, bh);
-    // Sprechblasen ganz vorn
-    const size_t flockenEnde = m_daten.size();
-    if (m_szene && !m_szene->blasen.empty()) blasenSammeln(bx, by, bw, bh, dpr);
     const qint64 gesammelt = stoppuhr.nsecsElapsed();
-    m_sammelNs += gesammelt;
-    m_eckenSumme += qint64(m_daten.size() / 5);
+    m_sammelNs += gesammelt - vorher;
     ++m_bilder;
-    if (m_daten.empty()) return;
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // vormultipliziertes Alpha
-    m_vbo.bind();
-    m_vbo.allocate(m_daten.data(), int(m_daten.size() * sizeof(float)));
-    const GLint deckenEcken = GLint(deckenEnde / 5), fahrzeugEcken = GLint(fahrzeugEnde / 5), alleEcken = GLint(m_daten.size() / 5);
     auto zeichnen = [&](QOpenGLShaderProgram *p, GLenum art, GLint von, GLint anzahl) {
         p->setUniformValue("bild", bx, by, bw, bh);
         p->enableAttributeArray(0);
@@ -437,36 +691,38 @@ void Overlay::paintGL() {
         p->disableAttributeArray(1);
         p->release();
     };
-    // erst die Decken, dann die Flocken davor
-    if (deckenEcken > 0) {
-        m_deckenProg->bind();
-        m_deckenProg->setUniformValue("weich", weich);
-        m_deckenProg->setUniformValue("korn", float(std::max(1.0, std::floor(dpr + 0.5))));
-        m_deckenProg->setUniformValue("zeit", float((m_uhr.elapsed() % 3600000) / 1000.0));
-        zeichnen(m_deckenProg, GL_TRIANGLE_STRIP, 0, deckenEcken);
+    // erst die Decken, dann der Räumdienst, dann die Flocken davor
+    if (m_fahrzeugEcken > 0) {
+        m_vbo.bind();
+        if (m_deckenEcken > 0) {
+            m_deckenProg->bind();
+            m_deckenProg->setUniformValue("weich", weich);
+            m_deckenProg->setUniformValue("korn", float(std::max(1.0, std::floor(dpr + 0.5))));
+            m_deckenProg->setUniformValue("zeit", float((m_uhr.elapsed() % 3600000) / 1000.0));
+            zeichnen(m_deckenProg, GL_TRIANGLE_STRIP, 0, m_deckenEcken);
+        }
+        if (m_fahrzeugEcken > m_deckenEcken) {
+            m_flockenProg->bind();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, m_fahrzeugTextur);
+            m_flockenProg->setUniformValue("atlas", 0);
+            zeichnen(m_flockenProg, GL_TRIANGLES, m_deckenEcken, m_fahrzeugEcken - m_deckenEcken);
+        }
+        m_vbo.release();
     }
-    if (fahrzeugEcken > deckenEcken) {
-        m_flockenProg->bind();
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, m_fahrzeugTextur);
-        m_flockenProg->setUniformValue("atlas", 0);
-        zeichnen(m_flockenProg, GL_TRIANGLES, deckenEcken, fahrzeugEcken - deckenEcken);
-    }
-    const GLint flockenEcken = GLint(flockenEnde / 5);
-    if (flockenEcken > fahrzeugEcken) {
-        m_flockenProg->bind();
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, m_atlasTextur);
-        m_flockenProg->setUniformValue("atlas", 0);
-        zeichnen(m_flockenProg, GL_TRIANGLES, fahrzeugEcken, flockenEcken - fahrzeugEcken);
-    }
-    if (alleEcken > flockenEcken) {
+    // Zeit seit dem Simulationsstand der Flocken (in Simulationszeit, also mit Zeitlupe); höchstens 0,15 s
+    const float h = float(std::clamp((jetzt - m_flockenUhr) * m_takt->zeitlupe, 0.0, 0.15));
+    flockenZeichnen(bx, by, bw, bh, h);
+    // Sprechblasen über allem
+    if (m_blasenEcken > m_fahrzeugEcken) {
+        m_vbo.bind();
         m_flockenProg->bind();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_blasenTextur);
         m_flockenProg->setUniformValue("atlas", 0);
-        zeichnen(m_flockenProg, GL_TRIANGLES, flockenEcken, alleEcken - flockenEcken);
+        zeichnen(m_flockenProg, GL_TRIANGLES, m_fahrzeugEcken, m_blasenEcken - m_fahrzeugEcken);
+        m_vbo.release();
     }
-    m_vbo.release();
     m_zeichenNs += stoppuhr.nsecsElapsed() - gesammelt;
+    m_zeichnenEnde = uhrSekunden();
 }

@@ -55,13 +55,14 @@ const char *modusText(Fenstermodus m) {
 bool einstellungenBrauchtErgaenzung(const std::string &text) {
     for (const char *k : {"fenstermodus", "schuetteln_schwelle", "rutsch_ab_minuten", "rutsch_tempo", "wolke_dauer", "wolke_liegen", "boden_max",
                           "ton", "lautstaerke", "raeumdienst", "raeumen_ab", "fahrzeug_groesse", "einsaetze_gleichzeitig", "taskleiste_raeumen",
-                          "treffer_bis_streik", "schnee_anfassbar", "sprueche_max_stufe"})
+                          "treffer_bis_streik", "schnee_anfassbar", "sprueche_max_stufe", "bildrate"})
         if (text.find(std::string("\n") + k + "=") == std::string::npos && text.rfind(std::string(k) + "=", 0) != 0) return true;
     return text.find("vor_fenstern") != std::string::npos;
 }
 
 Programmeinstellungen einstellungenAusText(const std::string &text) {
     Programmeinstellungen p;
+    std::string bildrate; // erst am Ende auswerten: fehlt der Schlüssel, zählt fps
     std::istringstream in(text);
     std::string zeile;
     while (std::getline(in, zeile)) {
@@ -77,6 +78,7 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "max_deckenhoehe") setzen(p.sim.maxHoehe, w, 2.0, 80.0);
         else if (k == "fallgeschwindigkeit") setzen(p.sim.fallGeschw, w, 5.0, 300.0);
         else if (k == "fps") { double v = p.fps; setzen(v, w, 10.0, 120.0); p.fps = int(v); }
+        else if (k == "bildrate") bildrate = w;
         else if (k == "an") wahrheit(w, p.an);
         // vor_fenstern (bis 18.11.) wird nicht mehr gelesen: Henry will jetzt „fest“, beim Speichern verschwindet er
         else if (k == "fenstermodus") {
@@ -108,6 +110,13 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
             else if (w == "einfach") p.realistisch = false;
         }
     }
+    // Bildrate: „auto“ oder Bilder/s. Fehlt sie (Datei einer älteren Version), zählt ein selbst
+    // gewählter fps-Wert; der alte Standard fps=30 wird zum neuen Standard 60.
+    std::transform(bildrate.begin(), bildrate.end(), bildrate.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    double v = 0;
+    if (bildrate == "auto") p.bildrate = 0;
+    else if (zahl(bildrate, v)) p.bildrate = v <= 0 ? 0 : int(std::lround(std::clamp(v, 10.0, 360.0)));
+    else p.bildrate = p.fps == 30 ? Programmeinstellungen{}.bildrate : p.fps;
     return p;
 }
 
@@ -124,7 +133,9 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "max_deckenhoehe=" << fmt(p.sim.maxHoehe) << "\n"
       << "# mittlere Fallgeschwindigkeit in px/s (5 … 300)\n"
       << "fallgeschwindigkeit=" << fmt(p.sim.fallGeschw) << "\n"
-      << "# Bilder pro Sekunde (10 … 120)\n"
+      << "# Bildrate: auto (so oft wie der Monitor, z. B. 144 oder 165 Bilder/s) oder Obergrenze in Bildern/s (10 … 360)\n"
+      << "bildrate=" << (p.bildrate > 0 ? std::to_string(p.bildrate) : std::string("auto")) << "\n"
+      << "# alter fester Takt, nur für ältere Versionen (wird nicht mehr gelesen, solange bildrate gesetzt ist)\n"
       << "fps=" << p.fps << "\n"
       << "# Schnee an (true) oder pausiert (false)\n"
       << "an=" << (p.an ? "true" : "false") << "\n"

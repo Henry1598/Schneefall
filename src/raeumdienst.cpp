@@ -148,16 +148,13 @@ bool Raeumdienst::raeumbar(const Decke &d) const {
     if (d.boden || d.dock) return true;
     // größtenteils verdeckte Kante: da gibt es nichts zu sehen
     if (sichtbar < d.hoehe.size() * 0.6) return false;
+    // minimiert, Vollbild oder Oberkante am oberen Rand ihres Monitors (maximiert): dort gibt es nichts zu sehen.
+    // Dieselbe Prüfung wie im Kern (amOberenRand), aber unabhängig vom Fenstermodus.
     for (const Fenster &f : m_sim.fenster()) {
         if (f.id != d.id) continue;
-        if (f.minimiert || f.vollbild) return false;
+        return !(f.minimiert || f.vollbild || m_sim.amOberenRand(f));
     }
-    // Oberkante am oberen Rand ihres Monitors (maximiert): Fahrzeug und Schnee lägen außerhalb des Bildes
-    const double mitte = d.x + d.breite() / 2;
-    for (const Rechteck &b : m_sim.bildschirme())
-        if (mitte >= b.x && mitte < b.rechts() && d.y >= b.y - 1 && d.y < b.unten())
-            return d.y - b.y > 4;
-    return false;   // Kante auf keinem Monitor
+    return false;   // kein Fenster zu dieser Decke
 }
 
 // zusammenhängender sichtbarer Lauf der Decke um x (Welt-x-Grenzen)
