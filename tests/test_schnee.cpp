@@ -28,6 +28,7 @@ class TestSchnee : public QObject {
 private slots:
     void flockeBleibtAufFensterkanteLiegen();
     void verdeckteKanteNimmtKeinenSchneeAuf();
+    void deckeIstBegrenztUndRutschtAmRandAb();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -61,6 +62,30 @@ void TestSchnee::verdeckteKanteNimmtKeinenSchneeAuf() {
     s.flockeHinzufuegen(flocke(450, 280));
     laufen(s, 2.0);
     QVERIFY(s.hoeheBei("a", 450) > 1.5);
+}
+
+void TestSchnee::deckeIstBegrenztUndRutschtAmRandAb() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 100, 300, 40, 300, 1)});   // 10 Spalten à 4 px
+    bool fielHerunter = false;
+    for (int i = 0; i < 400; ++i) {
+        s.flockeHinzufuegen(flocke(118, 200));         // immer dieselbe Spalte
+        s.schritt(0.05, false);
+        for (const Flocke &f : s.flocken())
+            if ((f.x < 100 || f.x >= 140) && f.y > 290) fielHerunter = true;
+    }
+    laufen(s, 10.0);
+    const Decke *d = s.decke("a");
+    QVERIFY(d);
+    float maxH = *std::max_element(d->hoehe.begin(), d->hoehe.end());
+    QVERIFY2(maxH <= 20.0f + 1.0f, qPrintable(QString::number(maxH)));
+    // Schnee ist zu den Nachbarn gerutscht, auch bis an die Ränder
+    QVERIFY(d->hoehe.front() > 0.5f);
+    QVERIFY(d->hoehe.back() > 0.5f);
+    // ein Teil ist über die Fensterkanten heruntergefallen
+    QVERIFY(fielHerunter);
+    QVERIFY(s.gesamtSchnee("a") < 400.0);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

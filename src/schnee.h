@@ -51,6 +51,7 @@ struct Decke {
     std::vector<float> hoehe;     // Höhe je Spalte
     std::vector<uint8_t> sichtbar; // 1 = Kante sichtbar (nicht verdeckt, auf Bildschirm)
     bool boden = false;
+    float abfallLinks = 0, abfallRechts = 0; // gesammelter Überhang, der als Flocke herunterfällt
     double breite() const { return hoehe.size() * spaltenBreite; }
 };
 
@@ -84,6 +85,8 @@ private:
     void bodenAufbauen();
     void ablegen(Decke &d, size_t spalte, double menge);
     void rutschen(Decke &d, double dt);
+    void herunterfallen(Decke &d, size_t spalte, double menge, int richtung);
+    Flocke neueFlocke(double x, double y);
     void erzeugen(double dt);
     bool aufBildschirm(double x, double y) const;
     double ablageFuer(double groesse) const;

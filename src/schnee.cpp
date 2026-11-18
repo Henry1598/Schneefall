@@ -63,6 +63,72 @@ void Simulation::ablegen(Decke &d, size_t spalte, double menge) {
     d.hoehe[spalte] += float(menge);
 }
 
+Flocke Simulation::neueFlocke(double x, double y) {
+    std::uniform_real_distribution<double> u(0, 1);
+    double g = m_e.groesse * (0.5 + u(m_rng));
+    // große Flocken fallen etwas schneller
+    double vy = m_e.fallGeschw * (0.6 + 0.4 * g / m_e.groesse) * (0.8 + 0.4 * u(m_rng));
+    return Flocke{x, y, m_e.wind * (0.7 + 0.6 * u(m_rng)), vy, g, u(m_rng) * 6.2831853};
+}
+
+void Simulation::herunterfallen(Decke &d, size_t spalte, double menge, int richtung) {
+    float &acc = richtung < 0 ? d.abfallLinks : d.abfallRechts;
+    acc += float(menge);
+    double portion = ablageFuer(m_e.groesse);
+    while (acc >= portion) {
+        acc -= float(portion);
+        double kante = richtung < 0 ? d.x + spalte * d.spaltenBreite : d.x + (spalte + 1) * d.spaltenBreite;
+        Flocke f = neueFlocke(kante + richtung * (m_e.groesse * 0.6 + 1.0), d.y - d.hoehe[spalte] * 0.5);
+        f.vx = richtung * 8.0 + m_e.wind * 0.5;
+        f.vy = std::max(15.0, f.vy * 0.5);
+        m_flocken.push_back(f);
+    }
+}
+
+void Simulation::rutschen(Decke &d, double) {
+    const size_t n = d.hoehe.size();
+    if (n == 0) return;
+    const float maxDiff = float(d.spaltenBreite * 1.2);
+    const float randGrenze = float(std::min(m_e.maxHoehe, d.spaltenBreite * 1.5));
+    const float maxH = float(m_e.maxHoehe);
+    auto sicht = [&](long i) { return i >= 0 && size_t(i) < n && d.sichtbar[size_t(i)]; };
+    for (size_t i = 0; i < n; ++i) {
+        if (!d.sichtbar[i]) continue;
+        // Höhenbegrenzung: Überschuss zum niedrigeren Nachbarn oder herunter
+        for (int richtung : {-1, 1}) {
+            long j = long(i) + richtung;
+            float &h = d.hoehe[i];
+            if (!sicht(j)) {
+                // Kante (Fensterende oder verdeckter Teil): Überhang fällt herunter
+                if (h > randGrenze && !d.boden) {
+                    float ueber = h - randGrenze;
+                    h -= ueber;
+                    herunterfallen(d, i, ueber, richtung);
+                }
+                continue;
+            }
+            float &hn = d.hoehe[size_t(j)];
+            if (h - hn > maxDiff) {
+                float m = (h - hn - maxDiff) * 0.5f;
+                h -= m; hn += m;
+            }
+        }
+        float &h = d.hoehe[i];
+        if (h > maxH) {
+            float ueber = h - maxH;
+            long l = long(i) - 1, r = long(i) + 1;
+            long ziel = !sicht(l) ? (sicht(r) ? r : -2) : (!sicht(r) ? l : (d.hoehe[size_t(l)] < d.hoehe[size_t(r)] ? l : r));
+            h = maxH;
+            if (ziel == -2 || (ziel >= 0 && d.hoehe[size_t(ziel)] >= maxH)) {
+                // kein Platz: an der näheren Kante herunterfallen
+                if (!d.boden) herunterfallen(d, i < n / 2 ? 0 : n - 1, ueber, i < n / 2 ? -1 : 1);
+            } else {
+                d.hoehe[size_t(ziel)] += ueber;
+            }
+        }
+    }
+}
+
 bool Simulation::aufBildschirm(double x, double y) const {
     for (const Rechteck &b : m_bildschirme)
         if (b.enthaelt(x, y)) return true;
@@ -97,6 +163,7 @@ void Simulation::schritt(double dt, bool) {
         bleiben.push_back(f);
     }
     m_flocken.swap(bleiben);
+    for (Decke &d : m_decken) rutschen(d, dt);
 }
 
 const Decke *Simulation::decke(const std::string &id) const {
