@@ -4,6 +4,7 @@
 
 class App;
 class QCheckBox;
+class QComboBox;
 class QSlider;
 class QLabel;
 
@@ -23,6 +24,7 @@ private:
     QCheckBox *m_vollbild;
     QCheckBox *m_vorFenstern;
     QCheckBox *m_autostart;
+    QComboBox *m_detail; // Flockendetail: 0 = einfach, 1 = realistisch
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
     QString m_einheiten[5];
     bool m_setzt = false;

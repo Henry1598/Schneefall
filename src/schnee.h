@@ -38,6 +38,11 @@ struct Einstellungen {
     double fangAnteil = 0.4;     // Anteil der Flocken, die auf einer Fensterkante liegen bleiben (Rest fällt davor vorbei)
 };
 
+enum class Flockenart : uint8_t {
+    Kristall, // fällt vom Himmel
+    Pulver,   // von einer Schneedecke abgefallen (Zerfall, Abschütteln, Abrutschen)
+};
+
 struct Flocke {
     double x, y;      // Mittelpunkt
     double vx, vy;    // px/s
@@ -46,6 +51,7 @@ struct Flocke {
     float fang = 1.0f;  // Wahrscheinlichkeit, auf einer Fensterkante liegen zu bleiben (Boden/Taskleiste: immer)
     uint32_t los = 0;   // Zufallszahl der Flocke; entscheidet je Kante fest, ob sie fängt
     uint32_t herkunft = 0; // Schlüssel der Decke, aus der sie zerfallen ist (dort nie wieder landen)
+    Flockenart art = Flockenart::Kristall; // nur fürs Aussehen
 };
 
 // Schneedecke auf einer Kante (Fensteroberkante oder Bildschirmboden)
@@ -81,6 +87,9 @@ public:
     void flockeHinzufuegen(const Flocke &f) { m_flocken.push_back(f); }
     const std::vector<Flocke> &flocken() const { return m_flocken; }
     const std::vector<Decke> &decken() const { return m_decken; }
+    // Zählt hoch, sobald sich Decken sprunghaft ändern (Fenster, Monitore, Zerfall) – die Ebene
+    // berechnet die Deckenform dann sofort neu statt nur alle paar Bilder.
+    uint64_t deckenStand() const { return m_deckenStand; }
     const Decke *decke(const std::string &id) const;
     double hoeheBei(const std::string &id, double x) const; // Deckenhöhe an globalem x
     double gesamtSchnee(const std::string &id) const;       // Summe der Höhen
@@ -113,6 +122,7 @@ private:
     std::vector<Decke> m_decken;
     std::vector<Flocke> m_flocken;
     double m_erzeugRest = 0;
+    uint64_t m_deckenStand = 0;
     struct Strecke { double x0, y0, x1, y1; int seite; }; // seite: 0 oben, -1 links, +1 rechts
     std::vector<Strecke> m_raender;  // Ränder, an denen neue Flocken hereinkommen
 };

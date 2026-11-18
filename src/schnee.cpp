@@ -33,6 +33,7 @@ void Simulation::nachSichtbarkeitZerfallen() {
 }
 
 void Simulation::setBildschirme(const std::vector<Rechteck> &b) {
+    ++m_deckenStand;
     m_bildschirme = b;
     // Bodendecken neu aufbauen (Monitore geändert)
     for (Decke &d : m_decken)
@@ -127,6 +128,7 @@ int Simulation::zielAnzahl() const {
 }
 
 void Simulation::setFenster(const std::vector<Fenster> &f) {
+    ++m_deckenStand;
     m_fenster = f;
     auto finde = [&](const std::string &id) -> const Fenster * {
         for (const Fenster &w : m_fenster)
@@ -169,6 +171,7 @@ void Simulation::setFenster(const std::vector<Fenster> &f) {
 }
 
 void Simulation::zerfallen(Decke &d, size_t von, size_t bis) {
+    ++m_deckenStand;
     std::uniform_real_distribution<double> u(0, 1);
     const double portion = ablageFuer(m_e.groesse);
     const size_t grenze = 6000; // Schutz gegen Flockenlawinen
@@ -187,6 +190,7 @@ void Simulation::zerfallen(Decke &d, size_t von, size_t bis) {
             f.fang = 1.0f;
             f.vx = (u(m_rng) - 0.5) * 20 + m_e.wind * 0.3;
             f.herkunft = d.schluessel;
+            f.art = Flockenart::Pulver;
             m_flocken.push_back(f);
         }
     }
@@ -242,8 +246,8 @@ bool faengt(const Flocke &f, const Decke &d) {
 Flocke Simulation::neueFlocke(double x, double y) {
     std::uniform_real_distribution<double> u(0, 1);
     double g = m_e.groesse * (0.5 + u(m_rng));
-    // große Flocken fallen etwas schneller
-    double vy = m_e.fallGeschw * (0.6 + 0.4 * g / m_e.groesse) * (0.8 + 0.4 * u(m_rng));
+    // große Flocken wirken näher und fallen deutlich schneller (Tiefenwirkung); im Mittel fallGeschw
+    double vy = m_e.fallGeschw * (0.3 + 0.7 * g / m_e.groesse) * (0.8 + 0.4 * u(m_rng));
     Flocke f{x, y, m_e.wind * (0.7 + 0.6 * u(m_rng)), vy, g, u(m_rng) * 6.2831853};
     f.fang = float(m_e.fangAnteil);
     f.los = uint32_t(m_rng());
@@ -261,6 +265,7 @@ void Simulation::herunterfallen(Decke &d, size_t spalte, double menge, int richt
         f.vx = richtung * 8.0 + m_e.wind * 0.5;
         f.vy = std::max(15.0, f.vy * 0.5);
         f.fang = 1.0f;
+        f.art = Flockenart::Pulver;
         m_flocken.push_back(f);
     }
 }

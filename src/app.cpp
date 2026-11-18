@@ -163,7 +163,7 @@ void App::trayAufbauen() {
 
 void App::bildschirmHinzu(QScreen *s) {
     if (m_ebenen.contains(s)) return;
-    auto *o = new Overlay(s, &m_sim);
+    auto *o = new Overlay(s, &m_sim, &m_einst.realistisch);
     m_ebenen.insert(s, o);
     connect(s, &QScreen::geometryChanged, this, [this, o] {
         o->anBildschirmAnpassen();
@@ -262,12 +262,15 @@ QString App::Status() {
     m_rechenNs = 0;
     m_rechenBilder = 0;
     QStringList b;
-    for (auto it = m_ebenen.cbegin(); it != m_ebenen.cend(); ++it)
-        b << QStringLiteral("%1 %2x%3+%4+%5 dpr=%6 sichtbar=%7")
+    for (auto it = m_ebenen.cbegin(); it != m_ebenen.cend(); ++it) {
+        const Overlay::Last l = it.value()->lastAbholen();
+        b << QStringLiteral("%1 %2x%3+%4+%5 dpr=%6 sichtbar=%7 sammeln_ms=%8 zeichnen_ms=%9 ecken=%10")
                  .arg(it.key()->name())
                  .arg(it.key()->geometry().width()).arg(it.key()->geometry().height())
                  .arg(it.key()->geometry().x()).arg(it.key()->geometry().y())
-                 .arg(it.value()->devicePixelRatio()).arg(it.value()->isVisible());
+                 .arg(it.value()->devicePixelRatio()).arg(it.value()->isVisible())
+                 .arg(l.sammelnMs, 0, 'f', 3).arg(l.zeichnenMs, 0, 'f', 3).arg(l.ecken);
+    }
     int decken = 0;
     double schnee = 0;
     for (const Decke &d : m_sim.decken()) {

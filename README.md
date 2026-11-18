@@ -34,6 +34,8 @@ Befehle für die Konsole:
 
 - **Schnee an:** Pause, das Programm läuft weiter (Symbol bleibt im Systemabschnitt).
 - **Regler:** Menge, Wind (← links / → rechts), Flockengröße, max. Deckenhöhe, Fallgeschwindigkeit.
+- **Flockendetail:** „Realistisch“ (Standard) zeigt echte sechszählige Schneekristalle mit
+  Tiefenwirkung, „Einfach“ alle Flocken als weiche Punkte.
 - **Schnee abschütteln:** Alle Schneedecken fallen herunter.
 - **Schnee fällt vor Fenstern:** Aus = fallender Schnee ist nur über der Arbeitsfläche
   zu sehen, als fiele er hinter den Fenstern. Die Decken auf den Fensterkanten bleiben sichtbar.
@@ -59,13 +61,38 @@ liest das laufende Programm sofort neu ein.
 | `an` | Schnee an | true/false | true |
 | `vor_fenstern` | Schnee fällt vor den Fenstern | true/false | true |
 | `vollbild_pausieren` | bei Vollbild pausieren | true/false | true |
+| `flockendetail` | Aussehen der Flocken | realistisch/einfach | realistisch |
+
+`flockengroesse` ist die Grundgröße: Bei „realistisch“ sind ferne Flocken etwa so groß wie
+eingestellt (weiche Punkte), mittlere 2,5- bis 5-mal und nahe bis 7,5-mal so groß (Kristalle).
+
+Gemessen (4 Monitore, ca. 2000 Flocken, 30 fps): schneefall ca. 3 % eines Kerns bei „realistisch“
+(vor den Kristallen 2 %), KWin unverändert ca. 2 Prozentpunkte. `--status` zeigt je Monitor die
+Zeit fürs Zusammenstellen und Zeichnen eines Bildes und die Zahl der Ecken.
 
 `fps=60` sieht etwas flüssiger aus, kostet aber etwa doppelt so viel CPU (schneefall + KWin).
+
+## Aussehen
+
+- **Fallende Flocken:** Dendriten, Sternplättchen und Plättchen, prozedural erzeugt (16 Formen,
+  jede Flocke dazu mit eigener Drehung, Größe und eigenem Taumeln). Weißer Kern, bläulich
+  durchscheinende Kante, Glanz auf den Eisflächen. Die Größe gibt die Tiefe: kleine Flocken
+  sind fern (blasse Punkte, langsam), große nah (klare Kristalle, schnell), die allergrößten
+  ganz vorn und leicht unscharf.
+- **Schneedecken:** geglättete, an den Enden gerundete Oberkante, an freien Fensterenden ein
+  kleiner Überhang, oben weiß und nach unten zart blaugrau, feine Körnung und einzelne
+  funkelnde Kristalle, weiche Ränder statt Pixelstufen.
+- **Abfallender Schnee** (Zerfall, Abschütteln, Abrutschen) fällt als Pulverklümpchen.
+- Die Formen werden einmal je Monitor-Skalierung in einen Textur-Atlas gerastert (7 Größen von
+  8 bis 64 px, in Gerätepixeln, also scharf bei 1,5×) und danach nur noch als Sprites gezeichnet.
 
 ## Aufbau
 
 - `src/schnee.{h,cpp}`: Simulationskern ohne GUI (Flocken, Decken je Fensterkante,
   Verdeckung nach Stapelreihenfolge, Abrutschen, Zerfall, Boden mit Schmelzen).
+- `src/kristall.{h,cpp}`: Formgenerator für die Schneekristalle, Rasterung und Atlas-Aufteilung (ohne Qt).
+- `src/flockenbild.{h,cpp}`: welches Bild, welche Größe, Deckkraft und Drehung eine Flocke bekommt.
+- `src/deckenform.{h,cpp}`: Form der Schneedecke fürs Zeichnen (Glättung, runde Enden, Überhang).
 - `src/overlay.{h,cpp}`: eine durchsichtige Layer-Shell-Ebene (Overlay) je Monitor.
   Sie hat keine Tastatur und eine leere Eingaberegion, Klicks gehen also durch.
   Gezeichnet wird mit OpenGL in voller Gerätepixel-Auflösung (scharf bei 1,5×).
@@ -82,7 +109,7 @@ cmake wird nicht gebraucht, es reicht ein Makefile mit pkg-config.
 ```
 cd ~/Schneefall
 ~/.local/bin/testlauf 4G 300 make -j8          # Programm bauen
-~/.local/bin/testlauf 4G 300 make test         # QtTest-Kern + Test des KWin-Skripts (node)
+~/.local/bin/testlauf 4G 300 make test         # QtTest: Kern, Aussehen, Steuerfenster + Test des KWin-Skripts (node)
 tests/rauchtest.sh                             # Live-Test der D-Bus-Schnittstelle (Sitzung nötig)
 make install                                   # schneefall-umschalten + Starter
 make kwin-skript                               # KWin-Skript installieren/aktualisieren und einschalten

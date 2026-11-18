@@ -62,6 +62,11 @@ Programmeinstellungen einstellungenAusText(const std::string &text) {
         else if (k == "an") wahrheit(w, p.an);
         else if (k == "vor_fenstern") wahrheit(w, p.sim.vorFenstern);
         else if (k == "vollbild_pausieren") wahrheit(w, p.vollbildPausieren);
+        else if (k == "flockendetail") {
+            std::transform(w.begin(), w.end(), w.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            if (w == "realistisch") p.realistisch = true;
+            else if (w == "einfach") p.realistisch = false;
+        }
     }
     return p;
 }
@@ -86,7 +91,9 @@ std::string einstellungenAlsText(const Programmeinstellungen &p) {
       << "# Schnee fällt vor den Fenstern (true) oder nur über der Arbeitsfläche, also scheinbar dahinter (false)\n"
       << "vor_fenstern=" << (p.sim.vorFenstern ? "true" : "false") << "\n"
       << "# bei aktivem Vollbildfenster (Spiele, Videos) pausieren\n"
-      << "vollbild_pausieren=" << (p.vollbildPausieren ? "true" : "false") << "\n";
+      << "vollbild_pausieren=" << (p.vollbildPausieren ? "true" : "false") << "\n"
+      << "# Flockendetail: realistisch (Schneekristalle, nahe Flocken groß) oder einfach (weiche Punkte)\n"
+      << "flockendetail=" << (p.realistisch ? "realistisch" : "einfach") << "\n";
     return o.str();
 }
 

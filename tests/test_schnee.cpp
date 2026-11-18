@@ -53,6 +53,10 @@ private slots:
     void vorfuellenVerteiltFlockenSofortUeberAlleMonitore();
     void bodenSchmilztLangsamerAlsEsSchneit();
     void hinterFensternWerdenFlockenImFensterNichtGezeichnet();
+    void flockendetailLesenUndSchreiben();
+    void abfallenderSchneeIstPulverNeuerSchneeKristall();
+    void groessereFlockenFallenSchneller();
+    void deckenStandMeldetSprunghafteAenderungen();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -424,6 +428,81 @@ void TestSchnee::hinterFensternWerdenFlockenImFensterNichtGezeichnet() {
     Programmeinstellungen p;
     p.sim.vorFenstern = false;
     QCOMPARE(einstellungenAusText(einstellungenAlsText(p)).sim.vorFenstern, false);
+}
+
+// Aussehen: realistisch (Kristalle) ist Standard, „einfach“ gibt die alten weichen Punkte
+void TestSchnee::flockendetailLesenUndSchreiben() {
+    QCOMPARE(einstellungenAusText("").realistisch, true);
+    QCOMPARE(einstellungenAusText("flockendetail=einfach\n").realistisch, false);
+    QCOMPARE(einstellungenAusText("flockendetail = Realistisch\n").realistisch, true);
+    QCOMPARE(einstellungenAusText("flockendetail=einfach\nflockendetail=quatsch\n").realistisch, false); // kaputter Wert ändert nichts
+    Programmeinstellungen p;
+    QVERIFY(einstellungenAlsText(p).find("flockendetail=realistisch\n") != std::string::npos);
+    p.realistisch = false;
+    QVERIFY(einstellungenAlsText(p).find("flockendetail=einfach\n") != std::string::npos);
+    QCOMPARE(einstellungenAusText(einstellungenAlsText(p)).realistisch, false);
+}
+
+// Was von einer Decke herunterfällt, ist Pulver; was vom Himmel kommt, ein Kristall
+void TestSchnee::abfallenderSchneeIstPulverNeuerSchneeKristall() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.vorfuellen();
+    QVERIFY(!s.flocken().empty());
+    for (const Flocke &f : s.flocken()) QCOMPARE(f.art, Flockenart::Kristall);
+    s.alleFlockenEntfernen();
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    for (int i = 0; i < 10; ++i) s.flockeHinzufuegen(flocke(120 + i * 30, 250));
+    laufen(s, 2.0);
+    QVERIFY(s.flocken().empty());
+    s.abschuetteln();
+    QVERIFY(s.flocken().size() >= 8);
+    for (const Flocke &f : s.flocken()) QCOMPARE(f.art, Flockenart::Pulver);
+    // auch der Überhang, der am Fensterende abrutscht
+    Einstellungen e = ruhig();
+    Simulation t(e);
+    t.setBildschirme({{0, 0, 1000, 800}});
+    t.setFenster({fenster("a", 100, 300, 40, 300, 1)});
+    for (int i = 0; i < 400; ++i) { t.flockeHinzufuegen(flocke(104, 290)); t.schritt(1.0 / 60, false); }
+    QVERIFY(!t.flocken().empty());
+    int pulver = 0;
+    for (const Flocke &f : t.flocken()) if (f.art == Flockenart::Pulver) ++pulver;
+    QVERIFY(pulver > 0);
+}
+
+// Tiefenwirkung: große (nahe) Flocken fallen deutlich schneller als kleine (ferne)
+void TestSchnee::groessereFlockenFallenSchneller() {
+    Einstellungen e;
+    e.menge = 5;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 2000, 1000}});
+    s.vorfuellen();
+    double klein = 0, gross = 0;
+    int nk = 0, ng = 0;
+    for (const Flocke &f : s.flocken()) {
+        if (f.groesse < e.groesse * 0.7) { klein += f.vy; ++nk; }
+        if (f.groesse > e.groesse * 1.3) { gross += f.vy; ++ng; }
+    }
+    QVERIFY(nk > 20 && ng > 20);
+    QVERIFY2(gross / ng > 1.6 * klein / nk, qPrintable(QString("%1 gegen %2").arg(gross / ng).arg(klein / nk)));
+}
+
+// Die Ebene zeichnet Decken aus einem Zwischenspeicher; bei Sprüngen muss sie es sofort erfahren
+void TestSchnee::deckenStandMeldetSprunghafteAenderungen() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    uint64_t stand = s.deckenStand();
+    s.setFenster({fenster("a", 100, 300, 400, 300, 1)});
+    QVERIFY(s.deckenStand() != stand);
+    stand = s.deckenStand();
+    for (int i = 0; i < 10; ++i) s.flockeHinzufuegen(flocke(120 + i * 30, 250));
+    laufen(s, 2.0);
+    QCOMPARE(s.deckenStand(), stand); // langsames Wachsen zählt nicht
+    s.abschuetteln();
+    QVERIFY(s.deckenStand() != stand);
+    stand = s.deckenStand();
+    s.setFenster({fenster("a", 150, 300, 400, 300, 1)}); // verschoben
+    QVERIFY(s.deckenStand() != stand);
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

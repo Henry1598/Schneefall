@@ -2,6 +2,7 @@
 #include "app.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -56,6 +57,13 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     m_groesse = regler(QStringLiteral("Flockengröße"), 2, 20, 0.5, QStringLiteral(" px"), g, 2); // 1 … 10
     m_hoehe = regler(QStringLiteral("Max. Deckenhöhe"), 2, 60, 1.0, QStringLiteral(" px"), g, 3);
     m_fall = regler(QStringLiteral("Fallgeschwindigkeit"), 10, 200, 1.0, QStringLiteral(" px/s"), g, 4);
+    m_detail = new QComboBox(this);
+    m_detail->addItem(QStringLiteral("Einfach (weiche Punkte)"));
+    m_detail->addItem(QStringLiteral("Realistisch (Schneekristalle)"));
+    m_detail->setToolTip(QStringLiteral("Realistisch: sechszählige Schneekristalle, nahe Flocken groß und schnell, ferne klein und blass. "
+                                        "Einfach: alle Flocken als weiche Punkte."));
+    g->addWidget(new QLabel(QStringLiteral("Flockendetail"), this), 5, 0);
+    g->addWidget(m_detail, 5, 1, 1, 2);
     haupt->addLayout(g);
 
     auto *abschuetteln = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-clear-all")), QStringLiteral("Schnee abschütteln"), this);
@@ -84,6 +92,7 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     connect(m_an, &QCheckBox::toggled, this, [this] { uebernehmen(); });
     connect(m_vollbild, &QCheckBox::toggled, this, [this] { uebernehmen(); });
     connect(m_vorFenstern, &QCheckBox::toggled, this, [this] { uebernehmen(); });
+    connect(m_detail, &QComboBox::currentIndexChanged, this, [this] { uebernehmen(); });
     connect(m_autostart, &QCheckBox::toggled, this, [this](bool an) {
         if (m_setzt) return;
         const QString pfad = autostartPfad();
@@ -111,6 +120,7 @@ void Steuerfenster::ausEinstellungen() {
     m_an->setChecked(p.an);
     m_vollbild->setChecked(p.vollbildPausieren);
     m_vorFenstern->setChecked(p.sim.vorFenstern);
+    m_detail->setCurrentIndex(p.realistisch ? 1 : 0);
     m_autostart->setChecked(QFile::exists(autostartPfad()));
     auto setze = [](Regler &r, double wert) { r.slider->setValue(int(std::lround(wert / r.faktor))); };
     setze(m_menge, p.sim.menge);
@@ -135,13 +145,14 @@ void Steuerfenster::uebernehmen() {
     p.an = m_an->isChecked();
     p.vollbildPausieren = m_vollbild->isChecked();
     p.sim.vorFenstern = m_vorFenstern->isChecked();
+    p.realistisch = m_detail->currentIndex() == 1;
     p.sim.menge = m_menge.slider->value() * m_menge.faktor;
     p.sim.wind = m_wind.slider->value() * m_wind.faktor;
     p.sim.groesse = m_groesse.slider->value() * m_groesse.faktor;
     p.sim.maxHoehe = m_hoehe.slider->value() * m_hoehe.faktor;
     p.sim.fallGeschw = m_fall.slider->value() * m_fall.faktor;
     const Programmeinstellungen &alt = m_app->einstellungen();
-    if (p.an == alt.an && p.vollbildPausieren == alt.vollbildPausieren && p.sim.vorFenstern == alt.sim.vorFenstern && p.sim.menge == alt.sim.menge && p.sim.wind == alt.sim.wind
+    if (p.an == alt.an && p.realistisch == alt.realistisch && p.vollbildPausieren == alt.vollbildPausieren && p.sim.vorFenstern == alt.sim.vorFenstern && p.sim.menge == alt.sim.menge && p.sim.wind == alt.sim.wind
         && p.sim.groesse == alt.sim.groesse && p.sim.maxHoehe == alt.sim.maxHoehe && p.sim.fallGeschw == alt.sim.fallGeschw)
         return;
     m_app->einstellungenAendern(p);

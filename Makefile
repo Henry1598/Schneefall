@@ -23,16 +23,25 @@ $(B)/schnee.o: src/schnee.cpp src/schnee.h | $(B)
 $(B)/einstellungen.o: src/einstellungen.cpp src/einstellungen.h src/schnee.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(B)/kristall.o: src/kristall.cpp src/kristall.h | $(B)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(B)/deckenform.o: src/deckenform.cpp src/deckenform.h src/schnee.h | $(B)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(B)/flockenbild.o: src/flockenbild.cpp src/flockenbild.h src/schnee.h | $(B)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h | $(B)
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -Isrc -c $< -o $@
 
-$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o
+$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o
 	$(CXX) $(LDFLAGS) $^ -o $@ $(QT_LIBS) $(LSQ_LIBS)
 
 $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
@@ -41,14 +50,21 @@ $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
 $(B)/test_schnee: tests/test_schnee.cpp $(B)/test_schnee.moc $(B)/schnee.o $(B)/einstellungen.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_schnee.cpp $(B)/schnee.o $(B)/einstellungen.o -o $@ $(TEST_LIBS)
 
+$(B)/test_bild.moc: tests/test_bild.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_bild: tests/test_bild.cpp $(B)/test_bild.moc src/kristall.h src/deckenform.h src/flockenbild.h $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -Isrc -I$(B) tests/test_bild.cpp $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/schnee.o -o $@ $(TEST_LIBS)
+
 $(B)/test_steuerfenster.moc: tests/test_steuerfenster.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o -o $@ $(QT_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o -o $@ $(QT_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
 
-test: $(B)/test_schnee $(B)/test_steuerfenster
+test: $(B)/test_schnee $(B)/test_bild $(B)/test_steuerfenster
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_schnee
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_bild
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerfenster
 	node tests/test_kwin.js
 

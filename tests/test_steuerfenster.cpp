@@ -2,6 +2,7 @@
 // Läuft offscreen mit eigenem XDG_CONFIG_HOME (berührt nie die echte Konfiguration).
 #include <QtTest>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QPushButton>
 #include <QSlider>
 #include <QTemporaryDir>
@@ -45,6 +46,13 @@ private slots:
         QVERIFY(haken("Schnee an") && haken("Schnee fällt vor Fenstern") && haken("Bei Vollbild pausieren") && haken("Mit dem System starten"));
         haken("Schnee fällt vor Fenstern")->click();
         QCOMPARE(app.einstellungen().sim.vorFenstern, false);
+        // Flockendetail: Standard realistisch, umstellbar auf einfach
+        auto *detail = f->findChild<QComboBox *>();
+        QVERIFY(detail);
+        QCOMPARE(app.einstellungen().realistisch, true);
+        QCOMPARE(detail->currentText(), QString("Realistisch (Schneekristalle)"));
+        detail->setCurrentIndex(detail->findText("Einfach (weiche Punkte)"));
+        QCOMPARE(app.einstellungen().realistisch, false);
         haken("Bei Vollbild pausieren")->click();
         QCOMPARE(app.einstellungen().vollbildPausieren, false);
         haken("Schnee an")->click();
@@ -65,7 +73,7 @@ private slots:
             QFile d(App::konfigPfad());
             d.open(QIODevice::ReadOnly);
             QByteArray t = d.readAll();
-            return t.contains("menge=2\n") && t.contains("wind=-30\n") && t.contains("vor_fenstern=false\n");
+            return t.contains("menge=2\n") && t.contains("wind=-30\n") && t.contains("vor_fenstern=false\n") && t.contains("flockendetail=einfach\n");
         }(), 3000);
     }
     void dateiAenderungKommtImFensterAn() {
@@ -74,11 +82,12 @@ private slots:
         app.Steuerfenster();
         QFile d(App::konfigPfad());
         QVERIFY(d.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        d.write("menge=0.5\nmax_deckenhoehe=40\n");
+        d.write("menge=0.5\nmax_deckenhoehe=40\nflockendetail=einfach\n");
         d.close();
         app.Fenster("[]"); // irgendein Ereignis; das Nachladen kommt über den Dateibeobachter
         QTRY_COMPARE_WITH_TIMEOUT(app.einstellungen().sim.maxHoehe, 40.0, 3000);
         QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChildren<QSlider *>()[3]->value(), 40, 3000);
+        QTRY_COMPARE_WITH_TIMEOUT(findChild()->findChild<QComboBox *>()->currentIndex(), 0, 3000);
     }
 
 private:
