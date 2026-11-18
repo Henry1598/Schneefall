@@ -57,6 +57,7 @@ private slots:
     void abfallenderSchneeIstPulverNeuerSchneeKristall();
     void groessereFlockenFallenSchneller();
     void deckenStandMeldetSprunghafteAenderungen();
+    void abfallenderSchneeFaelltFastSenkrecht();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -503,6 +504,46 @@ void TestSchnee::deckenStandMeldetSprunghafteAenderungen() {
     stand = s.deckenStand();
     s.setFenster({fenster("a", 150, 300, 400, 300, 1)}); // verschoben
     QVERIFY(s.deckenStand() != stand);
+}
+
+// Henry 18.11.: abrutschender Schnee soll fast senkrecht fallen, nicht schräg vom Fenster weg
+void TestSchnee::abfallenderSchneeFaelltFastSenkrecht() {
+    Einstellungen e; // Standardwerte, kein Wind
+    e.groesse = 4;
+    e.fallGeschw = 23;
+    Simulation s(e);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("a", 300, 300, 60, 300, 1)});
+    // Decke überfüllen, bis Schnee an den Enden abrutscht
+    int geprueft = 0;
+    for (int i = 0; i < 3000; ++i) {
+        s.flockeHinzufuegen(Flocke{303 + (i % 18) * 3.0, 296, 0, 60, 4, 0});
+        s.schritt(1.0 / 60, false);
+        for (const Flocke &f : s.flocken()) {
+            if (f.art != Flockenart::Pulver) continue;
+            ++geprueft;
+            // seitliche Bewegung (Drift + Schaukeln) höchstens ein Viertel der Fallgeschwindigkeit: unter 15 Grad
+            QVERIFY2(std::abs(f.vx) + 0.75 * f.groesse <= 0.27 * f.vy, qPrintable(QString("vx %1 vy %2").arg(f.vx).arg(f.vy)));
+        }
+    }
+    QVERIFY(geprueft > 50);
+    // und der Weg selbst: nach dem Abschütteln bleibt jede Flocke nah an ihrer Senkrechten
+    // (frische Simulation: nur die Fensterdecke trägt Schnee, keine Flocke verlässt den Bildschirm)
+    Simulation t(e);
+    t.setBildschirme({{0, 0, 1000, 800}});
+    t.setFenster({fenster("a", 300, 300, 60, 300, 1)});
+    for (int i = 0; i < 40; ++i) t.flockeHinzufuegen(Flocke{303 + (i % 18) * 3.0, 296, 0, 60, 4, 0});
+    laufen(t, 1.0);
+    QVERIFY(t.flocken().empty());
+    t.abschuetteln();
+    std::vector<Flocke> start = t.flocken();
+    QVERIFY(start.size() > 20);
+    for (int i = 0; i < 60; ++i) t.schritt(1.0 / 60, false);
+    QCOMPARE(t.flocken().size(), start.size());
+    for (size_t i = 0; i < start.size(); ++i) {
+        const double dx = std::abs(t.flocken()[i].x - start[i].x), dy = t.flocken()[i].y - start[i].y;
+        QVERIFY2(dy > 15 && dx < 0.3 * dy, qPrintable(QString("dx %1 dy %2").arg(dx).arg(dy)));
+    }
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)

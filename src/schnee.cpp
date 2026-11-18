@@ -186,9 +186,9 @@ void Simulation::zerfallen(Decke &d, size_t von, size_t bis) {
             double x = d.x + (i + u(m_rng)) * d.spaltenBreite;
             double y = d.y - u(m_rng) * h - 0.5;
             Flocke f = neueFlocke(x, y);
-            f.vy = 10 + 30 * u(m_rng);
+            f.vy = 28 + 30 * u(m_rng);
             f.fang = 1.0f;
-            f.vx = (u(m_rng) - 0.5) * 20 + m_e.wind * 0.3;
+            f.vx = (u(m_rng) - 0.5) * 4 + m_e.wind * 0.3; // fast senkrecht
             f.herkunft = d.schluessel;
             f.art = Flockenart::Pulver;
             m_flocken.push_back(f);
@@ -262,9 +262,11 @@ void Simulation::herunterfallen(Decke &d, size_t spalte, double menge, int richt
         acc -= float(portion);
         double kante = richtung < 0 ? d.x + spalte * d.spaltenBreite : d.x + (spalte + 1) * d.spaltenBreite;
         Flocke f = neueFlocke(kante + richtung * (m_e.groesse * 0.6 + 1.0), d.y - d.hoehe[spalte] * 0.5);
-        f.vx = richtung * 8.0 + m_e.wind * 0.5;
-        f.vy = std::max(15.0, f.vy * 0.5);
+        // Klümpchen fallen fast senkrecht und zügig, nur der Wind nimmt sie etwas mit
+        f.vx = richtung * 2.0 + m_e.wind * 0.5;
+        f.vy = std::max(30.0, f.vy * 1.3);
         f.fang = 1.0f;
+        f.herkunft = d.schluessel; // nie zurück auf dieselbe Decke
         f.art = Flockenart::Pulver;
         m_flocken.push_back(f);
     }
@@ -274,7 +276,9 @@ void Simulation::rutschen(Decke &d, double) {
     const size_t n = d.hoehe.size();
     if (n == 0) return;
     const float maxDiff = float(d.spaltenBreite * 1.2);
-    const float randGrenze = float(std::min(m_e.maxHoehe, d.spaltenBreite * 1.5));
+    // Am Fensterende hält sich der Schnee fast in voller Höhe (runde Kappe). Früher lag die Grenze
+    // bei 1,5 Spaltenbreiten – zusammen mit maxDiff ergab das eine gerade 45°-Rampe zur Kante.
+    const float randGrenze = float(std::max(std::min(m_e.maxHoehe, d.spaltenBreite * 1.5), m_e.maxHoehe * 0.85));
     const float maxH = float(m_e.maxHoehe);
     auto sicht = [&](long i) { return i >= 0 && size_t(i) < n && d.sichtbar[size_t(i)]; };
     for (size_t i = 0; i < n; ++i) {
@@ -327,7 +331,9 @@ void Simulation::schritt(double dt, bool erzeugenAn) {
     for (Flocke f : m_flocken) {
         double y0 = f.y;
         f.phase += dt * 1.7;
-        f.x += (f.vx + std::cos(f.phase) * f.groesse * 2.5) * dt;
+        // Kristalle schaukeln im Fall, Pulverklümpchen kaum
+        const double schaukeln = f.art == Flockenart::Pulver ? 0.75 : 2.5;
+        f.x += (f.vx + std::cos(f.phase) * f.groesse * schaukeln) * dt;
         f.y += f.vy * dt;
         // erste getroffene Decke suchen
         Decke *treffer = nullptr;

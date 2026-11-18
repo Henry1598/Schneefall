@@ -413,6 +413,34 @@ private slots:
         QCOMPARE(stuecke.size(), size_t(2));
         QVERIFY(stuecke[0].back().x <= 100 + 16 * 3 && stuecke[1].front().x >= 100 + 21 * 3);
     }
+    // Henry 18.11.: „Warum läuft der Schnee 45 Grad vom Fenster weg?“ – die Decke fiel an den
+    // Fensterenden als gerade Rampe über 12 px und mehr ab. Echter Schnee endet als runde Kappe.
+    void deckeEndetAmFensterRundStattAlsRampe() {
+        Einstellungen e;
+        e.groesse = 4; e.menge = 3; e.fallGeschw = 40;
+        Simulation s(e);
+        s.setBildschirme({{0, 0, 1000, 800}});
+        Fenster f; f.id = "a"; f.r = {300, 400, 300, 200}; f.stapel = 1;
+        s.setFenster({f});
+        for (int i = 0; i < 60 * 60 * 40; ++i) s.schritt(1.0 / 60, true); // 40 Minuten Schneefall
+        const Decke *d = s.decke("a");
+        QVERIFY(d);
+        const auto stuecke = deckenProfil(*d);
+        QCOMPARE(stuecke.size(), size_t(1));
+        const auto &p = stuecke[0];
+        float mitte = 0;
+        for (float x = 360; x < 540; x += 3) mitte += obenBei(p, x) / 60;
+        QVERIFY2(mitte > 10, qPrintable(QString::number(mitte)));
+        for (int seite : {-1, 1}) {
+            const float kante = seite < 0 ? 300.f : 600.f;
+            // 4 px hinter dem Fensterende liegt der Schnee schon fast so hoch wie in der Mitte
+            const float h4 = obenBei(p, kante - seite * 4.f), h0 = obenBei(p, kante);
+            QVERIFY2(h4 > 0.8f * mitte, qPrintable(QString("Seite %1: %2 von %3").arg(seite).arg(h4).arg(mitte)));
+            QVERIFY2(h0 > 0.45f * mitte, qPrintable(QString("Seite %1: an der Kante %2 von %3").arg(seite).arg(h0).arg(mitte)));
+        }
+        // nur ein kleiner Überhang
+        QVERIFY(p.front().x >= 300 - 3.6f && p.back().x <= 600 + 3.6f);
+    }
     void einzelneFlockeGibtKleinenHuegel() {
         Decke d = decke(40, 0.f);
         d.hoehe[10] = 1.2f; // x = 130 … 133
