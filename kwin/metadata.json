@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Id": "schneefall-fenster",
+        "Name": "Schneefall – Fenster",
+        "Description": "Meldet Position und Stapelreihenfolge der Fenster an das Programm Schneefall, damit Schnee auf den Fensteroberkanten liegen bleiben kann",
+        "Authors": [{ "Name": "henry" }],
+        "License": "GPL",
+        "Version": "1.0",
+        "EnabledByDefault": false
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js",
+    "KPackageStructure": "KWin/Script"
+}

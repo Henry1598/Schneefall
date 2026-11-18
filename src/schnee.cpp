@@ -151,6 +151,7 @@ void Simulation::setFenster(const std::vector<Fenster> &f) {
         d.id = w.id;
         d.x = w.r.x;
         d.y = w.r.y;
+        d.dock = w.dock;
         d.spaltenBreite = m_e.spaltenBreite;
         size_t n = std::max<size_t>(1, size_t(std::floor(w.r.w / m_e.spaltenBreite)));
         d.hoehe.assign(n, 0.f);
@@ -176,6 +177,7 @@ void Simulation::zerfallen(Decke &d, size_t von, size_t bis) {
             double y = d.y - u(m_rng) * h - 0.5;
             Flocke f = neueFlocke(x, y);
             f.vy = 10 + 30 * u(m_rng);
+            f.fang = 1.0f;
             f.vx = (u(m_rng) - 0.5) * 20 + m_e.wind * 0.3;
             m_flocken.push_back(f);
         }
@@ -190,11 +192,16 @@ void Simulation::sichtbarkeitBerechnen() {
         int stapel = eigen ? eigen->stapel : -1000000; // Boden liegt unter allem
         for (size_t s = 0; s < d.hoehe.size(); ++s) {
             double cx = d.x + (s + 0.5) * d.spaltenBreite;
-            bool sicht = m_bildschirme.empty() || aufBildschirm(cx, d.y - 1);
-            if (d.boden) sicht = sicht && !aufBildschirm(cx, d.y + 1); // darunter geht ein Monitor weiter
+            bool sicht;
+            if (d.boden) // Boden: Monitor endet hier und geht darunter nicht weiter
+                sicht = m_bildschirme.empty() || (aufBildschirm(cx, d.y - 1) && !aufBildschirm(cx, d.y + 1));
+            else         // Fensterkante selbst muss auf einem Monitor liegen (auch ganz oben am Rand)
+                sicht = m_bildschirme.empty() || aufBildschirm(cx, d.y + 0.5);
             for (const Fenster &w : m_fenster) {
                 if (!sicht) break;
                 if (&w == eigen || w.minimiert || w.stapel <= stapel) continue;
+                // die Schnee-Ebene liegt über allen Fenstern: den Boden verdecken nur Docks (die tragen selbst)
+                if (d.boden && !w.dock) continue;
                 // höheres Fenster überdeckt die Kante oder den Raum direkt darüber
                 if (cx >= w.r.x && cx < w.r.rechts() && d.y + 1 > w.r.y && d.y - 2 < w.r.unten())
                     sicht = false;
@@ -213,12 +220,26 @@ void Simulation::ablegen(Decke &d, size_t spalte, double menge) {
     d.hoehe[spalte] += float(menge);
 }
 
+namespace {
+// fest je (Flocke, Kante): dieselbe Flocke entscheidet an derselben Kante immer gleich
+bool faengt(const Flocke &f, const Decke &d) {
+    if (f.fang >= 1.0f) return true;
+    if (f.fang <= 0.0f) return false;
+    uint32_t h = f.los ^ (uint32_t(int64_t(d.x)) * 2654435761u) ^ (uint32_t(int64_t(d.y)) * 40503u);
+    h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16;
+    return (h & 0xffff) < uint32_t(f.fang * 65536.0f);
+}
+}
+
 Flocke Simulation::neueFlocke(double x, double y) {
     std::uniform_real_distribution<double> u(0, 1);
     double g = m_e.groesse * (0.5 + u(m_rng));
     // große Flocken fallen etwas schneller
     double vy = m_e.fallGeschw * (0.6 + 0.4 * g / m_e.groesse) * (0.8 + 0.4 * u(m_rng));
-    return Flocke{x, y, m_e.wind * (0.7 + 0.6 * u(m_rng)), vy, g, u(m_rng) * 6.2831853};
+    Flocke f{x, y, m_e.wind * (0.7 + 0.6 * u(m_rng)), vy, g, u(m_rng) * 6.2831853};
+    f.fang = float(m_e.fangAnteil);
+    f.los = uint32_t(m_rng());
+    return f;
 }
 
 void Simulation::herunterfallen(Decke &d, size_t spalte, double menge, int richtung) {
@@ -231,6 +252,7 @@ void Simulation::herunterfallen(Decke &d, size_t spalte, double menge, int richt
         Flocke f = neueFlocke(kante + richtung * (m_e.groesse * 0.6 + 1.0), d.y - d.hoehe[spalte] * 0.5);
         f.vx = richtung * 8.0 + m_e.wind * 0.5;
         f.vy = std::max(15.0, f.vy * 0.5);
+        f.fang = 1.0f;
         m_flocken.push_back(f);
     }
 }
@@ -303,6 +325,7 @@ void Simulation::schritt(double dt, bool erzeugenAn) {
             if (rel < 0) continue;
             size_t s = size_t(rel);
             if (s >= d.hoehe.size() || !d.sichtbar[s]) continue;
+            if (!d.boden && !d.dock && !faengt(f, d)) continue; // fällt vor diesem Fenster vorbei
             double oben = d.y - d.hoehe[s];
             // y0 <= d.y: auch Flocken, in die die Decke hineingewachsen ist, bleiben liegen
             if (y0 <= d.y && f.y >= oben && oben < trefferOben) {
@@ -351,6 +374,14 @@ double Simulation::gesamtSchnee(const std::string &id) const {
     return s;
 }
 
+
+void Simulation::vorfuellen() {
+    std::uniform_real_distribution<double> u(0, 1);
+    for (const Rechteck &b : m_bildschirme) {
+        int n = int(b.w * b.h * m_e.menge / 10000.0);
+        for (int i = 0; i < n; ++i) m_flocken.push_back(neueFlocke(b.x + u(m_rng) * b.w, b.y + u(m_rng) * b.h));
+    }
+}
 
 void Simulation::abschuetteln() {
     for (Decke &d : m_decken) zerfallen(d, 0, d.hoehe.size());

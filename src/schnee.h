@@ -32,8 +32,9 @@ struct Einstellungen {
     double maxHoehe = 18.0;      // maximale Deckenhöhe in px
     double spaltenBreite = 3.0;  // Breite einer Deckenspalte in px
     double fallGeschw = 45.0;    // mittlere Fallgeschwindigkeit px/s
-    double schmelzen = 1.5;      // px/s Abbau am unteren Bildschirmrand (bei voller Höhe)
+    double schmelzen = 0.01;     // px/s Abbau am unteren Bildschirmrand (×(0,2 + Höhe/maxHöhe))
     double ablageJeFlocke = 0.0; // Höhenzuwachs je Flocke; 0 = aus Größe berechnet
+    double fangAnteil = 0.4;     // Anteil der Flocken, die auf einer Fensterkante liegen bleiben (Rest fällt davor vorbei)
 };
 
 struct Flocke {
@@ -41,6 +42,8 @@ struct Flocke {
     double vx, vy;    // px/s
     double groesse;   // Durchmesser px
     double phase;     // für das Schaukeln
+    float fang = 1.0f;  // Wahrscheinlichkeit, auf einer Fensterkante liegen zu bleiben (Boden/Taskleiste: immer)
+    uint32_t los = 0;   // Zufallszahl der Flocke; entscheidet je Kante fest, ob sie fängt
 };
 
 // Schneedecke auf einer Kante (Fensteroberkante oder Bildschirmboden)
@@ -51,6 +54,7 @@ struct Decke {
     std::vector<float> hoehe;     // Höhe je Spalte
     std::vector<uint8_t> sichtbar; // 1 = Kante sichtbar (nicht verdeckt, auf Bildschirm)
     bool boden = false;
+    bool dock = false;       // Taskleiste: fängt wie der Boden alle Flocken
     float abfallLinks = 0, abfallRechts = 0; // gesammelter Überhang, der als Flocke herunterfällt
     double breite() const { return hoehe.size() * spaltenBreite; }
 };
@@ -82,6 +86,7 @@ public:
     int zielAnzahl() const;
     void alleFlockenEntfernen() { m_flocken.clear(); }
     void abschuetteln(); // alle Decken zerfallen in Flocken
+    void vorfuellen();   // Flocken gleichmäßig über alle Monitore verteilen (Start)
 
 private:
     void zerfallen(Decke &d, size_t von, size_t bis); // Spalten [von,bis) in Flocken

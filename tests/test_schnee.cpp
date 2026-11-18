@@ -46,6 +46,12 @@ private slots:
     void einstellungenLesen();
     void einstellungenGrenzenUndFehler();
     void einstellungenRundreise();
+    void maximiertesFensterAmOberenMonitorrandTraegtSchnee();
+    void vordereFlockenFallenVorFensternWeiter();
+    void bodenWirdNurVonDocksVerdeckt();
+    void henrysMonitoreUndFenster();
+    void vorfuellenVerteiltFlockenSofortUeberAlleMonitore();
+    void bodenSchmilztLangsamerAlsEsSchneit();
 };
 
 void TestSchnee::flockeBleibtAufFensterkanteLiegen() {
@@ -156,7 +162,9 @@ void TestSchnee::schmalerWerdenWirftUeberstandAb() {
 }
 
 void TestSchnee::bodenSammeltUndSchmilzt() {
-    Simulation s(ruhig());
+    Einstellungen e = ruhig();
+    e.schmelzen = 0.5;
+    Simulation s(e);
     s.setBildschirme({{0, 0, 1000, 800}});
     s.flockeHinzufuegen(flocke(500, 700));
     s.flockeHinzufuegen(flocke(504, 700));
@@ -293,6 +301,90 @@ void TestSchnee::einstellungenRundreise() {
     QCOMPARE(q.fps, 45);
     QCOMPARE(q.an, false);
     QCOMPARE(q.vollbildPausieren, false);
+}
+
+// Fehler 2 (Henry 18.11.): maximierte Fenster liegen mit der Oberkante genau auf dem Monitorrand
+void TestSchnee::maximiertesFensterAmOberenMonitorrandTraegtSchnee() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("max", 0, 0, 1000, 760, 1)});
+    s.flockeHinzufuegen(flocke(500, -2));   // kommt gerade oben herein
+    laufen(s, 1.0);
+    QVERIFY(hoeheUm(s, "max", 500) > 0.5);
+}
+
+// Fehler 1: Schnee fällt auch vor großen Fenstern weiter (nicht jede Flocke bleibt auf dem Dach)
+void TestSchnee::vordereFlockenFallenVorFensternWeiter() {
+    Einstellungen e;
+    e.wind = 0;
+    Simulation s(e, 3);
+    s.setBildschirme({{0, 0, 1000, 800}});
+    s.setFenster({fenster("gross", 50, 100, 900, 650, 1)});
+    for (int i = 0; i < 60 * 40; ++i) s.schritt(1.0 / 60, true);
+    int unten = 0;
+    for (const Flocke &f : s.flocken())
+        if (f.y > 450 && f.x > 100 && f.x < 900) ++unten;
+    // ohne Fenster wären es rund menge/10000 * 800*350 = 28
+    QVERIFY2(unten >= 8, qPrintable(QString::number(unten)));
+    QVERIFY(s.gesamtSchnee("gross") > 20);
+}
+
+// Fehler 3: Boden unter normalen Fenstern sammelt trotzdem (Ebene liegt über allem), nur Docks tragen selbst
+void TestSchnee::bodenWirdNurVonDocksVerdeckt() {
+    Simulation s(ruhig());
+    s.setBildschirme({{0, 0, 1000, 800}});
+    Fenster leiste = fenster("leiste", 600, 760, 400, 40, 5);
+    leiste.dock = true;
+    s.setFenster({fenster("unten", 0, 400, 500, 400, 1), leiste});
+    Flocke vorne = flocke(200, 700);
+    vorne.fang = 0;   // fällt an jedem Fenster vorbei
+    s.flockeHinzufuegen(vorne);
+    laufen(s, 3.0);
+    QVERIFY(hoeheUm(s, "boden:0", 200) > 0.5);
+    QCOMPARE(hoeheUm(s, "boden:0", 800, 150), 0.0);
+}
+
+// Nachbau von Henrys Aufbau (kscreen-doctor + KWin-Mitschnitt 18.11.)
+void TestSchnee::henrysMonitoreUndFenster() {
+    Simulation s(Einstellungen{}, 7);
+    s.setBildschirme({{0, 1100, 1080, 1920}, {1080, 1440, 3413.33, 1440}, {1586, 0, 2560, 1440}, {4494, 1800, 1920, 1080}});
+    Fenster leiste = fenster("leiste", 2218, 2824, 1137, 56, 11);
+    leiste.dock = true;
+    s.setFenster({fenster("sysmon", 0, 1100, 1080, 664, 4), fenster("ts", 0, 1764, 1080, 1256, 5),
+                  fenster("steam", 1707.3, 1700, 1219.3, 678, 6), fenster("zen", 1155.6, 1534.8, 2152, 1284.7, 8),
+                  fenster("zen2", 4494, 1800, 1920, 1080, 9), fenster("konsole", 3087.25, 1657.97, 1383.3, 1031.3, 10), leiste});
+    s.vorfuellen();
+    for (int i = 0; i < 60 * 120; ++i) s.schritt(1.0 / 60, true);
+    int mitte = 0;
+    for (const Flocke &f : s.flocken())
+        if (f.y > 2000 && f.y < 2800 && f.x > 1700 && f.x < 4100) ++mitte;
+    QVERIFY2(mitte >= 30, qPrintable(QString::number(mitte)));   // Mitte von DP-3 schneit es
+    for (const char *id : {"sysmon", "ts", "zen", "zen2", "konsole", "leiste", "boden:1"})
+        QVERIFY2(s.gesamtSchnee(id) > 10, id);
+    QCOMPARE(s.gesamtSchnee("steam"), 0.0);   // liegt vollständig hinter Zen
+}
+
+void TestSchnee::vorfuellenVerteiltFlockenSofortUeberAlleMonitore() {
+    Simulation s(Einstellungen{}, 5);
+    s.setBildschirme({{0, 1100, 1080, 1920}, {1080, 1440, 3413.33, 1440}, {1586, 0, 2560, 1440}, {4494, 1800, 1920, 1080}});
+    s.vorfuellen();
+    QVERIFY(std::abs(int(s.flocken().size()) - s.zielAnzahl()) < s.zielAnzahl() / 10);
+    int mitteDp3 = 0, luecke = 0;
+    for (const Flocke &f : s.flocken()) {
+        if (f.x > 2000 && f.x < 3500 && f.y > 2000 && f.y < 2800) ++mitteDp3;
+        if (f.x > 1080 && f.x < 1586 && f.y < 1440) ++luecke;   // Lücke links über DP-3
+    }
+    QVERIFY2(mitteDp3 > 60, qPrintable(QString::number(mitteDp3)));
+    QCOMPARE(luecke, 0);
+}
+
+void TestSchnee::bodenSchmilztLangsamerAlsEsSchneit() {
+    Simulation s(Einstellungen{}, 9);
+    s.setBildschirme({{0, 0, 1000, 600}});
+    s.vorfuellen();
+    for (int i = 0; i < 60 * 180; ++i) s.schritt(1.0 / 60, true);
+    // nach 3 Minuten liegt am Boden sichtbar Schnee (im Mittel mehr als 1,5 px; ohne Schmelzen wären es gut 2)
+    QVERIFY2(s.gesamtSchnee("boden:0") / (1000 / 3.0) > 1.5, qPrintable(QString::number(s.gesamtSchnee("boden:0"))));
 }
 
 QTEST_GUILESS_MAIN(TestSchnee)
