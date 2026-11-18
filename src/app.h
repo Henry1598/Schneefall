@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QTimer>
 #include "einstellungen.h"
+#include "klang.h"
 #include "schnee.h"
 
 class Overlay;
@@ -30,6 +31,7 @@ public:
     const schnee::Programmeinstellungen &einstellungen() const { return m_einst; }
     void einstellungenAendern(const schnee::Programmeinstellungen &p); // wirkt sofort, speichert verzögert
     static QString konfigPfad();
+    Klang &klang() { return m_klang; } // Geräusche (Teil B ruft ereignis()/dauerklang() hier auf)
 
 public Q_SLOTS:
     Q_SCRIPTABLE void Fenster(const QString &json);
@@ -52,6 +54,7 @@ private:
 
     schnee::Simulation m_sim;
     schnee::Programmeinstellungen m_einst;
+    Klang m_klang;
     std::vector<schnee::Fenster> m_fenster;
     QString m_letzteListe;
     QHash<QScreen *, Overlay *> m_ebenen;

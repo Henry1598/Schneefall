@@ -182,3 +182,13 @@ rm -r ~/Schneefall                                                     # Quellen
   teilweise über den Monitorrand hinausgeschoben wird, fällt dort ab und kommt nicht zurück.
 - Das Alter einer Decke zählt ab dem Start von Schneefall bzw. ab dem Öffnen/Wiederherstellen
   des Fensters; während einer Pause zählt es nicht weiter.
+
+## Geräusche (Teil C)
+
+Alle Geräusche (Hubschrauber, Dieselmotor, Rückfahrwarner, Schnee-Rutsch, Plumps, Schneeball-Wurf/-Treffer, Murren) werden
+zur Laufzeit synthetisiert, es gibt keine Audiodateien. Standard: aus (`ton=aus`, `lautstaerke=50` in `schneefall.conf`);
+Schalter „Geräusche“ und Regler „Lautstärke“ im Steuerfenster. Ist der Ton aus oder lange still, wird das Audiogerät geschlossen.
+
+- `src/klang.{h,cpp}`: Klasse `Klang` mit `ereignis()`, `dauerklang()`, `dauerklangStopp()`.
+- `make klangprobe`, dann `build/klangprobe` (spielt alles kurz ab), `--wav datei.wav`, `--wav-ordner ordner` (offline rendern), `--cpu` (Last messen).
+- Tests: `make test-klang`.

@@ -7,6 +7,8 @@ QT_CFLAGS := $(shell pkg-config --cflags Qt6Widgets Qt6Gui Qt6OpenGL Qt6DBus)
 QT_LIBS   := $(shell pkg-config --libs Qt6Widgets Qt6Gui Qt6OpenGL Qt6DBus)
 TEST_CFLAGS := $(shell pkg-config --cflags Qt6Test Qt6Core)
 TEST_LIBS   := $(shell pkg-config --libs Qt6Test Qt6Core)
+MM_CFLAGS := $(shell pkg-config --cflags Qt6Multimedia)
+MM_LIBS   := $(shell pkg-config --libs Qt6Multimedia)
 LSQ_CFLAGS := -I/usr/include/LayerShellQt
 LSQ_LIBS   := -lLayerShellQtInterface
 
@@ -32,17 +34,20 @@ $(B)/deckenform.o: src/deckenform.cpp src/deckenform.h src/schnee.h | $(B)
 $(B)/flockenbild.o: src/flockenbild.cpp src/flockenbild.h src/schnee.h | $(B)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(B)/klang.o: src/klang.cpp src/klang.h | $(B)
+	$(CXX) $(CXXFLAGS) $(MM_CFLAGS) -c $< -o $@
+
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h | $(B)
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/klang.h | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $(LSQ_CFLAGS) -Isrc -c $< -o $@
 
-$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o
-	$(CXX) $(LDFLAGS) $^ -o $@ $(QT_LIBS) $(LSQ_LIBS)
+$(B)/schneefall: $(B)/main.o $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o
+	$(CXX) $(LDFLAGS) $^ -o $@ $(QT_LIBS) $(MM_LIBS) $(LSQ_LIBS)
 
 $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
 	$(MOC) $< -o $@
@@ -59,10 +64,26 @@ $(B)/test_bild: tests/test_bild.cpp $(B)/test_bild.moc src/kristall.h src/decken
 $(B)/test_steuerfenster.moc: tests/test_steuerfenster.cpp | $(B)
 	$(MOC) $< -o $@
 
-$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o -o $@ $(QT_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
+$(B)/test_steuerfenster: tests/test_steuerfenster.cpp $(B)/test_steuerfenster.moc $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) $(LSQ_CFLAGS) -Isrc -I$(B) tests/test_steuerfenster.cpp $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o $(B)/flockenbild.o $(B)/klang.o -o $@ $(QT_LIBS) $(MM_LIBS) $(TEST_LIBS) $(LSQ_LIBS)
 
-test: $(B)/test_schnee $(B)/test_bild $(B)/test_steuerfenster
+# ---- Geräusche (Teil C) ----
+$(B)/test_klang.moc: tests/test_klang.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_klang: tests/test_klang.cpp $(B)/test_klang.moc $(B)/klang.o $(B)/einstellungen.o $(B)/schnee.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(MM_CFLAGS) -Isrc -I$(B) tests/test_klang.cpp $(B)/klang.o $(B)/einstellungen.o $(B)/schnee.o -o $@ $(TEST_LIBS) $(MM_LIBS)
+
+$(B)/klangprobe: tools/klangprobe.cpp $(B)/klang.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(MM_CFLAGS) -Isrc tools/klangprobe.cpp $(B)/klang.o -o $@ $(MM_LIBS)
+
+klangprobe: $(B)/klangprobe
+
+test-klang: $(B)/test_klang
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
+
+test: $(B)/test_klang $(B)/test_schnee $(B)/test_bild $(B)/test_steuerfenster
+	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_schnee
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_bild
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerfenster
@@ -77,7 +98,7 @@ kwin-skript:
 clean:
 	rm -rf $(B)
 
-.PHONY: all test kwin-skript install clean
+.PHONY: klangprobe test-klang all test kwin-skript install clean
 
 # Befehl schneefall-umschalten und Desktop-Starter für den aktuellen Benutzer
 install: all

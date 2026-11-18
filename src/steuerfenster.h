@@ -26,6 +26,9 @@ private:
     QCheckBox *m_vollbild;
     QComboBox *m_modus; // Fenstermodus: 0 = fest, 1 = dahinter, 2 = davor
     QCheckBox *m_autostart;
+    QCheckBox *m_ton;
+    QSlider *m_laut;
+    QLabel *m_lautWert;
     QComboBox *m_detail; // Flockendetail: 0 = einfach, 1 = realistisch
     Regler m_menge, m_wind, m_groesse, m_hoehe, m_fall;
     // Gruppe „Fenster“

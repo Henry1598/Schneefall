@@ -69,6 +69,19 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     m_detail->setObjectName(QStringLiteral("flockendetail"));
     g->addWidget(new QLabel(QStringLiteral("Flockendetail"), this), 5, 0);
     g->addWidget(m_detail, 5, 1, 1, 2);
+    m_ton = new QCheckBox(QStringLiteral("Geräusche"), this);
+    m_ton->setToolTip(QStringLiteral("Hubschrauber, Motoren, Schneebälle … als selbst erzeugte Geräusche (Standard: aus)."));
+    m_laut = new QSlider(Qt::Horizontal, this);
+    m_laut->setRange(0, 100);
+    m_laut->setMinimumWidth(220);
+    m_lautWert = new QLabel(this);
+    m_lautWert->setMinimumWidth(70);
+    m_lautWert->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    g->addWidget(m_ton, 6, 0);
+    g->addWidget(m_laut, 6, 1);
+    g->addWidget(m_lautWert, 6, 2);
+    connect(m_ton, &QCheckBox::toggled, this, [this] { uebernehmen(); });
+    connect(m_laut, &QSlider::valueChanged, this, [this] { uebernehmen(); });
     haupt->addLayout(g);
 
     // Gruppe „Fenster“: wie Schnee und Fenster zusammenspielen
@@ -148,6 +161,8 @@ void Steuerfenster::ausEinstellungen() {
     m_modus->setCurrentIndex(int(p.sim.modus));
     m_detail->setCurrentIndex(p.realistisch ? 1 : 0);
     m_autostart->setChecked(QFile::exists(autostartPfad()));
+    m_ton->setChecked(p.ton);
+    m_laut->setValue(p.lautstaerke);
     auto setze = [](Regler &r, double wert) { r.slider->setValue(int(std::lround(wert / r.faktor))); };
     setze(m_menge, p.sim.menge);
     setze(m_wind, p.sim.wind);
@@ -172,6 +187,7 @@ void Steuerfenster::uebernehmen() {
         if (r == &m_wind) t = (w < 0 ? QStringLiteral("← ") : w > 0 ? QStringLiteral("→ ") : QString()) + QString::number(std::abs(w)) + r->einheit;
         r->wert->setText(t);
     }
+    m_lautWert->setText(QString::number(m_laut->value()) + QStringLiteral(" %"));
     if (m_setzt) return;
     const Programmeinstellungen &alt = m_app->einstellungen();
     Programmeinstellungen p = alt;
@@ -179,6 +195,8 @@ void Steuerfenster::uebernehmen() {
     p.vollbildPausieren = m_vollbild->isChecked();
     p.sim.modus = Fenstermodus(std::clamp(m_modus->currentIndex(), 0, 2));
     p.realistisch = m_detail->currentIndex() == 1;
+    p.ton = m_ton->isChecked();
+    p.lautstaerke = m_laut->value();
     // Reglerwerte nur übernehmen, wenn der Regler bewegt wurde: so bleiben krumme Werte aus der Datei erhalten
     auto lies = [](const Regler &r, double &ziel, double skala = 1.0) {
         if (r.slider->value() != int(std::lround(ziel * skala / r.faktor))) ziel = r.slider->value() * r.faktor / skala;

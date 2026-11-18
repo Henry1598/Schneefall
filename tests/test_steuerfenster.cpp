@@ -23,7 +23,7 @@ private slots:
         auto *f = findChild();
         QVERIFY(f);
         const auto slider = f->findChildren<QSlider *>();
-        QCOMPARE(slider.size(), 11);   // 5 oben, 6 in der Gruppe „Fenster“
+        QCOMPARE(slider.size(), 12);   // 5 oben + Lautstärke, 6 in der Gruppe „Fenster“
         QCOMPARE(slider[3]->maximum(), 80);   // max. Deckenhöhe bis 80 px
         // jeden Regler einmal ganz durchziehen
         for (QSlider *s : slider)
@@ -54,12 +54,14 @@ private slots:
         QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Davor);
         modus->setCurrentIndex(0);
         QCOMPARE(app.einstellungen().sim.modus, schnee::Fenstermodus::Fest);
-        slider[5]->setValue(30);   // Schüttel-Schwelle 30 000 px/s²
-        slider[6]->setValue(3);    // Rutsch ab 3 min
-        slider[7]->setValue(15);   // Rutschtempo 1,5
-        slider[8]->setValue(12);   // Wolkendauer 12 s
-        slider[9]->setValue(25);   // 25 % bleiben liegen
-        slider[10]->setValue(40);  // Boden max 40 px
+        slider[5]->setValue(70);   // Lautstärke
+        QCOMPARE(app.einstellungen().lautstaerke, 70);
+        slider[6]->setValue(30);   // Schüttel-Schwelle 30 000 px/s²
+        slider[7]->setValue(3);    // Rutsch ab 3 min
+        slider[8]->setValue(15);   // Rutschtempo 1,5
+        slider[9]->setValue(12);   // Wolkendauer 12 s
+        slider[10]->setValue(25);   // 25 % bleiben liegen
+        slider[11]->setValue(40);  // Boden max 40 px
         QCOMPARE(app.einstellungen().sim.schuettelnSchwelle, 30000.0);
         QCOMPARE(app.einstellungen().sim.rutschAbMinuten, 3.0);
         QCOMPARE(app.einstellungen().sim.rutschTempo, 1.5);
