@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/daten">
+    <file>sprueche.tsv</file>
+  </qresource>
+</RCC>

@@ -14,6 +14,7 @@ struct Programmeinstellungen {
     bool ton = false;               // Geräusche (Standard aus)
     int lautstaerke = 50;           // 0 … 100
     RaeumEinstellungen raeum;       // Räumdienst und Schneebälle
+    int spruecheMaxStufe = 3;       // Ausdrucksweise der Sprüche: 1 freundlich … 5 richtig vulgär (siehe sprueche.h)
 };
 // Wertet den Dateiinhalt aus; unbekannte Schlüssel/kaputte Werte werden ignoriert.
 Programmeinstellungen einstellungenAusText(const std::string &text);

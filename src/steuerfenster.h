@@ -36,6 +36,7 @@ private:
     // Gruppe „Räumdienst“
     QCheckBox *m_raeumAn, *m_taskleiste, *m_anfassbar;
     Regler m_raeumenAb, m_fzGroesse, m_gleichzeitig, m_trefferStreik;
+    QComboBox *m_ausdruck; // Ausdrucksweise der Sprüche: Index 0 … 4 = Stufe 1 … 5
     std::vector<Regler *> m_alle;
     bool m_setzt = false;
 };

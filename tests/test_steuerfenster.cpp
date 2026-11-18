@@ -78,6 +78,14 @@ private slots:
         QCOMPARE(app.einstellungen().raeum.fahrzeugGroesse, 1.5);
         QCOMPARE(app.einstellungen().raeum.gleichzeitig, 2);
         QCOMPARE(app.einstellungen().raeum.trefferBisStreik, 5);
+        // Ausdrucksweise der Sprüche: Standard „frech“ (Stufe 3), umstellbar bis „richtig vulgär“
+        auto *ausdruck = f->findChild<QComboBox *>("sprueche_max_stufe");
+        QVERIFY(ausdruck);
+        QCOMPARE(app.einstellungen().spruecheMaxStufe, 3);
+        QCOMPARE(ausdruck->currentText(), QString("frech"));
+        ausdruck->setCurrentIndex(4);
+        QCOMPARE(app.einstellungen().spruecheMaxStufe, 5);
+        QCOMPARE(ausdruck->itemText(4), QString("richtig vulgär"));
         for (const char *name : {"raeumdienst", "taskleiste_raeumen", "schnee_anfassbar"}) {
             auto *c = f->findChild<QCheckBox *>(name);
             QVERIFY2(c && c->isChecked(), name);   // Standard: an
@@ -121,7 +129,7 @@ private slots:
                 && t.contains("rutsch_ab_minuten=3\n") && t.contains("wolke_liegen=25\n") && t.contains("boden_max=40\n")
                 && t.contains("flockendetail=einfach\n") && t.contains("raeumen_ab=60\n") && t.contains("fahrzeug_groesse=1.5\n")
                 && t.contains("einsaetze_gleichzeitig=2\n") && t.contains("treffer_bis_streik=5\n") && t.contains("raeumdienst=false\n")
-                && t.contains("taskleiste_raeumen=false\n") && t.contains("schnee_anfassbar=false\n") && t.contains("lautstaerke=70\n");
+                && t.contains("taskleiste_raeumen=false\n") && t.contains("schnee_anfassbar=false\n") && t.contains("lautstaerke=70\n") && t.contains("sprueche_max_stufe=5\n");
         }(), 3000);
     }
     void dateiAenderungKommtImFensterAn() {
