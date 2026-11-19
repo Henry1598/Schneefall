@@ -13,8 +13,10 @@ class Steuerfenster : public QWidget {
 public:
     explicit Steuerfenster(App *app);
     void ausEinstellungen(); // Bedienelemente auf den aktuellen Stand bringen
+    void groesseAnpassen();  // an Inhalt und Bildschirm (vor dem ersten Zeigen)
 
 private:
+    QWidget *m_inhalt = nullptr; // rollbarer Inhalt (alles außer Schließen/Beenden)
     struct Regler { QSlider *slider = nullptr; QLabel *wert = nullptr; double faktor = 1; QString einheit; };
     Regler regler(const QString &name, int min, int max, double faktor, const QString &einheit, class QGridLayout *g, int zeile,
                   const QString &tipp = QString());

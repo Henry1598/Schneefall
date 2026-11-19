@@ -1,7 +1,9 @@
 // Steuerkanal: Einzelinstanz und Befehle an das laufende Programm (--status, --raeumen, --umschalten, …).
 //
-// Plattformneutral über QLocalServer/QLocalSocket (Linux: Unix-Socket im Laufzeitordner des Benutzers,
-// Windows: benannte Pipe je Benutzer-SID und Sitzung). Protokoll: je Verbindung eine Zeile JSON
+// Linux: QLocalServer/QLocalSocket über einen Unix-Socket im Laufzeitordner des Benutzers. Windows: eigener
+// Pipe-Server (benannte Pipe je Benutzer-SID und Sitzung, erste Instanz, Besitzer und DACL nur der eigene Benutzer,
+// keine Fernzugriffe, Integritäts-Label bei erhöhtem Start, Prüfung des Clients je Verbindung); der verbundene Griff
+// geht an einen QLocalSocket. Der Client prüft den Besitzer der Pipe, bevor er etwas sendet. Protokoll: je Verbindung eine Zeile JSON
 // {"befehl":…, "argumente":[…]}, Antwort eine Zeile {"ergebnis":"ok"|"unbekannt", "text":…}.
 //
 // Grenzen (Sicherheitsprüfung): Anfrage bis 64 KiB, je Verbindung ein Befehl und höchstens 2 s, höchstens
@@ -57,6 +59,8 @@ public:
     // Fehler: Sperre oder Lauschen unmöglich (Text in fehlertext()). Nur der eigene Benutzer kann sich verbinden.
     Anmeldung anmelden();
     QString fehlertext() const { return m_fehler; }
+    // Hinweis nach erfolgreicher Anmeldung (Windows: über UAC erhöht gestartet), sonst leer
+    QString hinweis() const { return m_hinweis; }
     QString name() const { return m_name; }
     // Sperrdatei zum Namen (Linux: <socket>.lock, Windows: %LOCALAPPDATA%\Schneefall\<name>.lock)
     static QString sperrPfad(const QString &name);
@@ -64,7 +68,8 @@ public:
     // (eigener 0700-Ordner), sonst ~/.schneefall-<Rechner>.sock. Windows: schneefall-<Benutzer-SID>-<Sitzung>, leer
     // (→ anmelden() meldet Fehler), wenn die SID nicht ermittelbar ist.
     static QString standardName();
-    // Client: Befehl senden und auf die Antwort warten (blockiert insgesamt höchstens ms). NichtErreicht, wenn keine Instanz läuft.
+    // Client: Befehl senden und auf die Antwort warten (blockiert insgesamt höchstens ms). NichtErreicht, wenn keine Instanz läuft
+    // oder sie nicht sicher erreichbar ist – dann steht der Grund in text (Windows: Zugriff verweigert, fremder Besitzer).
     static Antwort senden(const QString &befehl, const QStringList &argumente = {}, const QString &name = standardName(), int ms = 3000);
 
 private:
@@ -72,6 +77,7 @@ private:
     Befehlsziel m_ziel;
     QString m_name;
     QString m_fehler;
+    QString m_hinweis;
     std::unique_ptr<Impl> m_impl;
 };
 

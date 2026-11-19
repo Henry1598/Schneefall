@@ -13,12 +13,16 @@ RCC        ?= $(QT_LIBEXEC)/rcc
 QT_MODULE  := Qt6Widgets Qt6Gui Qt6OpenGL Qt6Network
 # kein LayerShellQt, kein QtDBus; Win32-Bibliotheken für das Windows-Backend (Schritt 3)
 LSQ_CFLAGS :=
-LSQ_LIBS   := -lgdi32 -ldwmapi -luser32 -lshell32 -lopengl32 -ladvapi32
+LSQ_LIBS   := -lgdi32 -ldwmapi -lshcore -ldxgi -luser32 -lshell32 -lopengl32 -ladvapi32
 # Steuerkanal: Benutzer-SID (Pipe-Name, Prüfung des Servers)
 KANAL_LIBS := -ladvapi32
 PLAT_DATEIEN := fensterquelle ebene systemkanal autostart
 PLAT_MOC   :=
-BACKEND_TESTS :=
+PLAT_EXTRA_O = $(B)/fensterauswahl.o
+# Programm ohne Konsolenfenster (Ausgaben von --status gehen in die aufrufende Konsole, siehe main.cpp)
+APP_LDFLAGS := -mwindows
+# Tests nur für das Windows-Backend
+BACKEND_TESTS := test_autostart_win test_pipe_win
 else ifeq ($(PLATTFORM),linux)
 EXE        :=
 MOC        ?= /usr/lib/qt6/moc
@@ -51,7 +55,7 @@ RAEUM_O := $(B)/raeumdienst.o $(B)/raeumszene.o $(B)/fahrzeugbild.o $(B)/ansicht
 # Plattform-Schicht: Schnittstellen in src/plattform/*.h, plattformneutral pfade/steuerkanal, Backend in src/plattform/$(PLATTFORM)/
 PLAT_H := src/plattform/fensterquelle.h src/plattform/ebene.h src/plattform/steuerkanal.h src/plattform/autostart.h src/plattform/pfade.h \
           $(wildcard src/plattform/$(PLATTFORM)/*.h)
-PLAT_O := $(B)/pfade.o $(B)/steuerkanal.o $(patsubst %,$(B)/pl_%.o,$(PLAT_DATEIEN) $(PLAT_MOC))
+PLAT_O := $(B)/pfade.o $(B)/steuerkanal.o $(patsubst %,$(B)/pl_%.o,$(PLAT_DATEIEN) $(PLAT_MOC)) $(PLAT_EXTRA_O)
 # alles, was die App (ohne main) braucht
 APP_O := $(B)/app.o $(B)/overlay.o $(B)/steuerfenster.o $(B)/moc_app.o $(B)/schnee.o $(B)/einstellungen.o $(B)/kristall.o $(B)/deckenform.o \
          $(B)/flockenbild.o $(B)/bildtakt.o $(B)/klang.o $(SPRUECHE_O) $(RAEUM_O) $(STAT_O) $(PLAT_O)
@@ -110,7 +114,7 @@ $(B)/moc_app.o: $(B)/moc_app.cpp
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
 $(B)/schneefall$(EXE): $(B)/main.o $(APP_O)
-	$(CXX) $(LDFLAGS) $^ -o $@ $(QT_LIBS) $(MM_LIBS) $(LSQ_LIBS)
+	$(CXX) $(LDFLAGS) $(APP_LDFLAGS) $^ -o $@ $(QT_LIBS) $(MM_LIBS) $(LSQ_LIBS)
 
 $(B)/test_schnee.moc: tests/test_schnee.cpp | $(B)
 	$(MOC) $< -o $@
@@ -163,11 +167,33 @@ $(B)/test_steuerkanal.moc: tests/test_steuerkanal.cpp | $(B)
 $(B)/test_steuerkanal$(EXE): tests/test_steuerkanal.cpp $(B)/test_steuerkanal.moc $(B)/steuerkanal.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(NET_CFLAGS) -I$(B) tests/test_steuerkanal.cpp $(B)/steuerkanal.o -o $@ $(NET_LIBS) $(TEST_LIBS) $(KANAL_LIBS)
 
+# Windows-Fensterquelle, plattformneutraler Teil (Filter, DPI) – wird auf beiden Plattformen getestet
+$(B)/fensterauswahl.o: src/plattform/windows/fensterauswahl.cpp src/plattform/windows/fensterauswahl.h src/schnee.h | $(B)
+	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
+
+$(B)/test_fensterauswahl.moc: tests/test_fensterauswahl.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_fensterauswahl$(EXE): tests/test_fensterauswahl.cpp $(B)/test_fensterauswahl.moc $(B)/fensterauswahl.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_CFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_fensterauswahl.cpp $(B)/fensterauswahl.o -o $@ $(QT_LIBS) $(TEST_LIBS)
+
 $(B)/test_kwinquelle.moc: tests/test_kwinquelle.cpp | $(B)
 	$(MOC) $< -o $@
 
 $(B)/test_kwinquelle: tests/test_kwinquelle.cpp $(B)/test_kwinquelle.moc $(B)/pl_kwinfensterquelle.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_kwinquelle.cpp $(B)/pl_kwinfensterquelle.o -o $@ $(TEST_LIBS)
+
+$(B)/test_pipe_win.moc: tests/test_pipe_win.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_pipe_win$(EXE): tests/test_pipe_win.cpp $(B)/test_pipe_win.moc $(B)/steuerkanal.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) $(NET_CFLAGS) -I$(B) tests/test_pipe_win.cpp $(B)/steuerkanal.o -o $@ $(NET_LIBS) $(TEST_LIBS) $(KANAL_LIBS)
+
+$(B)/test_autostart_win.moc: tests/test_autostart_win.cpp | $(B)
+	$(MOC) $< -o $@
+
+$(B)/test_autostart_win$(EXE): tests/test_autostart_win.cpp $(B)/test_autostart_win.moc $(B)/pl_autostart.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_autostart_win.cpp $(B)/pl_autostart.o -o $@ $(TEST_LIBS)
 
 $(B)/test_autostart.moc: tests/test_autostart.cpp | $(B)
 	$(MOC) $< -o $@
@@ -175,7 +201,7 @@ $(B)/test_autostart.moc: tests/test_autostart.cpp | $(B)
 $(B)/test_autostart: tests/test_autostart.cpp $(B)/test_autostart.moc $(B)/pl_autostart.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TEST_CFLAGS) -I$(B) tests/test_autostart.cpp $(B)/pl_autostart.o -o $@ $(TEST_LIBS)
 
-test-plattform: $(B)/test_steuerkanal$(EXE) $(B)/test_app$(EXE) $(patsubst %,$(B)/%,$(BACKEND_TESTS))
+test-plattform: $(B)/test_steuerkanal$(EXE) $(B)/test_app$(EXE) $(patsubst %,$(B)/%$(EXE),$(BACKEND_TESTS))
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_steuerkanal$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_app$(EXE)
 	@set -e; for t in $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t; done
@@ -240,8 +266,8 @@ test-klang: $(B)/test_klang$(EXE)
 	QT_QPA_PLATFORM=offscreen ./$(B)/test_klang
 
 TESTS := test_klang test_ansicht test_blasen test_raeumdienst test_schnee test_bild test_bildtakt test_steuerfenster test_sprueche \
-         test_statistik test_steuerkanal test_app
-test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%,$(BACKEND_TESTS))
+         test_statistik test_steuerkanal test_app test_fensterauswahl
+test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%$(EXE),$(BACKEND_TESTS))
 	@set -e; for t in $(TESTS) $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
 ifeq ($(PLATTFORM),linux)
 	node tests/test_kwin.js

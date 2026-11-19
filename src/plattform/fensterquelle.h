@@ -1,6 +1,7 @@
 // Fensterquelle: liefert der App die Liste der Fenster, auf denen Schnee liegen kann.
 //
-// Schnittstelle für jedes Plattform-Backend (Linux: KWin-Skript über D-Bus, Windows: EnumWindows/WinEventHook).
+// Schnittstelle für jedes Plattform-Backend (Linux: KWin-Skript über D-Bus, Windows: EnumWindows/WinEventHook,
+// Auswahl und DPI-Umrechnung in windows/fensterauswahl.cpp).
 // Vertrag für jede gemeldete Liste (schnee::Fenster):
 //   - id: dauerhaft je Fenster (gleiches Fenster = gleiche id, solange es lebt), nie leer
 //   - r: äußerer sichtbarer Rahmen in globalen logischen Koordinaten (ohne Schattenrand)

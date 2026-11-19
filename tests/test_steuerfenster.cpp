@@ -20,6 +20,8 @@ private slots:
     void initTestCase() {
         QVERIFY(m_dir.isValid());
         qputenv("XDG_CONFIG_HOME", m_dir.path().toUtf8());
+        qputenv("APPDATA", m_dir.path().toUtf8());                       // Windows: %APPDATA%\Schneefall
+        qputenv("SCHNEEFALL_TEST_RUN", "SchneefallTest\\Run");           // Windows: nie den echten Autostart
     }
     void reglerUndHaekchenWirkenUndWerdenGespeichert() {
         App app;

@@ -51,6 +51,8 @@ public:
     // wird zu Beginn jedes Bildes mit der Uhrzeit (uhrSekunden) gerufen: dort rechnet die App die Simulation weiter
     std::function<void(double jetzt)> vorDemBild;
     // Flächen (global logisch), in denen die Ebene Mausklicks annimmt; leer = alles klickt durch
+    // Zusatz der Plattform-Ebene für --status (Windows: Taktquelle)
+    QString ebenenDiagnose() const { return m_ebene->diagnose(); }
     void eingabeSetzen(const std::vector<schnee::Rechteck> &flaechen);
     // Maus über Schnee oder Fahrzeug: art 0 = gedrückt, 1 = bewegt, 2 = losgelassen; globale logische Koordinaten
     std::function<void(int art, double x, double y)> mausziel;

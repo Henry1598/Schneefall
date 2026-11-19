@@ -6,6 +6,7 @@
 // Alle Aufrufe kommen aus dem GUI-Thread.
 #pragma once
 #include <QRegion>
+#include <QString>
 #include <memory>
 
 class QScreen;
@@ -27,6 +28,13 @@ public:
     virtual void zeigen(QWindow &fenster, bool sichtbar) = 0;
     // nächstes Bild im Takt des Monitors/Compositors anfordern; das Bild kommt als paintGL, danach frameSwapped
     virtual void bildAnfordern(QWindow &fenster) = 0;
+    // true: die Ebene zeichnet von sich aus nur jedes n-te Monitorbild (setzeTeiler), das Overlay fordert dann
+    // einfach nach jedem Bild das nächste an (Windows: Zählen der Monitorbilder im Takt-Thread). false: das Overlay
+    // verteilt die Bilder selbst auf ein Raster (Linux, Frame-Callbacks).
+    virtual bool teiltSelbst() const { return false; }
+    virtual void setzeTeiler(int /*n*/) {}
+    // Zusatz für --status (z. B. Taktquelle), leer = nichts
+    virtual QString diagnose() const { return {}; }
 };
 
 // die Ebene der Plattform, für die gebaut wurde

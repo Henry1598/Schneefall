@@ -51,7 +51,16 @@ qdbus6 org.schneefall / org.schneefall.Werfen 2000 500 400 -300 150   # dasselbe
   `~/.schneefall-<Rechner>.sock`, damit sich Rechner mit gemeinsamem NFS-Home nicht in die Quere kommen)
   (Windows: `%LOCALAPPDATA%\Schneefall\<Pipe-Name>.lock`). Nach einem Absturz wird die Sperre übernommen,
   sobald der alte Prozess nicht mehr lebt; nur wer sie hält, ersetzt einen verwaisten Socket. Lässt sich
-  der Steuerkanal nicht öffnen, meldet der Start einen Fehler (statt „läuft schon“).
+  der Steuerkanal nicht öffnen, meldet der Start einen Fehler (statt „läuft schon“). Starten zwei Instanzen
+  gleichzeitig, öffnet die zweite nur das Steuerfenster der ersten.
+- Windows: Der Pipe-Namensraum ist für alle Benutzer gemeinsam. Schneefall legt die Pipe deshalb selbst als
+  erste Instanz an (`FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`), Besitzer und einziger
+  Berechtigter ist der eigene Benutzer. Hat ein fremder Prozess den Namen vorher belegt, startet Schneefall
+  nicht („Pipe … von fremdem Prozess belegt“), statt ihm Befehle zu schicken. Der Server prüft je Verbindung
+  den Benutzer des Clients, der Client vor dem Senden den Besitzer der Pipe. Läuft Schneefall über UAC erhöht,
+  trägt die Pipe die hohe Integritätsstufe: Befehle aus einer normalen Konsole kommen dann nicht an (mit
+  Hinweis beim Start und klarer Meldung beim Befehl); umgekehrt erreicht eine Administrator-Konsole eine
+  normal gestartete Instanz.
 - Steuerkanal: Socket nur für den eigenen Benutzer, je Verbindung ein Befehl, höchstens 2 s und
   16 Verbindungen gleichzeitig; Anfragen bis 64 KiB, Antworten bis 4 MiB; der Client wartet insgesamt
   höchstens 3 s. Zahlen müssen endlich sein
@@ -352,13 +361,26 @@ kaputte Datei ergibt eine Zählung ab null; die Datei löschen setzt die Statist
 - `src/plattform/`: Plattform-Schicht (für die Windows-Version). Schnittstellen:
   - `fensterquelle.h` – Fensterliste (Linux: `linux/kwinfensterquelle` – das KWin-Skript über D-Bus),
   - `ebene.h` – Overlay-Fenster je Monitor (Linux: `linux/layerebene.cpp` – LayerShellQt),
-  - `steuerkanal.{h,cpp}` – Einzelinstanz und Befehle, plattformneutral über `QLocalServer`
-    (Linux: `$XDG_RUNTIME_DIR/schneefall.sock`, Windows: benannte Pipe je Benutzer-SID und Sitzung) mit
+  - `steuerkanal.{h,cpp}` – Einzelinstanz und Befehle über `QLocalSocket`
+    (Linux: `QLocalServer` auf `$XDG_RUNTIME_DIR/schneefall.sock`, Windows: eigener abgesicherter Pipe-Server,
+    benannte Pipe je Benutzer-SID und Sitzung) mit
     Sperrdatei für die Einzelinstanz; dazu der Systemkanal
     (Linux: `linux/dbusdienst` – D-Bus `org.schneefall` wie bisher, das KWin-Skript braucht ihn),
   - `autostart.h` – Linux `.desktop`, Windows Registry `HKCU\…\Run`,
   - `pfade.{h,cpp}` – Ablage der Einstellungen (Linux `~/.config/schneefall.conf`, Windows `%APPDATA%\Schneefall\`).
-  - `windows/`: Windows-Backend (noch Platzhalter, folgt).
+  - `windows/`: Windows-Backend:
+    - `ebene.cpp` – je Monitor ein randloses, durchsichtiges Topmost-Fenster (Layered + DWM-Blur mit leerer
+      Region für Alpha je Pixel), nicht in Taskleiste/Alt-Tab, Per-Monitor-DPI v2. Durchklicken über
+      `WS_EX_TRANSPARENT`, das 60-mal je Sekunde nach der Mausposition umgeschaltet wird (nur über anfassbarem
+      Schnee/Fahrzeugen klickbar). Takt: ein Thread je Monitor wartet auf das VBlank (`IDXGIOutput::WaitForVBlank`,
+      sonst `DwmFlush`, zuletzt Schlafen) und zählt den Teiler selbst.
+    - `fensterquelle.cpp` – `EnumWindows` + `SetWinEventHook` (außerhalb des Prozesses), Rahmen über
+      `DWMWA_EXTENDED_FRAME_BOUNDS`, verhüllte Fenster (virtuelle Desktops, UWP) über `DWMWA_CLOAKED`.
+      Gemeldet wird nur bei Änderung, gebündelt nach höchstens 15 ms, dazu ein Abgleich je Sekunde.
+    - `fensterauswahl.{h,cpp}` – plattformneutral und getestet: Filter (Shell-, Werkzeug-, eigene Fenster),
+      Stapel, Vollbild, Taskleisten als Dock (auch automatisch ausgeblendet), minimierte Fenster mit letzter
+      Lage, Umrechnung physischer in logische Koordinaten je Monitor (wie Qt bei gemischter Skalierung).
+    - `autostart.cpp` – Registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - `src/steuerfenster.{h,cpp}`: Steuerfenster.
 - `kwin/`: KWin-Skript `schneefall-fenster`. Es meldet bei jeder Änderung (höchstens alle 15 ms,
   auch während des Ziehens, und alle 2 s) alle Fenster mit Position, Stapelplatz, minimiert,
@@ -396,6 +418,23 @@ tests/rauchtest.sh                             # Live-Test der D-Bus-Schnittstel
 make install                                   # schneefall-umschalten + Starter
 make kwin-skript                               # KWin-Skript installieren/aktualisieren und einschalten
 ```
+
+Windows (MSYS2 UCRT64, Qt 6 aus `mingw-w64-ucrt-x86_64-qt6-*`):
+
+```
+mingw32-make PLATTFORM=windows B=build-win -j8        # schneefall.exe (Windows-Programm ohne Konsolenfenster)
+mingw32-make PLATTFORM=windows B=build-win -j8 test   # alle Tests, dazu Autostart (Registry) und Pipe-Sicherheit
+```
+
+- `schneefall.exe` ist ein Windows-Programm (`-mwindows`). Aus einer Konsole gestartet, schreibt es Ausgaben
+  von `--status` usw. dorthin (bzw. in eine Umleitung); aus dem Explorer gestartet, erscheinen Meldungen als Fenster.
+  Weil die Konsole nicht auf ein Windows-Programm wartet, für Ausgaben am besten umleiten
+  (`schneefall.exe --status > status.txt`) oder `start /wait` nutzen.
+- Ohne GPU-Treiber (z. B. VM) braucht Qt Software-OpenGL: Mesa (`mingw-w64-ucrt-x86_64-mesa`), dessen
+  `opengl32.dll` als `opengl32sw.dll` neben `schneefall.exe`. Schneefall setzt `GALLIUM_DRIVER=llvmpipe`
+  als Vorgabe (der D3D12-Treiber zeigt in Layered-Fenstern nichts). Fehlt OpenGL ganz, startet Schneefall
+  ohne Schnee-Ebene und meldet das.
+- Einstellungen und Statistik: `%APPDATA%\Schneefall\`, Sperrdatei `%LOCALAPPDATA%\Schneefall\`.
 
 ## Deinstallation
 
@@ -437,6 +476,10 @@ Decke ab (Brett oder Wolke). Ist „Bei Vollbild pausieren“ an, pausiert der S
 - Viel Schnee, der auf einen Fleck fällt (Abwurf an der Kante), überschreitet dort die
   Höchstmenge des unteren Fensters; der Überschuss fällt wie üblich an dessen Rand weiter.
 - Mausklicks auf anfassbaren Schnee erreichen das Fenster darunter nicht (siehe „Eingaberegion“).
+- Windows: Das Durchklicken wird 60-mal je Sekunde nach der Mausposition umgeschaltet. Ein sehr schneller
+  Klick direkt nach dem Bewegen vom Schnee weg kann deshalb selten noch beim Schnee landen.
+- Windows: Ohne Grafiktreiber (Software-OpenGL, z. B. in einer VM) sind Bildrate und CPU-Last nicht
+  aussagekräftig.
 
 ## Geräusche (Teil C)
 

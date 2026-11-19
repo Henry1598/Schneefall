@@ -352,7 +352,10 @@ void App::fensterSetzen(std::vector<schnee::Fenster> f) {
 }
 
 void App::Steuerfenster() {
-    if (!m_steuer) m_steuer = new ::Steuerfenster(this);
+    if (!m_steuer) {
+        m_steuer = new ::Steuerfenster(this);
+        m_steuer->groesseAnpassen();
+    }
     m_steuer->ausEinstellungen();
     m_steuer->show();
     m_steuer->raise();
@@ -392,7 +395,8 @@ QString App::Status() {
                  .arg(l.sammelnMs, 0, 'f', 3).arg(l.zeichnenMs, 0, 'f', 3).arg(l.ecken)
           + QStringLiteral(" tausch_ms=%1 flockenaufbau_ms=%2 instanzen=%3").arg(l.tauschMs, 0, 'f', 3).arg(l.flockenaufbauMs, 0, 'f', 3).arg(l.instanzen)
           + QLatin1Char(' ') + bildzeitenText(it.value()->monitorHz(), it.value()->sollAbstand(), z)
-          + QStringLiteral(" teiler=%1").arg(it.value()->teiler());
+          + QStringLiteral(" teiler=%1").arg(it.value()->teiler())
+          + (it.value()->ebenenDiagnose().isEmpty() ? QString() : QLatin1Char(' ') + it.value()->ebenenDiagnose());
     }
     int decken = 0;
     double schnee = 0;

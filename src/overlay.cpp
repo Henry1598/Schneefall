@@ -182,6 +182,7 @@ void Overlay::setzeObergrenze(int bilderJeSekunde) {
 void Overlay::teilerBerechnen() {
     const double hz = monitorHz() > 1 ? monitorHz() : 60.0;
     m_teiler = bildTeiler(hz, m_obergrenze);
+    m_ebene->setzeTeiler(m_teiler);
     m_rasterGueltig = false;
     m_bildzeiten.setzeSoll(m_teiler / hz);
 }
@@ -196,7 +197,7 @@ void Overlay::teilerBerechnen() {
 void Overlay::naechstesBild() {
     m_tauschNs += qint64((uhrSekunden() - m_zeichnenEnde) * 1e9);
     if (!isVisible() || !isExposed()) return;
-    if (m_teiler <= 1 || !m_rasterGueltig) {
+    if (m_teiler <= 1 || !m_rasterGueltig || m_ebene->teiltSelbst()) {
         m_perCallback = true;
         m_ebene->bildAnfordern(*this);
         return;
@@ -207,7 +208,7 @@ void Overlay::naechstesBild() {
 // im Bild: Raster nachführen (jetzt = Beginn dieses Bildes)
 void Overlay::rasterNachfuehren(double jetzt) {
     const double periode = 1.0 / (monitorHz() > 1 ? monitorHz() : 60.0);
-    if (m_teiler <= 1) {
+    if (m_teiler <= 1 || m_ebene->teiltSelbst()) {
         m_rasterGueltig = false;
     } else if (m_perCallback) {
         // Frame-Callback-Bild: KWin hat gerade zusammengesetzt (kurz vor oder nach einem Monitorbild), dieses Bild
@@ -241,7 +242,23 @@ Overlay::~Overlay() {
 
 void Overlay::anBildschirmAnpassen() { m_ebene->anBildschirmAnpassen(*this, m_bildschirm); }
 
-void Overlay::zeigen(bool sichtbar) { m_ebene->zeigen(*this, sichtbar); }
+// Ohne OpenGL (z. B. Windows-Plattform „offscreen“ in Tests, Fernsitzung ohne Software-GL) bleibt die Ebene
+// unsichtbar, statt beim ersten Bild abzustürzen; der Rest des Programms läuft weiter.
+static bool glVorhanden() {
+    static const bool da = [] {
+        QOpenGLContext probe;
+        probe.setFormat(QSurfaceFormat::defaultFormat());
+        const bool ok = probe.create();
+        if (!ok) qWarning("Schneefall: kein OpenGL – die Schnee-Ebenen bleiben unsichtbar");
+        return ok;
+    }();
+    return da;
+}
+
+void Overlay::zeigen(bool sichtbar) {
+    if (sichtbar && !glVorhanden()) return;
+    m_ebene->zeigen(*this, sichtbar);
+}
 
 QOpenGLShaderProgram *Overlay::programm(const char *fragment, const char *vertex) {
     auto *p = new QOpenGLShaderProgram;

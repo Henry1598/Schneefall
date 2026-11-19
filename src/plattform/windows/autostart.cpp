@@ -1,5 +1,5 @@
 // Windows-Autostart: Wert „Schneefall“ unter HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
-// Vorbereitet für Schritt 3 (dort in der VM zu prüfen); der Installer (Schritt 4) kann denselben Wert setzen.
+// In der VM geprüft; der Installer (Schritt 4) kann denselben Wert setzen.
 #include "plattform/autostart.h"
 #ifdef Q_OS_WIN
 #include <QDir>
@@ -11,14 +11,19 @@ namespace plattform {
 
 #ifdef Q_OS_WIN
 namespace {
-const QString RUN = QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const QString WERT = QStringLiteral("Schneefall");
+// Tests setzen SCHNEEFALL_TEST_RUN (Schlüssel unter HKCU\Software\…), damit sie den echten Autostart nie berühren
+QString runSchluessel() {
+    const QString test = qEnvironmentVariable("SCHNEEFALL_TEST_RUN");
+    if (!test.isEmpty()) return QStringLiteral("HKEY_CURRENT_USER\\Software\\") + test;
+    return QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+}
 } // namespace
 
-bool autostartAktiv() { return QSettings(RUN, QSettings::NativeFormat).contains(WERT); }
+bool autostartAktiv() { return QSettings(runSchluessel(), QSettings::NativeFormat).contains(WERT); }
 
 bool autostartSetzen(bool an, const QString &programm) {
-    QSettings run(RUN, QSettings::NativeFormat);
+    QSettings run(runSchluessel(), QSettings::NativeFormat);
     if (an) {
         // Windows-Pfade enthalten kein ", aber Steuerzeichen wären möglich: dann keinen Eintrag
         if (programm.isEmpty() || std::any_of(programm.begin(), programm.end(), [](QChar c) {

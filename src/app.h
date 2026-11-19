@@ -35,6 +35,8 @@ public:
     // Ok, LaeuftSchon (eine andere Instanz läuft) oder Fehler (Text in anmeldeFehler())
     plattform::Steuerkanal::Anmeldung dienstAnmelden();
     QString anmeldeFehler() const { return m_anmeldeFehler; }
+    // Hinweis nach erfolgreicher Anmeldung (Windows: mit Administratorrechten gestartet), sonst leer
+    QString anmeldeHinweis() const { return m_steuerkanal ? m_steuerkanal->hinweis() : QString(); }
     // ein Befehl aus Steuer- oder Systemkanal: Steuerfenster, Beenden, Umschalten, Abschuetteln, Status, Fensterliste,
     // Raeumen, Werfen x y vx vy menge, Zeitlupe faktor
     plattform::Antwort befehl(const QString &name, const QStringList &argumente);

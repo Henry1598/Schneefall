@@ -178,6 +178,9 @@ private slots:
         const QString bidi = QStringLiteral("a") + QChar(0x202e) + QStringLiteral("b") + QChar(0x2066) + QStringLiteral("c") + QChar(0x2028) +
                              QStringLiteral("d") + QChar(0x2029) + QStringLiteral("e");
         QCOMPARE(plattform::terminalText(bidi), QStringLiteral("a?b?c?d?e"));
+        // Formatzeichen außerhalb der BMP (Tag-Zeichen U+E0041) als ganzer Codepunkt; Emoji außerhalb der BMP bleiben
+        const char32_t tag[] = {U'x', 0xE0041, U'y', 0x1F328, 0};
+        QCOMPARE(plattform::terminalText(QString::fromUcs4(tag)), QStringLiteral("x?y") + QString::fromUcs4(U"\U0001F328"));
     }
     // Nachprüfung R6: die Frist gilt für den ganzen Aufruf, nicht je Lesevorgang (Server tröpfelt Bytes)
     void tropfenderServerHaeltDenClientNichtFest() {

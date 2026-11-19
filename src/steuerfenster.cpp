@@ -15,6 +15,9 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
+#include <QStyle>
 #include <QSlider>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -45,7 +48,10 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     setWindowIcon(QIcon::fromTheme(QStringLiteral("weather-snow")));
     setAttribute(Qt::WA_QuitOnClose, false);
 
-    auto *haupt = new QVBoxLayout(this);
+    // Inhalt rollbar: passt das Fenster nicht auf den Bildschirm (kleine Auflösung, hohe Skalierung), lässt es sich
+    // trotzdem ganz bedienen; Schließen/Beenden bleiben immer sichtbar
+    m_inhalt = new QWidget;
+    auto *haupt = new QVBoxLayout(m_inhalt);
     m_an = new QCheckBox(QStringLiteral("Schnee an"), this);
     QFont f = m_an->font();
     f.setBold(true);
@@ -209,7 +215,17 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     auto *beenden = new QPushButton(QIcon::fromTheme(QStringLiteral("application-exit")), QStringLiteral("Beenden"), this);
     unten->addWidget(schliessen);
     unten->addWidget(beenden);
-    haupt->addLayout(unten);
+    auto *rolle = new QScrollArea(this);
+    rolle->setWidget(m_inhalt);
+    rolle->setWidgetResizable(true);
+    rolle->setFrameShape(QFrame::NoFrame);
+    auto *aussen = new QVBoxLayout(this);
+    aussen->setContentsMargins(0, 0, 0, 0);
+    aussen->addWidget(rolle);
+    auto *untenRand = new QVBoxLayout;
+    untenRand->setContentsMargins(9, 0, 9, 9);
+    untenRand->addLayout(unten);
+    aussen->addLayout(untenRand);
     connect(schliessen, &QPushButton::clicked, this, &QWidget::hide);
     connect(beenden, &QPushButton::clicked, m_app, &App::Beenden);
 
@@ -348,4 +364,12 @@ void Steuerfenster::uebernehmen() {
     p.spruecheMaxStufe = m_ausdruck->currentIndex() + SPRUCH_STUFE_MIN;
     if (einstellungenAlsText(p) == einstellungenAlsText(alt)) return;
     m_app->einstellungenAendern(p);
+}
+
+// Größe: so groß wie der Inhalt, höchstens die freie Fläche des Bildschirms (abzüglich Rahmen und Titel)
+void Steuerfenster::groesseAnpassen() {
+    const QSize innen = m_inhalt->sizeHint();
+    QSize soll(innen.width() + style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 2, innen.height() + 60);
+    if (QScreen *s = screen()) soll = soll.boundedTo(s->availableGeometry().size() - QSize(16, 48));
+    resize(soll);
 }
