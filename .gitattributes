@@ -1,0 +1,4 @@
+# Daten und Skripte immer mit LF auschecken (auch unter Windows: Tests und bash lesen sie zeilenweise)
+daten/*.tsv text eol=lf
+*.sh text eol=lf
+*.js text eol=lf
