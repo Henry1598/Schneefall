@@ -34,9 +34,13 @@ jobs:
       - name: Bauen
         run: make -j"$(nproc)"
       - name: Tests (offscreen)
-        run: make test
+        # ohne Sitzung kein XDG_RUNTIME_DIR: eigenes Verzeichnis (nur für den Benutzer), sonst weicht der Test nach /tmp aus
+        run: |
+          install -d -m 700 /run/schneefall-ci
+          make test
         env:
           QT_QPA_PLATFORM: offscreen
+          XDG_RUNTIME_DIR: /run/schneefall-ci
 
   windows:
     runs-on: windows-latest
@@ -66,6 +70,13 @@ jobs:
         # Tests mit Erhöhung (Pipe-Besitzer Administratoren) laufen nur auf erhöhten Runnern und überspringen sich sonst selbst
         shell: msys2 {0}
         run: mingw32-make PLATTFORM=windows B=build-win test
+      - name: Test-Diagnose (nur bei Fehler)
+        if: failure()
+        shell: msys2 {0}
+        run: |
+          for t in build-win/test_*.exe; do
+            echo "== $t"; QT_QPA_PLATFORM=offscreen "$t" 2>&1 | grep -E "^(FAIL|Totals|QFATAL)|Loc:" | head -10; echo "exit=${PIPESTATUS[0]}"
+          done
       - name: Paket (Ordner und ZIP)
         shell: msys2 {0}
         run: mingw32-make PLATTFORM=windows paket
