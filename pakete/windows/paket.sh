@@ -32,8 +32,12 @@ strip --strip-unneeded "$ORDNER/schneefall.exe"
 
 echo "== 3/6 windeployqt (Qt-DLLs und Plugins)"
 # Schneefall hat eigene Übersetzungen nicht nötig; OpenGL-Software und Compiler-Laufzeit kommen unten per ntldd
+# Qt Multimedia: Schneefall nutzt nur QAudioSink (eigene Klänge, src/klang.cpp); das spricht Windows-Audio (WASAPI) direkt aus
+# Qt6Multimedia.dll an. Das Medien-Plugin multimedia/ffmpegmediaplugin.dll (FFmpeg, im MSYS2 mit --enable-gpl gebaut, zieht x264,
+# x265, gnutls … nach) wird nur zum Abspielen/Kodieren von Medien gebraucht und bleibt weg: sonst wäre das Paket GPL-belastet.
 windeployqt6 --release --no-translations --no-opengl-sw --no-system-d3d-compiler --no-compiler-runtime \
-    --dir "$ORDNER" "$ORDNER/schneefall.exe"
+    --skip-plugin-types multimedia --dir "$ORDNER" "$ORDNER/schneefall.exe"
+rm -rf -- "$ORDNER/multimedia"
 # Symbol-Plugins ausdrücklich sicherstellen (Icon-Themes/Bilder können SVG sein)
 PLUGINS="$PREFIX/share/qt6/plugins"
 for p in iconengines/qsvgicon.dll imageformats/qsvg.dll; do
@@ -106,6 +110,7 @@ echo "== Lizenzen"
 mkdir -p "$ORDNER/lizenzen"
 TABELLE="$(mktemp)"; PAKETE="$(mktemp)"; trap 'rm -f -- "$TABELLE" "$PAKETE"' EXIT
 fehlende_lizenzen=""
+gpl_dateien=""
 while IFS= read -r datei; do
     rel="${datei#"$ORDNER"/}"
     [ "$rel" = "schneefall.exe" ] && continue
@@ -121,6 +126,13 @@ while IFS= read -r datei; do
     echo "$pak" >> "$PAKETE"
     ver="$(pacman -Q "$pak" | awk '{print $2}')"
     lic="$(pacman -Qi "$pak" | sed -n 's/^Licenses *: *//p' | sed 's/spdx://g')"
+    # Starkes Copyleft verboten: GPL ohne LGPL-Alternative und ohne Ausnahme (WITH …, z. B. GCC-Laufzeit) darf nicht ins Paket
+    # "A OR B" (Wahl): es genügt eine Alternative ohne GPL (z. B. "GPL-2.0-or-later OR FTL", "BSD-3-Clause OR GPL-2.0-or-later")
+    gpl_frei=0
+    while IFS= read -r alt; do
+        if ! [[ "$alt" =~ GPL ]] || [[ "$alt" =~ LGPL ]] || [[ "$alt" =~ WITH ]]; then gpl_frei=1; fi
+    done <<< "${lic// OR /$'\n'}"
+    [ "$gpl_frei" = 1 ] || gpl_dateien+="$rel -> $pak ($lic)"$'\n'
     printf '%s\t%s\t%s\t%s\n' "$rel" "$pak" "$ver" "$lic" >> "$TABELLE"
 done < <(find "$ORDNER" -type f \( -iname '*.dll' -o -iname '*.exe' \) | LC_ALL=C sort)
 while IFS= read -r pak; do
@@ -157,6 +169,7 @@ done < <(sort -u "$PAKETE")
     echo "(Paketversionen und Lizenzangaben laut MSYS2 zum Zeitpunkt des Baus.)"
 } > "$ORDNER/DRITTANBIETER.txt"
 [ -z "$fehlende_lizenzen" ] || echo "Hinweis: ohne Paket oder Lizenztext:"$'\n'"$fehlende_lizenzen" >&2
+[ -z "$gpl_dateien" ] || fehler $'GPL-Bibliotheken im Paket (nicht erlaubt):\n'"$gpl_dateien"
 # Pflicht: jede gepackte Datei muss einem Paket mit Lizenztext zugeordnet sein
 [ -z "$fehlende_lizenzen" ] || fehler "Lizenzzuordnung unvollständig (siehe oben)"
 cp VERSION "$ORDNER/VERSION.txt"

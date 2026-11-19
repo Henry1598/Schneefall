@@ -9,7 +9,7 @@ Die Tabelle am Ende nennt je Datei das MSYS2-Paket, dessen Version und die dort 
 des Pakets aus den tatsächlich gepackten Dateien erzeugt (pacman -Qo, pakete/windows/paket.sh).
 
 Qt (LGPL-3.0)
-  Schneefall verwendet Qt 6 (Core, Gui, Widgets, OpenGL, Network, Multimedia, SVG) unter der LGPL Version 3. Die Qt-Bibliotheken
+  Schneefall verwendet Qt 6 (Core, Gui, Widgets, OpenGL, Network, Multimedia ohne Medien-Plugin, SVG) unter der LGPL Version 3. Die Qt-Bibliotheken
   (Qt6*.dll und die Plugins in den Unterordnern) sind dynamisch gelinkt und liegen als eigene Dateien im Programmordner; sie
   lassen sich durch eine selbst gebaute Qt-Version mit gleicher Hauptversion und gleichem Binärformat (ABI) ersetzen.
   Lizenztext: lizenzen/qt6-base/LGPL-3.0-only.txt (dort auch GPL-3.0 und die übrigen Qt-Lizenztexte).
@@ -24,13 +24,10 @@ GCC-Laufzeit und winpthreads
   libstdc++-6.dll, libgcc_s_seh-1.dll, libgomp-1.dll: GPL-3.0 mit GCC-Laufzeitbibliotheks-Ausnahme (GCC Runtime Library
   Exception), die das Linken mit eigener Software erlaubt. libwinpthread-1.dll: MIT bzw. BSD-3-Clause (winpthreads).
 
-FFmpeg und seine Abhängigkeiten (WICHTIG: GPL)
-  Qt Multimedia (Geräusche) nutzt unter Windows das FFmpeg-Backend; deshalb liegen avcodec-*.dll, avformat-*.dll, avutil-*.dll
-  und viele Codec-Bibliotheken im Paket. Das MSYS2-FFmpeg ist mit --enable-gpl gebaut (Lizenz GPL-3.0-oder-später) und bindet
-  unter anderem libx264 und libx265 (GPL) ein. Die GPL-Texte liegen unter lizenzen/ffmpeg, lizenzen/x264 und lizenzen/x265
-  (soweit das MSYS2-Paket sie mitbringt). Quellcode dieser Bibliotheken: https://ffmpeg.org/download.html,
-  https://www.videolan.org/developers/x264.html, https://bitbucket.org/multicoreware/x265_git und die MSYS2-Paketquellen
-  https://github.com/msys2/MINGW-packages (exakte Versionen siehe Tabelle).
+Qt Multimedia ohne FFmpeg
+  Schneefall spielt nur eigene, erzeugte Klänge über QAudioSink; das nutzt Windows-Audio (WASAPI) direkt in Qt6Multimedia.dll.
+  Das FFmpeg-Medien-Plugin von Qt (und damit FFmpeg, x264, x265, gnutls u. a., im MSYS2 mit GPL gebaut) ist bewusst NICHT im
+  Paket; paket.sh bricht ab, falls eine GPL-Bibliothek ohne LGPL-Alternative oder Ausnahme ins Paket gerät.
 
 Übrige Bibliotheken
   Alle weiteren DLLs (Grafik-, Schrift-, Bild-, Audio- und Verschlüsselungsbibliotheken) stammen unverändert aus MSYS2 UCRT64;

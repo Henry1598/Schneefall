@@ -56,7 +56,7 @@ Software-OpenGL (Mesa, `opengl32sw.dll`); das ist langsamer. Auf einer echten GP
    „Der Computer wurde durch Windows geschützt“. Nach den Schritten 1 bis 3: **„Weitere Informationen“ → „Trotzdem ausführen“**.
    Der Quelltext liegt in diesem Repository, die Pakete entstehen in der öffentlichen CI (GitHub Actions).
 
-**Lizenzen der Bibliotheken:** Das Paket enthält Qt (LGPL), Mesa, LLVM, FFmpeg und weitere Bibliotheken aus MSYS2. Die Liste
+**Lizenzen der Bibliotheken:** Das Paket enthält Qt (LGPL), Mesa, LLVM und weitere Bibliotheken aus MSYS2. Die Liste
 (Datei, Paket, Version, Lizenz) steht in `DRITTANBIETER.txt`, die Lizenztexte im Ordner `lizenzen`. Schneefall selbst: alle Rechte
 beim Autor, eine Lizenz folgt ggf.
 
