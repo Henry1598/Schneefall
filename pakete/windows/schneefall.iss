@@ -22,6 +22,8 @@ AppUpdatesURL=https://github.com/Henry1598/Schneefall/releases
 VersionInfoVersion={#Version}
 VersionInfoProductName=Schneefall
 VersionInfoDescription=Schneefall Setup
+VersionInfoCompany=Henry1598
+SetupIconFile=..\..\symbole\schneefall.ico
 ; kein Administrator: passt zur Pipe-Sicherheit (Steuerkanal gehört dem angemeldeten Benutzer)
 PrivilegesRequired=lowest
 DefaultDirName={autopf}\Schneefall
@@ -85,7 +87,7 @@ var
 begin
   if FileExists(Programm) then
   begin
-    Exec(Programm, '--beenden', '', SW_HIDE, ewWaitUntilTerminated, Ergebnis);
+    Exec(Programm, '--beenden --still', '', SW_HIDE, ewWaitUntilTerminated, Ergebnis);
     Sleep(1500); // Prozess hat Zeit zum Aufräumen
   end;
 end;

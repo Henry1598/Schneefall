@@ -31,6 +31,8 @@ jobs:
           pacman -Syu --noconfirm --needed base-devel git nodejs pkgconf \
             qt6-base qt6-multimedia qt6-svg qt6-wayland layer-shell-qt
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Bauen
         run: make -j"$(nproc)"
       - name: Tests (offscreen)
@@ -47,6 +49,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
@@ -84,8 +88,12 @@ jobs:
       - name: Installer (Inno Setup 6)
         shell: msys2 {0}
         run: |
-          # auf windows-latest ist Inno Setup 6 meist vorinstalliert, sonst per Chocolatey
-          if [ ! -x "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then
+          # auf windows-latest ist Inno Setup 6 meist vorinstalliert; zu alt (unter 6.7) oder fehlend: feste Version per Chocolatey
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          v=""
+          [ -x "$iscc" ] && v="$(powershell.exe -NoProfile -Command "(Get-Item -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\unins000.exe').VersionInfo.ProductVersion" | tr -d '\r ')"
+          echo "vorhandenes Inno Setup: ${v:-keins}"
+          if [ -z "$v" ] || [ "$(printf '%s\n6.7\n' "$v" | sort -V | head -1)" != "6.7" ]; then
             choco.exe install innosetup --version=6.7.4 -y --no-progress
           fi
           bash pakete/windows/installer.sh
@@ -109,6 +117,7 @@ jobs:
             dist/Schneefall-*-windows-Setup.exe
             dist/Schneefall-*-windows.zip
             dist/SHA256SUMS
+            dist/pakete.txt
           if-no-files-found: error
 
   release:
@@ -118,8 +127,12 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      id-token: write      # nur für die Herkunftsbestätigung (Attestation) unten
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: schneefall-windows
@@ -131,9 +144,15 @@ jobs:
           cd dist
           ls -l
           sha256sum -c SHA256SUMS
+      - name: Herkunft bestätigen (Build-Provenance-Attestation)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/Schneefall-*-windows-Setup.exe
+            dist/Schneefall-*-windows.zip
       - name: Release erstellen
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Schneefall ${GITHUB_REF_NAME#v}" \
-            --generate-notes dist/Schneefall-*-windows-Setup.exe dist/Schneefall-*-windows.zip dist/SHA256SUMS
+            --generate-notes dist/Schneefall-*-windows-Setup.exe dist/Schneefall-*-windows.zip dist/SHA256SUMS dist/pakete.txt

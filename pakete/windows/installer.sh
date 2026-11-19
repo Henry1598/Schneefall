@@ -14,6 +14,11 @@ if [ -z "$ISCC" ]; then
     done
 fi
 [ -n "$ISCC" ] || { echo "installer.sh: ISCC.exe nicht gefunden (Inno Setup 6 installieren oder ISCC=... setzen)" >&2; exit 1; }
+# Mindestversion: Inno Setup 6.7
+# (ISCC.exe selbst meldet keine Version; die des Installationsordners steht in unins000.exe)
+isver="$(powershell.exe -NoProfile -Command "(Get-Item -LiteralPath '$(cygpath -w "$(dirname "$ISCC")/unins000.exe")').VersionInfo.ProductVersion" 2>/dev/null | tr -d '\r ' || true)"
+echo "Inno Setup: ${isver:-unbekannt}"
+[ -n "$isver" ] && [ "$(printf '%s\n6.7\n' "$isver" | sort -V | head -1)" = "6.7" ] || { echo "installer.sh: Inno Setup 6.7 oder neuer nötig (gefunden: ${isver:-unbekannt})" >&2; exit 1; }
 # Pfade relativ zur .iss-Datei: das Skript liegt in pakete/windows, dist/ zwei Ebenen höher
 MSYS2_ARG_CONV_EXCL='*' "$ISCC" "/DVersion=$VERSION" "/Qp" "$(cygpath -w pakete/windows/schneefall.iss)"
 cd "$DIST"

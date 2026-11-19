@@ -19,34 +19,51 @@ Gebaut für Plasma/KWin 6.8, Qt 6.12, mehrere Monitore mit gemischter Skalierung
 
 ## Download und Installation (Windows)
 
-Fertige Pakete stehen unter [Releases](https://github.com/Henry1598/Schneefall/releases):
+Fertige Pakete gibt es **nur** unter [github.com/Henry1598/Schneefall/releases](https://github.com/Henry1598/Schneefall/releases)
+(nicht von anderen Webseiten, aus Foren oder Messengern):
 
 | Datei | Zweck |
 |---|---|
 | `Schneefall-<version>-windows-Setup.exe` | Installer (empfohlen), Deutsch und Englisch |
 | `Schneefall-<version>-windows.zip` | portabel: entpacken, `Schneefall\schneefall.exe` starten |
 | `SHA256SUMS` | Prüfsummen der beiden Dateien |
+| `pakete.txt` | alle MSYS2-Pakete (mit Version) der Bauumgebung |
 
 **Systemanforderungen:** Windows 10 ab Version 1903 oder Windows 11, 64 Bit; Grafik mit OpenGL 3.3 oder höher
 (jeder gängige Grafiktreiber). Ohne brauchbaren OpenGL-Treiber (VM, Fernsitzung) nimmt Qt automatisch das mitgelieferte
 Software-OpenGL (Mesa, `opengl32sw.dll`); das ist langsamer. Auf einer echten GPU wird immer das native OpenGL des Treibers genutzt.
 
-**Prüfsummen** (PowerShell, im Download-Ordner; die Werte müssen mit `SHA256SUMS` übereinstimmen):
+**Reihenfolge beim ersten Start:**
 
-```
-Get-FileHash .\Schneefall-1.0.0-windows-Setup.exe -Algorithm SHA256
-Get-FileHash .\Schneefall-1.0.0-windows.zip -Algorithm SHA256
-```
+1. Datei nur von der Release-Seite oben laden (`SHA256SUMS` aus demselben Release dazu).
+2. Prüfsumme vergleichen. PowerShell, im Download-Ordner, ersetze `<version>` durch die heruntergeladene Version; Ausgabe
+   `True` heißt: stimmt mit `SHA256SUMS` überein, bei `False` Datei löschen und nicht starten:
+
+   ```
+   (Get-Content .\SHA256SUMS | Select-String 'Schneefall-<version>-windows-Setup.exe').Line.Split(' ')[0] -eq (Get-FileHash .\Schneefall-<version>-windows-Setup.exe -Algorithm SHA256).Hash.ToLower()
+   ```
+
+   (für die ZIP entsprechend `Schneefall-<version>-windows.zip`). Ehrlich dazu: Die Prüfsumme zeigt nur, dass die Datei
+   unterwegs nicht verändert wurde. Sie beweist nicht, woher sie stammt, denn `SHA256SUMS` liegt am selben Ort.
+3. Herkunft prüfen: Die Pakete tragen eine Build-Provenance-Attestation von GitHub Actions (belegt, aus welchem Commit
+   und welchem Workflow die Datei gebaut wurde). Mit der [GitHub-CLI](https://cli.github.com/):
+
+   ```
+   gh attestation verify .\Schneefall-<version>-windows-Setup.exe --repo Henry1598/Schneefall
+   ```
+
+4. Erst dann starten. Die Dateien sind **nicht signiert** (kein Code-Signing-Zertifikat); Windows SmartScreen zeigt deshalb
+   „Der Computer wurde durch Windows geschützt“. Nach den Schritten 1 bis 3: **„Weitere Informationen“ → „Trotzdem ausführen“**.
+   Der Quelltext liegt in diesem Repository, die Pakete entstehen in der öffentlichen CI (GitHub Actions).
+
+**Lizenzen der Bibliotheken:** Das Paket enthält Qt (LGPL), Mesa, LLVM, FFmpeg und weitere Bibliotheken aus MSYS2. Die Liste
+(Datei, Paket, Version, Lizenz) steht in `DRITTANBIETER.txt`, die Lizenztexte im Ordner `lizenzen`. Schneefall selbst: alle Rechte
+beim Autor, eine Lizenz folgt ggf.
 
 **Installation:** `Setup.exe` starten. Es ist **kein Administrator** nötig; installiert wird pro Benutzer nach
 `%LOCALAPPDATA%\Programs\Schneefall`. Auswählbar sind Desktop-Symbol und „Schneefall mit Windows starten“ (derselbe Autostart wie das
 Häkchen „Mit dem System starten“ im Steuerfenster). Startmenü-Einträge: „Schneefall“ und „Schneefall beenden“. Eine laufende
 Instanz wird beim Aktualisieren und Deinstallieren automatisch beendet.
-
-**SmartScreen-Warnung:** Die Dateien sind **nicht signiert** (kein Code-Signing-Zertifikat). Windows SmartScreen zeigt deshalb beim
-ersten Start „Der Computer wurde durch Windows geschützt“. Dort **„Weitere Informationen“ → „Trotzdem ausführen“** wählen. Wer
-vorsichtig ist, vergleicht vorher die Prüfsumme (siehe oben); der Quelltext liegt in diesem Repository, die Pakete entstehen in der
-öffentlichen CI (GitHub Actions).
 
 **Deinstallation:** Einstellungen → Apps → „Schneefall“ → Deinstallieren (oder Startmenü). Der Deinstaller fragt, ob auch die
 Einstellungen und die Statistik (`%APPDATA%\Schneefall`) gelöscht werden sollen; Standard ist **Nein** (behalten). Bei stiller

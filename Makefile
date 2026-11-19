@@ -21,7 +21,8 @@ LSQ_LIBS   := -lgdi32 -ldwmapi -lshcore -ldxgi -luser32 -lshell32 -lopengl32 -la
 KANAL_LIBS := -ladvapi32
 PLAT_DATEIEN := fensterquelle ebene systemkanal autostart
 PLAT_MOC   :=
-PLAT_EXTRA_O = $(B)/fensterauswahl.o
+PLAT_EXTRA_O = $(B)/fensterauswahl.o $(B)/schneefall_rc.o
+WINDRES    ?= windres
 # Programm ohne Konsolenfenster (Ausgaben von --status gehen in die aufrufende Konsole, siehe main.cpp)
 APP_LDFLAGS := -mwindows
 # Tests nur für das Windows-Backend
@@ -115,6 +116,11 @@ $(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
+
+# Programm-Symbol und VERSIONINFO (nur Windows); VERSION "1.2.3[-x]" -> 1,2,3,0
+VERSION_ZAHL := $(shell echo '$(VERSION)' | sed -E 's/^([0-9]+)\.([0-9]+)\.([0-9]+).*/\1,\2,\3,0/')
+$(B)/schneefall_rc.o: pakete/windows/schneefall.rc symbole/schneefall.ico VERSION | $(B)
+	$(WINDRES) -DVERSION_TEXT='\"$(VERSION)\"' -DVERSION_ZAHL=$(VERSION_ZAHL) -I. -i $< -o $@
 
 $(B)/schneefall$(EXE): $(B)/main.o $(APP_O)
 	$(CXX) $(LDFLAGS) $(APP_LDFLAGS) $^ -o $@ $(QT_LIBS) $(MM_LIBS) $(LSQ_LIBS)
@@ -272,6 +278,7 @@ TESTS := test_klang test_ansicht test_blasen test_raeumdienst test_schnee test_b
          test_statistik test_steuerkanal test_app test_fensterauswahl
 test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%$(EXE),$(BACKEND_TESTS)) $(B)/schneefall$(EXE)
 	@test "$$(./$(B)/schneefall$(EXE) --version | tr -d '\r')" = "schneefall $(VERSION)" && echo "PASS: --version = $(VERSION)"
+	@./$(B)/schneefall$(EXE) --diagnose-pfade | tr -d '\r' | grep -q '^programmordner=.' && echo "PASS: --diagnose-pfade"
 	@set -e; for t in $(TESTS) $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
 ifeq ($(PLATTFORM),linux)
 	node tests/test_kwin.js
@@ -296,6 +303,7 @@ paket:
 install: all
 	install -Dm755 skripte/schneefall-umschalten $(HOME)/.local/bin/schneefall-umschalten
 	install -Dm644 skripte/schneefall.desktop $(HOME)/.local/share/applications/schneefall.desktop
+	install -Dm644 symbole/schneefall.svg $(HOME)/.local/share/icons/hicolor/scalable/apps/schneefall.svg
 
 # ---- Sprüche (Fahrer und Pilot) ----
 

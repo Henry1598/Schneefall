@@ -1,6 +1,7 @@
 // Schneefall – Schnee über allen Fenstern (KDE Plasma 6 / Wayland, Windows 10/11)
 #include <QApplication>
 #include <QDeadlineTimer>
+#include <QLibraryInfo>
 #include <QMessageBox>
 #include <QThread>
 #include <cstdio>
@@ -32,6 +33,8 @@ bool konsoleAnbinden() {
 }
 bool g_konsole = false;
 #endif
+// --still: keine Fenster (MessageBox), nur Rückgabecode – für Installer und Skripte, die nie unsichtbar hängen dürfen
+bool g_still = false;
 
 // Zeile ausgeben: in eine Windows-Konsole als UTF-16 (richtige Umlaute unabhängig von deren Codepage, ohne sie zu
 // verstellen), in Datei/Pipe und unter Linux als UTF-8
@@ -55,7 +58,7 @@ void zeile(FILE *ziel, const QString &text) {
 void melden(const QString &text, bool fehler) {
     zeile(fehler ? stderr : stdout, text);
 #ifdef Q_OS_WIN
-    if (!g_konsole && qApp) {
+    if (!g_konsole && !g_still && qApp) {
         QMessageBox box(fehler ? QMessageBox::Warning : QMessageBox::Information, QStringLiteral("Schneefall"), text);
         box.setTextFormat(Qt::PlainText); // kein Rich-Text aus Pfaden/Namen
         box.exec();
@@ -94,6 +97,13 @@ QStringList werteNach(const QStringList &args, const QString &option, int n) {
 } // namespace
 
 int main(int argc, char **argv) {
+#ifdef Q_OS_WIN
+    // DLLs nur aus System32 und dem Programmordner laden, nie aus dem Arbeitsverzeichnis (DLL-Hijacking)
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    SetDllDirectoryW(L"");
+#endif
+    for (int i = 1; i < argc; ++i)
+        if (std::strcmp(argv[i], "--still") == 0) g_still = true;
     // --version ohne Qt-Start (läuft auch ohne Bildschirm/Wayland); Windows: in die Konsole bzw. Umleitung
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--version") != 0) continue;
@@ -101,6 +111,18 @@ int main(int argc, char **argv) {
         konsoleAnbinden();
 #endif
         zeile(stdout, QStringLiteral("schneefall ") + QStringLiteral(SCHNEEFALL_VERSION));
+        return 0;
+    }
+    // Prüfung fürs Paket (CI): wo sucht Qt Plugins? Muss nur der Programmordner sein (qt.conf), nie ein Pfad außerhalb
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--diagnose-pfade") != 0) continue;
+        QCoreApplication kern(argc, argv); // ohne Bildschirm und Plattform-Plugin
+#ifdef Q_OS_WIN
+        konsoleAnbinden();
+#endif
+        zeile(stdout, QStringLiteral("programmordner=") + QCoreApplication::applicationDirPath());
+        zeile(stdout, QStringLiteral("pluginpfad=") + QLibraryInfo::path(QLibraryInfo::PluginsPath));
+        for (const QString &p : QCoreApplication::libraryPaths()) zeile(stdout, QStringLiteral("bibliothekspfad=") + p);
         return 0;
     }
 #ifdef Q_OS_LINUX
