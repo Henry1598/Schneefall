@@ -74,8 +74,9 @@ jobs:
         if: failure()
         shell: msys2 {0}
         run: |
+          set +e +o pipefail
           for t in build-win/test_*.exe; do
-            echo "== $t"; QT_QPA_PLATFORM=offscreen "$t" 2>&1 | grep -E "^(FAIL|Totals|QFATAL)|Loc:" | head -10; echo "exit=${PIPESTATUS[0]}"
+            echo "== $t"; QT_QPA_PLATFORM=offscreen "$t" > diag.txt 2>&1; echo "exit=$?"; head -c 1500 diag.txt
           done
       - name: Paket (Ordner und ZIP)
         shell: msys2 {0}
