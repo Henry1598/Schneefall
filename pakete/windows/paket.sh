@@ -7,6 +7,7 @@
 # Voraussetzung: gcc, make, pkgconf, qt6-base/-multimedia/-svg/-tools, ntldd, zip, mesa (alles mingw-w64-ucrt-x86_64-*)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+source pakete/windows/gplwaechter.sh   # datei_gesperrt, lizenz_ok (Test: pakete/windows/test_gplwaechter.sh)
 
 VERSION="$(tr -d '\r\n ' < VERSION)"
 B="${B:-build-paket}"
@@ -114,6 +115,7 @@ gpl_dateien=""
 while IFS= read -r datei; do
     rel="${datei#"$ORDNER"/}"
     [ "$rel" = "schneefall.exe" ] && continue
+    datei_gesperrt "$rel" && gpl_dateien+="$rel (Dateiname auf der Sperrliste)"$'\n'
     quelle=""
     for k in "$PREFIX/bin/$rel" "$PREFIX/share/qt6/plugins/$rel"; do [ -f "$k" ] && quelle="$k" && break; done
     [ "$rel" = "opengl32sw.dll" ] && quelle="$PREFIX/bin/opengl32.dll"
@@ -126,13 +128,11 @@ while IFS= read -r datei; do
     echo "$pak" >> "$PAKETE"
     ver="$(pacman -Q "$pak" | awk '{print $2}')"
     lic="$(pacman -Qi "$pak" | sed -n 's/^Licenses *: *//p' | sed 's/spdx://g')"
-    # Starkes Copyleft verboten: GPL ohne LGPL-Alternative und ohne Ausnahme (WITH …, z. B. GCC-Laufzeit) darf nicht ins Paket
-    # "A OR B" (Wahl): es genügt eine Alternative ohne GPL (z. B. "GPL-2.0-or-later OR FTL", "BSD-3-Clause OR GPL-2.0-or-later")
-    gpl_frei=0
-    while IFS= read -r alt; do
-        if ! [[ "$alt" =~ GPL ]] || [[ "$alt" =~ LGPL ]] || [[ "$alt" =~ WITH ]]; then gpl_frei=1; fi
-    done <<< "${lic// OR /$'\n'}"
-    [ "$gpl_frei" = 1 ] || gpl_dateien+="$rel -> $pak ($lic)"$'\n'
+    # Starkes Copyleft verboten (gplwaechter.sh): Sperrliste für Dateinamen (FFmpeg & Co.); jeder Lizenzeintrag des Pakets einzeln
+    # bewertet (mehrere Einträge gelten alle); GPL nur mit LGPL-Alternative oder Ausnahme (WITH …) ohne weiteren reinen GPL-Teil;
+    # Lizenz "None"/leer ist ein Abbruch
+    datei_gesperrt "$rel" && gpl_dateien+="$rel -> $pak (Dateiname auf der Sperrliste)"$'\n'
+    lizenz_ok "$lic" || lizenz_ausnahme "${pak#mingw-w64-ucrt-x86_64-}" && [ -n "$lic" ] && [ "$lic" != "None" ] || gpl_dateien+="$rel -> $pak (Lizenz: '${lic:-leer}')"$'\n'
     printf '%s\t%s\t%s\t%s\n' "$rel" "$pak" "$ver" "$lic" >> "$TABELLE"
 done < <(find "$ORDNER" -type f \( -iname '*.dll' -o -iname '*.exe' \) | LC_ALL=C sort)
 while IFS= read -r pak; do
@@ -165,6 +165,17 @@ done < <(sort -u "$PAKETE")
     echo "Datei -> MSYS2-Paket -> Version -> Lizenz"
     echo "-----------------------------------------"
     awk -F'\t' '{printf "%s -> %s -> %s -> %s\n", $1, $2, $3, $4}' "$TABELLE"
+    echo
+    echo "Quellcode der MSYS2-Pakete (genaue Versionen dieses Pakets)"
+    echo "-----------------------------------------------------------"
+    while IFS= read -r pak; do
+        # Quellpaket = %BASE% aus der pacman-Datenbank (z. B. libstdc++ -> mingw-w64-gcc, libwinpthread -> mingw-w64-winpthreads,
+        # llvm-libs -> mingw-w64-llvm), sonst der Paketname ohne "ucrt-x86_64"
+        ver="$(pacman -Q "$pak" | awk '{print $2}')"
+        basis="$(sed -n '/^%BASE%$/{n;p}' "/var/lib/pacman/local/$pak-$ver/desc" 2>/dev/null || true)"
+        [ -n "$basis" ] || basis="${pak/-ucrt-x86_64-/-}"
+        printf 'https://repo.msys2.org/mingw/sources/%s-%s.src.tar.zst\n' "$basis" "$ver"
+    done < <(sort -u "$PAKETE")
     echo
     echo "(Paketversionen und Lizenzangaben laut MSYS2 zum Zeitpunkt des Baus.)"
 } > "$ORDNER/DRITTANBIETER.txt"

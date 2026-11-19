@@ -280,6 +280,7 @@ test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%$(EXE),$(BACKEND_TE
 	@test "$$(./$(B)/schneefall$(EXE) --version | tr -d '\r')" = "schneefall $(VERSION)" && echo "PASS: --version = $(VERSION)"
 	@./$(B)/schneefall$(EXE) --diagnose-pfade | tr -d '\r' | grep -q '^programmordner=.' && echo "PASS: --diagnose-pfade"
 	@set -e; for t in $(TESTS) $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
+	@bash pakete/windows/test_gplwaechter.sh > /dev/null && echo "PASS: GPL-Wächter (pakete/windows/test_gplwaechter.sh)"
 ifeq ($(PLATTFORM),linux)
 	node tests/test_kwin.js
 endif

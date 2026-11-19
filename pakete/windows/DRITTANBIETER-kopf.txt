@@ -12,9 +12,14 @@ Qt (LGPL-3.0)
   Schneefall verwendet Qt 6 (Core, Gui, Widgets, OpenGL, Network, Multimedia ohne Medien-Plugin, SVG) unter der LGPL Version 3. Die Qt-Bibliotheken
   (Qt6*.dll und die Plugins in den Unterordnern) sind dynamisch gelinkt und liegen als eigene Dateien im Programmordner; sie
   lassen sich durch eine selbst gebaute Qt-Version mit gleicher Hauptversion und gleichem Binärformat (ABI) ersetzen.
+  Nach LGPL-3.0 §4 ist das Ändern der Qt-Bibliotheken für den eigenen Gebrauch erlaubt, ebenso das Reverse Engineering (Rückübersetzen),
+  um solche Änderungen zu debuggen.
   Lizenztext: lizenzen/qt6-base/LGPL-3.0-only.txt (dort auch GPL-3.0 und die übrigen Qt-Lizenztexte).
   Quellcode: https://download.qt.io/official_releases/qt/ (Qt-Projekt) und die MSYS2-Paketquellen
   https://github.com/msys2/MINGW-packages (Build-Rezepte, Version siehe Tabelle).
+  Quellcode der MSYS2-Pakete in genau den hier gepackten Versionen: https://repo.msys2.org/mingw/sources/ (Dateiname
+  mingw-w64-<paket>-<version>.src.tar.zst); die vollständigen Links je Paket stehen am Ende dieser Datei, die Paketversionen
+  der Bauumgebung in pakete.txt (Teil des Releases).
 
 Mesa (MIT) und LLVM (Apache-2.0 mit LLVM-Ausnahme)
   opengl32sw.dll (aus Mesa, "Gallium wgl"/libgallium_wgl.dll) ist nur ein Rückfall für Rechner ohne brauchbaren OpenGL-Treiber;
@@ -27,7 +32,8 @@ GCC-Laufzeit und winpthreads
 Qt Multimedia ohne FFmpeg
   Schneefall spielt nur eigene, erzeugte Klänge über QAudioSink; das nutzt Windows-Audio (WASAPI) direkt in Qt6Multimedia.dll.
   Das FFmpeg-Medien-Plugin von Qt (und damit FFmpeg, x264, x265, gnutls u. a., im MSYS2 mit GPL gebaut) ist bewusst NICHT im
-  Paket; paket.sh bricht ab, falls eine GPL-Bibliothek ohne LGPL-Alternative oder Ausnahme ins Paket gerät.
+  Paket; paket.sh bricht ab, falls eine GPL-Bibliothek ohne LGPL-Alternative oder Ausnahme ins Paket gerät
+  (auch bei Lizenz "None" oder einem gesperrten Dateinamen wie avcodec*, libx264*, libgnutls*).
 
 Übrige Bibliotheken
   Alle weiteren DLLs (Grafik-, Schrift-, Bild-, Audio- und Verschlüsselungsbibliotheken) stammen unverändert aus MSYS2 UCRT64;

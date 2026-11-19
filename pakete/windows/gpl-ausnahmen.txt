@@ -1,0 +1,7 @@
+# Pakete, deren pacman-Lizenzangabe ein Sammelwert (Bibliothek + Werkzeuge/Beispiele/Doku) mit GPL-Anteilen ist, obwohl die
+# gepackten DLLs LGPL sind. Von Hand geprüft; paket.sh lässt sie nur deshalb durch den Lizenz-Wächter (Sperrliste und
+# "None"/leer gelten weiterhin). Format: Paketname ohne mingw-w64-ucrt-x86_64-, danach "# Begründung".
+qt6-base        # Qt-Bibliotheken LGPL-3.0-only WITH Qt-GPL-exception-1.0; GPL-Anteile nur Werkzeuge (moc, rcc ...), Doku, Beispiele
+qt6-multimedia  # wie qt6-base; das GPL-belastete FFmpeg-Plugin ist nicht im Paket (Sperrliste ffmpegmediaplugin*)
+qt6-svg         # wie qt6-base
+gettext-runtime # libintl-8.dll: LGPL-2.1-or-later; GPL-3.0-or-later betrifft die Kommandozeilenwerkzeuge des Pakets

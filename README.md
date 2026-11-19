@@ -49,7 +49,13 @@ Software-OpenGL (Mesa, `opengl32sw.dll`); das ist langsamer. Auf einer echten GP
    und welchem Workflow die Datei gebaut wurde). Mit der [GitHub-CLI](https://cli.github.com/):
 
    ```
-   gh attestation verify .\Schneefall-<version>-windows-Setup.exe --repo Henry1598/Schneefall
+   gh attestation verify .\Schneefall-<version>-windows-Setup.exe --repo Henry1598/Schneefall --signer-workflow Henry1598/Schneefall/.github/workflows/ci.yml --source-ref refs/tags/v<version>
+   ```
+
+   Zusätzlich sind die Releases unveränderlich (Immutable Releases); dass die Datei zu genau diesem Release gehört, prüft:
+
+   ```
+   gh release verify-asset v<version> .\Schneefall-<version>-windows-Setup.exe --repo Henry1598/Schneefall
    ```
 
 4. Erst dann starten. Die Dateien sind **nicht signiert** (kein Code-Signing-Zertifikat); Windows SmartScreen zeigt deshalb
