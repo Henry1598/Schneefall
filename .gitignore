@@ -2,3 +2,4 @@ build*/
 graphify-out/
 *.o
 bau*/
+dist/

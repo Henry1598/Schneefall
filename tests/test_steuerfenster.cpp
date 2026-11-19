@@ -6,9 +6,13 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSlider>
 #include <QTemporaryDir>
 #include "app.h"
+#include "version.h"
 #include "steuerfenster.h"
 #include "overlay.h"
 #include "fakefensterquelle.h"
@@ -155,6 +159,28 @@ private slots:
         }(), 3000);
     }
     // Flockenfreie Flächen für den Shader: je Monitor zugeschnitten, in Gerätepixeln, Ursprung unten links
+    void schmalerBildschirmBrauchtKeinWaagrechtesRollen() {
+        App app;
+        app.starten();
+        app.Steuerfenster();
+        auto *f = findChild();
+        QVERIFY(f);
+        // Version steht im Fenster und stimmt mit der Datei VERSION überein
+        auto *v = f->findChild<QLabel *>("version");
+        QVERIFY(v);
+        QVERIFY(v->text().endsWith(QStringLiteral(SCHNEEFALL_VERSION)));
+        // der Offscreen-Bildschirm ist schmal (Vorgabe 800 px): trotzdem keine waagrechte Rollleiste
+        f->groesseAnpassen();
+        f->show();
+        QVERIFY(QTest::qWaitForWindowExposed(f));
+        QCoreApplication::processEvents();
+        auto *rolle = f->findChild<QScrollArea *>();
+        QVERIFY(rolle);
+        QVERIFY(f->width() <= f->screen()->availableGeometry().width());
+        QCOMPARE(rolle->horizontalScrollBar()->maximum(), 0);
+        QVERIFY(rolle->widget()->width() <= rolle->viewport()->width());
+        f->hide();
+    }
     void statistikGruppeZeigtWerteUndSetztNachRueckfrageZurueck() {
         App app;
         app.starten();

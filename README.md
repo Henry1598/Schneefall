@@ -17,6 +17,44 @@ zu oft, streikt der Fahrer.
 
 Gebaut für Plasma/KWin 6.8, Qt 6.12, mehrere Monitore mit gemischter Skalierung.
 
+## Download und Installation (Windows)
+
+Fertige Pakete stehen unter [Releases](https://github.com/Henry1598/Schneefall/releases):
+
+| Datei | Zweck |
+|---|---|
+| `Schneefall-<version>-windows-Setup.exe` | Installer (empfohlen), Deutsch und Englisch |
+| `Schneefall-<version>-windows.zip` | portabel: entpacken, `Schneefall\schneefall.exe` starten |
+| `SHA256SUMS` | Prüfsummen der beiden Dateien |
+
+**Systemanforderungen:** Windows 10 ab Version 1903 oder Windows 11, 64 Bit; Grafik mit OpenGL 3.3 oder höher
+(jeder gängige Grafiktreiber). Ohne brauchbaren OpenGL-Treiber (VM, Fernsitzung) nimmt Qt automatisch das mitgelieferte
+Software-OpenGL (Mesa, `opengl32sw.dll`); das ist langsamer. Auf einer echten GPU wird immer das native OpenGL des Treibers genutzt.
+
+**Prüfsummen** (PowerShell, im Download-Ordner; die Werte müssen mit `SHA256SUMS` übereinstimmen):
+
+```
+Get-FileHash .\Schneefall-1.0.0-windows-Setup.exe -Algorithm SHA256
+Get-FileHash .\Schneefall-1.0.0-windows.zip -Algorithm SHA256
+```
+
+**Installation:** `Setup.exe` starten. Es ist **kein Administrator** nötig; installiert wird pro Benutzer nach
+`%LOCALAPPDATA%\Programs\Schneefall`. Auswählbar sind Desktop-Symbol und „Schneefall mit Windows starten“ (derselbe Autostart wie das
+Häkchen „Mit dem System starten“ im Steuerfenster). Startmenü-Einträge: „Schneefall“ und „Schneefall beenden“. Eine laufende
+Instanz wird beim Aktualisieren und Deinstallieren automatisch beendet.
+
+**SmartScreen-Warnung:** Die Dateien sind **nicht signiert** (kein Code-Signing-Zertifikat). Windows SmartScreen zeigt deshalb beim
+ersten Start „Der Computer wurde durch Windows geschützt“. Dort **„Weitere Informationen“ → „Trotzdem ausführen“** wählen. Wer
+vorsichtig ist, vergleicht vorher die Prüfsumme (siehe oben); der Quelltext liegt in diesem Repository, die Pakete entstehen in der
+öffentlichen CI (GitHub Actions).
+
+**Deinstallation:** Einstellungen → Apps → „Schneefall“ → Deinstallieren (oder Startmenü). Der Deinstaller fragt, ob auch die
+Einstellungen und die Statistik (`%APPDATA%\Schneefall`) gelöscht werden sollen; Standard ist **Nein** (behalten). Bei stiller
+Deinstallation (`/VERYSILENT`) bleiben sie immer erhalten.
+
+**Version:** `schneefall.exe --version` (aus einer Konsole, am besten mit Umleitung: `schneefall.exe --version > v.txt`) und unten links
+im Steuerfenster. Die Version steht zentral in der Datei `VERSION`.
+
 ## Starten und Beenden
 
 | Was | Wie |
@@ -435,6 +473,19 @@ mingw32-make PLATTFORM=windows B=build-win -j8 test   # alle Tests, dazu Autosta
   als Vorgabe (der D3D12-Treiber zeigt in Layered-Fenstern nichts). Fehlt OpenGL ganz, startet Schneefall
   ohne Schnee-Ebene und meldet das.
 - Einstellungen und Statistik: `%APPDATA%\Schneefall\`, Sperrdatei `%LOCALAPPDATA%\Schneefall\`.
+
+Windows-Paket und Installer (in MSYS2 UCRT64; zusätzlich `mingw-w64-ucrt-x86_64-{mesa,ntldd}` und `zip`; Inno Setup 6 für den Installer):
+
+```
+mingw32-make PLATTFORM=windows paket     # Release-Build, windeployqt, DLLs per ntldd -> dist/Schneefall/ + dist/Schneefall-<version>-windows.zip
+bash pakete/windows/installer.sh         # dist/Schneefall-<version>-windows-Setup.exe + dist/SHA256SUMS (pakete/windows/schneefall.iss)
+```
+
+- `pakete/windows/paket.sh` ermittelt die nötigen ucrt64-DLLs mit `ntldd` (Runden, bis nichts Neues kommt, nichts geraten) und bricht ab, wenn eine DLL fehlt
+  oder `--version` nicht zur Datei `VERSION` passt. Die Mesa-DLL kommt nur als `opengl32sw.dll` ins Paket (Rückfall); eine
+  `opengl32.dll` im Ordner würde den Grafiktreiber verdecken und wird deshalb nie beigelegt (das Skript prüft das).
+- Release: Datei `VERSION` anpassen, Tag `vX.Y.Z` setzen und pushen; `.github/workflows/ci.yml` baut, testet und veröffentlicht Setup.exe,
+  ZIP und `SHA256SUMS` (der Tag muss zu `VERSION` passen). Push und Pull Requests führen Linux- und Windows-Tests aus.
 
 ## Deinstallation
 

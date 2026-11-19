@@ -4,6 +4,7 @@
 #include <QMessageBox>
 #include <QThread>
 #include <cstdio>
+#include <cstring>
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -12,6 +13,7 @@
 #include <io.h>
 #endif
 #include "app.h"
+#include "version.h"
 #include "plattform/steuerkanal.h"
 
 namespace {
@@ -92,6 +94,15 @@ QStringList werteNach(const QStringList &args, const QString &option, int n) {
 } // namespace
 
 int main(int argc, char **argv) {
+    // --version ohne Qt-Start (läuft auch ohne Bildschirm/Wayland); Windows: in die Konsole bzw. Umleitung
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--version") != 0) continue;
+#ifdef Q_OS_WIN
+        konsoleAnbinden();
+#endif
+        zeile(stdout, QStringLiteral("schneefall ") + QStringLiteral(SCHNEEFALL_VERSION));
+        return 0;
+    }
 #ifdef Q_OS_LINUX
     // ohne Wayland keine Layer-Shell
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "wayland");

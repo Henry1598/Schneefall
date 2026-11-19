@@ -8,6 +8,7 @@ class QCheckBox;
 class QComboBox;
 class QSlider;
 class QLabel;
+class QBoxLayout;
 
 class Steuerfenster : public QWidget {
 public:
@@ -16,6 +17,7 @@ public:
     void groesseAnpassen();  // an Inhalt und Bildschirm (vor dem ersten Zeigen)
 
 private:
+    QBoxLayout *m_gruppen = nullptr; // Gruppen „Fenster“ und „Räumdienst“: nebeneinander, bei schmalem Bildschirm untereinander
     QWidget *m_inhalt = nullptr; // rollbarer Inhalt (alles außer Schließen/Beenden)
     struct Regler { QSlider *slider = nullptr; QLabel *wert = nullptr; double faktor = 1; QString einheit; };
     Regler regler(const QString &name, int min, int max, double faktor, const QString &einheit, class QGridLayout *g, int zeile,

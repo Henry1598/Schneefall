@@ -17,7 +17,9 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
+#include <QBoxLayout>
 #include <QStyle>
+#include "version.h"
 #include <QSlider>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -158,7 +160,8 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     connect(jetzt, &QPushButton::clicked, m_app, [this] { m_app->Raeumen(); });
     for (QCheckBox *c : {m_raeumAn, m_taskleiste, m_anfassbar}) connect(c, &QCheckBox::toggled, this, [this] { uebernehmen(); });
 
-    auto *gruppen = new QHBoxLayout;
+    auto *gruppen = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_gruppen = gruppen;
     gruppen->addWidget(fensterGruppe);
     gruppen->addWidget(raeumGruppe);
     haupt->addLayout(gruppen);
@@ -210,6 +213,10 @@ Steuerfenster::Steuerfenster(App *app) : m_app(app) {
     haupt->addWidget(m_autostartHinweis);
 
     auto *unten = new QHBoxLayout;
+    auto *version = new QLabel(QStringLiteral("Schneefall %1").arg(QStringLiteral(SCHNEEFALL_VERSION)), this);
+    version->setObjectName(QStringLiteral("version"));
+    version->setEnabled(false); // abgeblendet, nur zur Information
+    unten->addWidget(version);
     unten->addStretch();
     auto *schliessen = new QPushButton(QStringLiteral("Schließen"), this);
     auto *beenden = new QPushButton(QIcon::fromTheme(QStringLiteral("application-exit")), QStringLiteral("Beenden"), this);
@@ -368,6 +375,14 @@ void Steuerfenster::uebernehmen() {
 
 // Größe: so groß wie der Inhalt, höchstens die freie Fläche des Bildschirms (abzüglich Rahmen und Titel)
 void Steuerfenster::groesseAnpassen() {
+    // Zu schmaler Bildschirm (z. B. 1280 px bei 150 % = 853 logische): Gruppen untereinander statt nebeneinander,
+    // damit kein waagrechtes Rollen nötig ist (senkrecht darf gerollt werden)
+    const int rand = style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 2;
+    m_gruppen->setDirection(QBoxLayout::LeftToRight);
+    m_inhalt->layout()->activate();
+    if (QScreen *s = screen())
+        if (m_inhalt->sizeHint().width() + rand > s->availableGeometry().width() - 16) m_gruppen->setDirection(QBoxLayout::TopToBottom);
+    m_inhalt->layout()->activate();
     const QSize innen = m_inhalt->sizeHint();
     QSize soll(innen.width() + style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 2, innen.height() + 60);
     if (QScreen *s = screen()) soll = soll.boundedTo(s->availableGeometry().size() - QSize(16, 48));

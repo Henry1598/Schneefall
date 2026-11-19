@@ -1,0 +1,127 @@
+# CI: Linux (Arch-Container, KDE/Wayland-Build mit LayerShellQt) und Windows (MSYS2 UCRT64) bei jedem Push/PR;
+# bei einem Tag v* zusätzlich Release mit Setup.exe, ZIP und SHA256SUMS.
+# Alle Actions sind per Commit-SHA gepinnt; ohne Secrets (nur das automatische GITHUB_TOKEN).
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+
+# Mindestrechte für alle Jobs; nur der Release-Job bekommt contents: write
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  linux:
+    # Ubuntu-Pakete reichen nicht (Qt 6.4, LayerShellQt nur für Qt 5); Arch hat Qt 6.x und layer-shell-qt wie die
+    # Zielplattform (KDE Plasma 6). Image per Digest gepinnt, Pakete danach per -Syu aktuell.
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239
+    timeout-minutes: 40
+    steps:
+      - name: Pakete installieren
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git nodejs pkgconf \
+            qt6-base qt6-multimedia qt6-svg qt6-wayland layer-shell-qt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Bauen
+        run: make -j"$(nproc)"
+      - name: Tests (offscreen)
+        run: make test
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            zip
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-multimedia
+            mingw-w64-ucrt-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-qt6-tools
+            mingw-w64-ucrt-x86_64-mesa
+            mingw-w64-ucrt-x86_64-ntldd
+      - name: Bauen
+        shell: msys2 {0}
+        run: mingw32-make PLATTFORM=windows B=build-win -j"$(nproc)"
+      - name: Tests
+        # Tests mit Erhöhung (Pipe-Besitzer Administratoren) laufen nur auf erhöhten Runnern und überspringen sich sonst selbst
+        shell: msys2 {0}
+        run: mingw32-make PLATTFORM=windows B=build-win test
+      - name: Paket (Ordner und ZIP)
+        shell: msys2 {0}
+        run: mingw32-make PLATTFORM=windows paket
+      - name: Installer (Inno Setup 6)
+        shell: msys2 {0}
+        run: |
+          # auf windows-latest ist Inno Setup 6 meist vorinstalliert, sonst per Chocolatey
+          if [ ! -x "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then
+            choco.exe install innosetup --version=6.7.4 -y --no-progress
+          fi
+          bash pakete/windows/installer.sh
+      - name: Installer-Test (stille Installation und Deinstallation, ohne Administrator)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter 'Schneefall-*-windows-Setup.exe' | Select-Object -First 1
+          $ziel = Join-Path $env:RUNNER_TEMP 'inst'
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$ziel" -Wait
+          $exe = Join-Path $ziel 'schneefall.exe'
+          if (-not (Test-Path $exe)) { throw 'schneefall.exe fehlt nach der Installation' }
+          $v = (Get-Content VERSION).Trim()
+          $ausgabe = (& $exe --version | Out-String).Trim()
+          if ($ausgabe -ne "schneefall $v") { throw "falsche Version: $ausgabe" }
+          Start-Process (Join-Path $ziel 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          if (Test-Path $exe) { throw 'schneefall.exe nach der Deinstallation noch da' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: schneefall-windows
+          path: |
+            dist/Schneefall-*-windows-Setup.exe
+            dist/Schneefall-*-windows.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: schneefall-windows
+          path: dist
+      - name: Tag, VERSION und Dateien prüfen
+        run: |
+          v="$(tr -d '\r\n ' < VERSION)"
+          [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "Tag $GITHUB_REF_NAME passt nicht zu VERSION $v" >&2; exit 1; }
+          cd dist
+          ls -l
+          sha256sum -c SHA256SUMS
+      - name: Release erstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Schneefall ${GITHUB_REF_NAME#v}" \
+            --generate-notes dist/Schneefall-*-windows-Setup.exe dist/Schneefall-*-windows.zip dist/SHA256SUMS

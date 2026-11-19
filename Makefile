@@ -4,6 +4,9 @@ PLATTFORM ?= linux
 CXX      ?= g++
 CXXFLAGS ?= -O2 -g -Wall -Wextra
 CXXFLAGS += -std=c++20 -fPIC -Isrc
+# Version: zentral in der Datei VERSION (auch für --version, Steuerfenster, Paket und Installer)
+VERSION := $(strip $(shell cat VERSION))
+CXXFLAGS += -DSCHNEEFALL_VERSION='"$(VERSION)"'
 
 ifeq ($(PLATTFORM),windows)
 EXE        := .exe
@@ -107,7 +110,7 @@ $(B)/pl_moc_dbusdienst.o: $(B)/moc_dbusdienst.cpp
 $(B)/moc_app.cpp: src/app.h | $(B)
 	$(MOC) $< -o $@
 
-$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h src/sprueche.h src/blasen.h src/fahrzeugmodell.h src/statistik.h $(PLAT_H) | $(B)
+$(B)/%.o: src/%.cpp src/app.h src/overlay.h src/steuerfenster.h src/schnee.h src/einstellungen.h src/kristall.h src/deckenform.h src/flockenbild.h src/bildtakt.h src/klang.h src/raeumdienst.h src/raeumszene.h src/fahrzeugbild.h src/ansicht3d.h src/sprueche.h src/blasen.h src/fahrzeugmodell.h src/statistik.h src/version.h VERSION $(PLAT_H) | $(B)
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) -c $< -o $@
 
 $(B)/moc_app.o: $(B)/moc_app.cpp
@@ -267,7 +270,8 @@ test-klang: $(B)/test_klang$(EXE)
 
 TESTS := test_klang test_ansicht test_blasen test_raeumdienst test_schnee test_bild test_bildtakt test_steuerfenster test_sprueche \
          test_statistik test_steuerkanal test_app test_fensterauswahl
-test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%$(EXE),$(BACKEND_TESTS))
+test: $(patsubst %,$(B)/%$(EXE),$(TESTS)) $(patsubst %,$(B)/%$(EXE),$(BACKEND_TESTS)) $(B)/schneefall$(EXE)
+	@test "$$(./$(B)/schneefall$(EXE) --version | tr -d '\r')" = "schneefall $(VERSION)" && echo "PASS: --version = $(VERSION)"
 	@set -e; for t in $(TESTS) $(BACKEND_TESTS); do QT_QPA_PLATFORM=offscreen ./$(B)/$$t$(EXE); done
 ifeq ($(PLATTFORM),linux)
 	node tests/test_kwin.js
@@ -282,7 +286,11 @@ kwin-skript:
 clean:
 	rm -rf $(B)
 
-.PHONY: test-plattform test-statistik test-sprueche test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
+# Windows-Paket (nur in MSYS2 UCRT64): Ordner Schneefall/ und Schneefall-<version>-windows.zip in dist/
+paket:
+	bash pakete/windows/paket.sh
+
+.PHONY: paket test-plattform test-statistik test-sprueche test-bildtakt szenenprobe test-raeumdienst klangprobe test-klang all test kwin-skript install clean
 
 # Befehl schneefall-umschalten und Desktop-Starter für den aktuellen Benutzer
 install: all
